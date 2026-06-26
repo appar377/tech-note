@@ -157,7 +157,7 @@ export default async function ArticlePage({ params }: PageProps) {
           <ShareLinks title={article.title} url={article.canonicalUrl} />
         </div>
         {article.thumbnail ? (
-          <div className="mt-8 max-w-4xl">
+          <div className="mt-8 w-full max-w-4xl">
             <ArticleThumbnail article={article} priority />
           </div>
         ) : null}

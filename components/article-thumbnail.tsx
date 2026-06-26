@@ -12,7 +12,7 @@ export function ArticleThumbnail({ article, priority = false }: ArticleThumbnail
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={withBasePath(article.thumbnail)}
@@ -21,7 +21,7 @@ export function ArticleThumbnail({ article, priority = false }: ArticleThumbnail
         height={675}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
-        className="aspect-video w-full object-cover"
+        className="block h-auto w-full"
       />
     </div>
   );
