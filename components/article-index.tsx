@@ -2,7 +2,7 @@ import { ArticleCard } from "@/components/article-card";
 import { Pagination } from "@/components/pagination";
 import { getAllArticles, paginateArticles } from "@/lib/articles";
 
-export const ARTICLES_PER_PAGE = 3;
+export const ARTICLES_PER_PAGE = 4;
 
 export function ArticleIndex({ page = 1 }: { page?: number }) {
   const allArticles = getAllArticles();
