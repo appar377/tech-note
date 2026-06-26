@@ -38,7 +38,7 @@ export function ArticleCard({
           </Link>
         ) : null}
       </div>
-      <h2 className={`${compact ? "text-base" : "text-lg"} min-w-0 break-all font-semibold leading-7 text-zinc-950 dark:text-zinc-50`}>
+      <h2 className={`${compact ? "text-base" : "text-lg"} min-w-0 break-words font-semibold leading-7 text-zinc-950 dark:text-zinc-50`}>
         <Link href={article.url} className="outline-none transition group-hover:text-emerald-700 focus-visible:text-emerald-700 dark:group-hover:text-emerald-300 dark:focus-visible:text-emerald-300">
           {article.title}
         </Link>

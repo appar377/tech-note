@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">SQL EXPLAIN and EXPLAIN ANALYZE thumbnail</title>
+  <desc id="desc">A clean execution plan diagram comparing estimated plan and actual metrics.</desc>
+  <rect width="1200" height="675" fill="#FAFAFA"/>
+  <rect x="84" y="74" width="1032" height="527" rx="28" fill="#FFFFFF" stroke="#E4E4E7" stroke-width="2"/>
+  <text x="132" y="144" fill="#047857" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="700">SQL Performance</text>
+  <text x="132" y="210" fill="#18181B" font-family="Inter, Arial, sans-serif" font-size="64" font-weight="800">EXPLAIN</text>
+  <text x="132" y="284" fill="#18181B" font-family="Inter, Arial, sans-serif" font-size="64" font-weight="800">ANALYZE</text>
+  <g font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700">
+    <rect x="124" y="362" width="158" height="76" rx="18" fill="#ECFDF5" stroke="#A7F3D0"/>
+    <text x="154" y="410" fill="#047857">Parser</text>
+    <rect x="318" y="362" width="176" height="76" rx="18" fill="#F4F4F5" stroke="#D4D4D8"/>
+    <text x="351" y="410" fill="#18181B">Optimizer</text>
+    <rect x="530" y="362" width="158" height="76" rx="18" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <text x="563" y="410" fill="#1D4ED8">Plan</text>
+    <rect x="724" y="362" width="158" height="76" rx="18" fill="#FDF2F8" stroke="#FBCFE8"/>
+    <text x="748" y="410" fill="#BE185D">Actual</text>
+  </g>
+  <g fill="none" stroke="#18181B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M282 400H318"/>
+    <path d="M494 400H530"/>
+    <path d="M688 400H724"/>
+  </g>
+  <g font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700">
+    <rect x="124" y="496" width="200" height="58" rx="16" fill="#F4F4F5"/>
+    <text x="144" y="533" fill="#18181B">rows estimate</text>
+    <rect x="358" y="496" width="178" height="58" rx="16" fill="#F4F4F5"/>
+    <text x="382" y="533" fill="#18181B">index scan</text>
+    <rect x="570" y="496" width="146" height="58" rx="16" fill="#FEF3C7"/>
+    <text x="603" y="533" fill="#B45309">sort</text>
+    <rect x="750" y="496" width="170" height="58" rx="16" fill="#ECFDF5"/>
+    <text x="773" y="533" fill="#047857">actual ms</text>
+  </g>
+  <path d="M803 438C803 464 835 474 835 496" fill="none" stroke="#34D399" stroke-width="5" stroke-linecap="round"/>
+  <path d="M609 438C609 462 643 474 643 496" fill="none" stroke="#93C5FD" stroke-width="5" stroke-linecap="round"/>
+  <path d="M406 438C406 462 447 474 447 496" fill="none" stroke="#A1A1AA" stroke-width="4" stroke-linecap="round"/>
+</svg>

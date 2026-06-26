@@ -119,8 +119,8 @@ export default async function ArticlePage({ params }: PageProps) {
             </Link>
           ) : null}
         </div>
-        <h1 className="max-w-4xl break-all text-2xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
-          <ResponsiveText text={article.title} maxUnits={14} />
+        <h1 className="max-w-4xl break-words text-2xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
+          <ResponsiveText text={article.title} maxUnits={15} />
         </h1>
         <p className="mt-5 max-w-3xl text-base leading-8 text-zinc-600 dark:text-zinc-400 sm:text-lg">
           <ResponsiveText text={article.description} maxUnits={22} />
@@ -231,25 +231,34 @@ function chunkText(text: string, maxUnits: number) {
   const chunks: string[] = [];
   let current = "";
   let units = 0;
+  const tokens = text.match(/[A-Za-z0-9_./+-]+|\s+|./gu) ?? [];
 
-  for (const character of Array.from(text)) {
-    const nextUnits = units + displayUnits(character);
+  for (const token of tokens) {
+    const tokenUnits = displayTextUnits(token);
 
-    if (current && nextUnits > maxUnits) {
-      chunks.push(current);
+    if (current.trim() && units + tokenUnits > maxUnits) {
+      chunks.push(current.trim());
       current = "";
       units = 0;
     }
 
-    current += character;
-    units += displayUnits(character);
+    if (!current && /^\s+$/.test(token)) {
+      continue;
+    }
+
+    current += token;
+    units += tokenUnits;
   }
 
-  if (current) {
-    chunks.push(current);
+  if (current.trim()) {
+    chunks.push(current.trim());
   }
 
   return chunks;
+}
+
+function displayTextUnits(text: string) {
+  return Array.from(text).reduce((total, character) => total + displayUnits(character), 0);
 }
 
 function displayUnits(character: string) {

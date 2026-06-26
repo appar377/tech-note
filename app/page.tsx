@@ -42,7 +42,7 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <h2 className="max-w-3xl break-all text-3xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
+          <h2 className="max-w-3xl break-words text-3xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
             <span className="block sm:inline">技術知識を、</span>
             <span className="block sm:inline">探せる形で残す。</span>
           </h2>
