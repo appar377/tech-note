@@ -1,0 +1,15 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#FAFAFA"/>
+  <rect x="64" y="64" width="1072" height="547" rx="28" fill="#FFFFFF" stroke="#E4E4E7"/>
+  <text x="108" y="148" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="30" font-weight="700">GitHub Pull Request</text>
+  <text x="108" y="226" fill="#18181B" font-family="Arial, sans-serif" font-size="64" font-weight="700">Merge Methods</text>
+  <rect x="108" y="326" width="284" height="150" rx="18" fill="#F4F4F5" stroke="#D4D4D8"/>
+  <rect x="458" y="326" width="284" height="150" rx="18" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <rect x="808" y="326" width="284" height="150" rx="18" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="142" y="386" fill="#18181B" font-family="Arial, sans-serif" font-size="30" font-weight="700">merge</text>
+  <text x="492" y="386" fill="#047857" font-family="Arial, sans-serif" font-size="30" font-weight="700">squash</text>
+  <text x="842" y="386" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="30" font-weight="700">rebase</text>
+  <path d="M142 430H358" stroke="#18181B" stroke-width="10" stroke-linecap="round"/>
+  <path d="M492 430H708" stroke="#047857" stroke-width="10" stroke-linecap="round"/>
+  <path d="M842 430H1058" stroke="#1D4ED8" stroke-width="10" stroke-linecap="round"/>
+</svg>

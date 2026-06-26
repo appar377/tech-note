@@ -1,0 +1,11 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#FAFAFA"/>
+  <rect x="64" y="64" width="1072" height="547" rx="28" fill="#FFFFFF" stroke="#E4E4E7"/>
+  <text x="108" y="148" fill="#B91C1C" font-family="Arial, sans-serif" font-size="30" font-weight="700">Rails + SQL</text>
+  <text x="108" y="226" fill="#18181B" font-family="Arial, sans-serif" font-size="66" font-weight="700">Raw SQL Patterns</text>
+  <rect x="108" y="340" width="984" height="190" rx="18" fill="#18181B"/>
+  <text x="150" y="404" fill="#A7F3D0" font-family="Arial, sans-serif" font-size="30" font-weight="700">execute(&lt;&lt;~SQL)</text>
+  <text x="150" y="462" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">INSERT ... SELECT</text>
+  <text x="530" y="462" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">ROW_NUMBER()</text>
+  <text x="150" y="508" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">ON DUPLICATE KEY UPDATE</text>
+</svg>

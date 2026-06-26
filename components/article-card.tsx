@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CalendarDays, Clock } from "lucide-react";
+import { ArticleThumbnail } from "@/components/article-thumbnail";
 import type { Article } from "@/lib/articles";
 import { formatDate } from "@/lib/format";
 import { slugify } from "@/lib/slug";
@@ -13,6 +14,14 @@ export function ArticleCard({
 }) {
   return (
     <article className="group flex h-full min-w-0 flex-col rounded-lg border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700">
+      {article.thumbnail ? (
+        <Link
+          href={article.url}
+          className="mb-4 block rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+        >
+          <ArticleThumbnail article={article} />
+        </Link>
+      ) : null}
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
         <Link
           href={`/categories/${article.categorySlug}`}

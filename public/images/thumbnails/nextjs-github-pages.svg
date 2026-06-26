@@ -1,0 +1,15 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#FAFAFA"/>
+  <rect x="64" y="64" width="1072" height="547" rx="28" fill="#FFFFFF" stroke="#E4E4E7"/>
+  <text x="108" y="148" fill="#18181B" font-family="Arial, sans-serif" font-size="30" font-weight="700">Next.js</text>
+  <text x="108" y="226" fill="#18181B" font-family="Arial, sans-serif" font-size="66" font-weight="700">Static Export</text>
+  <text x="108" y="290" fill="#71717A" font-family="Arial, sans-serif" font-size="36" font-weight="700">to GitHub Pages</text>
+  <rect x="108" y="392" width="292" height="92" rx="16" fill="#18181B"/>
+  <text x="150" y="450" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">next build</text>
+  <path d="M430 438H556" stroke="#34D399" stroke-width="12" stroke-linecap="round"/>
+  <path d="M538 408L568 438L538 468" stroke="#34D399" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="596" y="392" width="232" height="92" rx="16" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="672" y="450" fill="#047857" font-family="Arial, sans-serif" font-size="32" font-weight="700">out/</text>
+  <rect x="868" y="392" width="224" height="92" rx="16" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="918" y="450" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="30" font-weight="700">Pages</text>
+</svg>

@@ -1,0 +1,12 @@
+<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="675" fill="#FAFAFA"/>
+  <rect x="64" y="64" width="1072" height="547" rx="28" fill="#FFFFFF" stroke="#E4E4E7"/>
+  <text x="108" y="148" fill="#B91C1C" font-family="Arial, sans-serif" font-size="30" font-weight="700">MySQL</text>
+  <text x="108" y="226" fill="#18181B" font-family="Arial, sans-serif" font-size="66" font-weight="700">UPSERT</text>
+  <text x="108" y="288" fill="#71717A" font-family="Arial, sans-serif" font-size="36" font-weight="700">ON DUPLICATE KEY UPDATE</text>
+  <rect x="108" y="374" width="984" height="132" rx="18" fill="#18181B"/>
+  <text x="150" y="432" fill="#A7F3D0" font-family="Arial, sans-serif" font-size="30" font-weight="700">INSERT</text>
+  <text x="338" y="432" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">or</text>
+  <text x="448" y="432" fill="#93C5FD" font-family="Arial, sans-serif" font-size="30" font-weight="700">UPDATE</text>
+  <text x="150" y="480" fill="#D4D4D8" font-family="Arial, sans-serif" font-size="24">decided by PRIMARY KEY / UNIQUE INDEX</text>
+</svg>

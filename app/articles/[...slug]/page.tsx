@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, CalendarDays, Clock, Folder, Tags } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
+import { ArticleThumbnail } from "@/components/article-thumbnail";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { MdxContent } from "@/components/mdx-content";
 import { ShareLinks } from "@/components/share-links";
@@ -15,6 +16,7 @@ import {
   getRelatedArticles,
 } from "@/lib/articles";
 import { formatDate } from "@/lib/format";
+import { absoluteUrl } from "@/lib/site";
 import { slugify } from "@/lib/slug";
 
 type PageProps = {
@@ -37,6 +39,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     return {};
   }
 
+  const socialImage = article.thumbnail
+    ? {
+        url: absoluteUrl(article.thumbnail),
+        width: 1200,
+        height: 675,
+        alt: article.title,
+      }
+    : {
+        url: absoluteUrl("/tech-note-mark.svg"),
+        width: 1200,
+        height: 630,
+        alt: article.title,
+      };
+
   return {
     title: article.title,
     description: article.description,
@@ -51,11 +67,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       publishedTime: article.date,
       modifiedTime: article.updated ?? article.date,
       tags: article.tags,
+      images: [socialImage],
     },
     twitter: {
       card: "summary_large_image",
       title: article.title,
       description: article.description,
+      images: [socialImage.url],
     },
   };
 }
@@ -138,6 +156,11 @@ export default async function ArticlePage({ params }: PageProps) {
         <div className="mt-6">
           <ShareLinks title={article.title} url={article.canonicalUrl} />
         </div>
+        {article.thumbnail ? (
+          <div className="mt-8 max-w-4xl">
+            <ArticleThumbnail article={article} priority />
+          </div>
+        ) : null}
       </header>
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
