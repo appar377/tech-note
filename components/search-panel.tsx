@@ -36,7 +36,7 @@ export function SearchPanel({ index, compact = false }: SearchPanelProps) {
   }, [compact, index, query]);
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="min-w-0 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950">
       <label className="relative block">
         <Search
           aria-hidden
@@ -47,15 +47,19 @@ export function SearchPanel({ index, compact = false }: SearchPanelProps) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="ROW_NUMBER, Rails UPSERT, GitHub Pages..."
-          className="h-12 w-full rounded-lg border border-zinc-200 bg-zinc-50 pl-10 pr-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-zinc-600 dark:focus:bg-zinc-950"
+          className="h-12 w-full min-w-0 rounded-lg border border-zinc-200 bg-zinc-50 pl-10 pr-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-emerald-400 dark:focus:bg-zinc-950"
         />
       </label>
       {query ? (
-        <div className="mt-3 divide-y divide-zinc-100 dark:divide-zinc-900">
+        <div className="mt-3 max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900">
           {results.length > 0 ? (
             results.map((result) => (
-              <Link key={result.url} href={result.url} className="block rounded-md px-2 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-900">
-                <span className="block text-sm font-semibold text-zinc-950 dark:text-zinc-50">
+              <Link
+                key={result.url}
+                href={result.url}
+                className="block min-w-0 rounded-md px-2 py-3 outline-none transition hover:bg-zinc-50 focus-visible:bg-zinc-50 dark:hover:bg-zinc-900 dark:focus-visible:bg-zinc-900"
+              >
+                <span className="block break-words text-sm font-semibold text-zinc-950 dark:text-zinc-50">
                   {result.title}
                 </span>
                 <span className="mt-1 line-clamp-1 block text-xs text-zinc-500 dark:text-zinc-400">

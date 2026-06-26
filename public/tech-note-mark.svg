@@ -1,14 +1,24 @@
 <svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect width="1200" height="630" fill="#FAFAFA"/>
-  <rect x="120" y="96" width="960" height="438" rx="24" fill="#FFFFFF" stroke="#D4D4D8"/>
-  <rect x="180" y="156" width="360" height="48" rx="8" fill="#18181B"/>
-  <rect x="180" y="246" width="720" height="20" rx="10" fill="#A1A1AA"/>
-  <rect x="180" y="290" width="600" height="20" rx="10" fill="#D4D4D8"/>
-  <rect x="180" y="356" width="196" height="44" rx="8" fill="#ECFDF5"/>
-  <rect x="396" y="356" width="168" height="44" rx="8" fill="#EFF6FF"/>
-  <rect x="584" y="356" width="188" height="44" rx="8" fill="#FFFBEB"/>
-  <path d="M910 186H994V270H910V186Z" fill="#18181B"/>
-  <path d="M932 210H972V222H932V210Z" fill="#FAFAFA"/>
-  <path d="M932 237H972V249H932V237Z" fill="#FAFAFA"/>
-  <text x="180" y="480" fill="#18181B" font-family="Arial, sans-serif" font-size="54" font-weight="700">Tech Note</text>
+  <rect x="72" y="72" width="1056" height="486" rx="32" fill="#FFFFFF" stroke="#E4E4E7"/>
+  <rect x="124" y="124" width="112" height="112" rx="24" fill="#18181B"/>
+  <path d="M157 154H203" stroke="#34D399" stroke-width="9" stroke-linecap="round"/>
+  <path d="M160 171H178V215H160V171Z" fill="#FAFAFA"/>
+  <path d="M188 171H205C212.18 171 218 176.82 218 184V215H201C193.82 215 188 209.18 188 202V171Z" stroke="#FAFAFA" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M201 185H208" stroke="#34D399" stroke-width="6" stroke-linecap="round"/>
+  <text x="270" y="172" fill="#18181B" font-family="Arial, sans-serif" font-size="54" font-weight="700">Tech Note</text>
+  <text x="270" y="218" fill="#047857" font-family="Arial, sans-serif" font-size="24" font-weight="700">Single Source of Truth</text>
+  <text x="124" y="324" fill="#18181B" font-family="Arial, sans-serif" font-size="52" font-weight="700">Personal Engineering Library</text>
+  <text x="124" y="378" fill="#52525B" font-family="Arial, sans-serif" font-size="28">Markdown articles, searchable notes, categories, tags, and series.</text>
+  <rect x="124" y="440" width="180" height="48" rx="12" fill="#ECFDF5" stroke="#A7F3D0"/>
+  <text x="154" y="472" fill="#047857" font-family="Arial, sans-serif" font-size="22" font-weight="700">Articles</text>
+  <rect x="324" y="440" width="214" height="48" rx="12" fill="#EFF6FF" stroke="#BFDBFE"/>
+  <text x="354" y="472" fill="#1D4ED8" font-family="Arial, sans-serif" font-size="22" font-weight="700">Knowledge Base</text>
+  <rect x="558" y="440" width="166" height="48" rx="12" fill="#FFFBEB" stroke="#FDE68A"/>
+  <text x="588" y="472" fill="#B45309" font-family="Arial, sans-serif" font-size="22" font-weight="700">Search</text>
+  <path d="M842 158H1036" stroke="#E4E4E7" stroke-width="18" stroke-linecap="round"/>
+  <path d="M842 214H990" stroke="#E4E4E7" stroke-width="18" stroke-linecap="round"/>
+  <path d="M842 270H1050" stroke="#E4E4E7" stroke-width="18" stroke-linecap="round"/>
+  <path d="M842 326H970" stroke="#E4E4E7" stroke-width="18" stroke-linecap="round"/>
+  <path d="M842 382H1030" stroke="#E4E4E7" stroke-width="18" stroke-linecap="round"/>
 </svg>

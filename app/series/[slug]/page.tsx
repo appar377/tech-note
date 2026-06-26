@@ -51,16 +51,19 @@ export default async function SeriesDetailPage({ params }: PageProps) {
       </header>
       <ol className="space-y-4">
         {articles.map((article, index) => (
-          <li key={article.slug} className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
-            <Link href={article.url} className="grid gap-4 sm:grid-cols-[48px_1fr]">
+          <li
+            key={article.slug}
+            className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-950/5 transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+          >
+            <Link href={article.url} className="grid min-w-0 gap-4 sm:grid-cols-[48px_1fr]">
               <span className="grid h-12 w-12 place-items-center rounded-lg bg-zinc-100 font-mono text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
                 {article.series?.order ?? index + 1}
               </span>
-              <span>
-                <span className="block text-lg font-semibold text-zinc-950 dark:text-zinc-50">
+              <span className="min-w-0">
+                <span className="block break-words text-lg font-semibold leading-7 text-zinc-950 dark:text-zinc-50">
                   {article.title}
                 </span>
-                <span className="mt-1 block text-sm text-zinc-600 dark:text-zinc-400">
+                <span className="mt-1 block break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
                   {article.description}
                 </span>
                 <span className="mt-3 block text-xs text-zinc-500 dark:text-zinc-500">

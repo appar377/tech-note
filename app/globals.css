@@ -6,6 +6,7 @@
 :root {
   --background: #fafafa;
   --foreground: #18181b;
+  color-scheme: light;
 }
 
 @theme inline {
@@ -18,12 +19,25 @@
 html.dark {
   --background: #09090b;
   --foreground: #f4f4f5;
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
 }
 
 ::selection {
@@ -33,10 +47,22 @@ body {
 
 .page-shell {
   @apply mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14;
+  line-break: anywhere;
+  overflow-wrap: anywhere;
+}
+
+.page-shell :where(h1, h2, h3, p, li) {
+  word-break: break-all;
+}
+
+@media (max-width: 39.999rem) {
+  .page-shell :where(h1, h2, h3, p) {
+    max-width: calc(100vw - 2rem);
+  }
 }
 
 .page-heading {
-  @apply max-w-3xl text-3xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl;
+  @apply max-w-3xl break-words text-3xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-4xl;
 }
 
 .page-subtitle {
@@ -56,7 +82,8 @@ body {
 }
 
 .prose {
-  @apply text-zinc-700 dark:text-zinc-300;
+  @apply break-words text-zinc-700 dark:text-zinc-300;
+  overflow-wrap: break-word;
 }
 
 .prose :where(h2, h3, h4) {
@@ -64,15 +91,15 @@ body {
 }
 
 .prose h2 {
-  @apply mt-12 border-t border-zinc-200 pt-8 text-2xl dark:border-zinc-800;
+  @apply mt-12 border-t border-zinc-200 pt-8 text-2xl leading-tight dark:border-zinc-800;
 }
 
 .prose h3 {
-  @apply mt-9 text-xl;
+  @apply mt-9 text-xl leading-tight;
 }
 
 .prose h4 {
-  @apply mt-7 text-lg;
+  @apply mt-7 text-lg leading-tight;
 }
 
 .prose p {
@@ -101,12 +128,12 @@ body {
 }
 
 .prose table {
-  @apply my-8 w-full border-collapse text-sm;
+  @apply my-8 block max-w-full overflow-x-auto border-collapse text-sm;
 }
 
 .prose th,
 .prose td {
-  @apply border border-zinc-200 px-3 py-2 text-left dark:border-zinc-800;
+  @apply min-w-36 border border-zinc-200 px-3 py-2 text-left align-top dark:border-zinc-800;
 }
 
 .prose th {
@@ -155,7 +182,7 @@ body {
 }
 
 .code-block pre {
-  @apply my-0 max-h-[560px] overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100 dark:border-zinc-800;
+  @apply my-0 max-h-[560px] max-w-full overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100 dark:border-zinc-800;
 }
 
 .code-copy-button {
@@ -175,7 +202,7 @@ figcaption[data-rehype-pretty-code-title] {
 }
 
 code:not(pre code) {
-  @apply rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[0.9em] text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100;
+  @apply break-words rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[0.9em] text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100;
 }
 
 pre code {
