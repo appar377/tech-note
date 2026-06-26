@@ -1,0 +1,173 @@
+---
+title: PRのマージ方法を理解しよう
+description: GitHubのCreate a merge commit、Squash merge、Rebase and mergeの違いと履歴の残り方を整理する。
+date: 2026-06-26
+tags:
+  - Git
+  - GitHub
+  - Pull Request
+category: GitHub
+draft: false
+popular: true
+---
+
+GitHubでPull Requestをマージするとき、何となくデフォルトのボタンを押していませんか？
+
+実はGitHubには次の3種類のマージ方法があります。
+
+- Create a merge commit
+- Squash merge
+- Rebase and merge
+
+それぞれ履歴の残り方が異なるため、特徴を理解して使い分けることが重要です。
+
+## 1. Create a merge commit
+
+最も一般的なマージ方法です。
+
+GitHubではデフォルトで有効になっていることが多く、普段意識せずにマージしている方もこの方法を利用していると思います。
+
+例えば次のような履歴があるとします。
+
+```text
+main
+
+A → B → C
+
+feature
+
+      D → E → F
+```
+
+この状態で **Create a merge commit** を行うと、以下のようになります。
+
+```text
+A → B → C -------- M
+         \        /
+          D → E → F
+```
+
+`M` がマージコミットです。
+
+### メリット
+
+- ブランチの分岐・マージの履歴がそのまま残る
+- 開発の流れを後から追いやすい
+- コミット単位で詳細な調査ができる
+
+### デメリット
+
+- Merge Commitが増える
+- 長期間運用すると履歴が複雑になりやすい
+
+## 2. Squash merge
+
+Squash Mergeは、PR内の複数コミットを **1つのコミットにまとめて** マージします。
+
+例えば以下のような履歴があるとします。
+
+```text
+feature
+
+D → E → F
+
+main
+
+A → B → C
+```
+
+これをSquash Mergeすると、以下のようになります。
+
+```text
+A → B → C → S
+```
+
+`S` は以下を1つにまとめた新しいコミットです。
+
+```text
+D + E + F
+```
+
+featureブランチ上にあった以下のコミット履歴は、mainブランチには残りません。
+
+- D
+- E
+- F
+
+### メリット
+
+- コミット履歴が非常にきれいになる
+- 「1PR = 1コミット」とできる
+- revertしやすい
+
+### デメリット
+
+- 作業途中のコミット履歴が失われる
+- 「どのコミットで不具合が入ったか」を追いにくくなる
+- `git bisect` が使いづらくなるケースもある
+
+Squash Mergeについては賛否両論があり、有名な記事として [No reason to squash](https://arialdomartini.github.io/no-reason-to-squash) があります。
+
+## 3. Rebase and merge
+
+Rebase Mergeは、**コミット履歴を維持したまま一直線の履歴にする** マージ方法です。
+
+例えば以下のような履歴があるとします。
+
+```text
+main
+
+A → B → C
+
+feature
+
+      D → E → F
+```
+
+これをRebase Mergeすると、以下のようになります。
+
+```text
+A → B → C → D' → E' → F'
+```
+
+見た目はそのままですが、実際には以下のような新しいコミットが作られます。
+
+- D'
+- E'
+- F'
+
+そのためコミットハッシュは変更されます。
+
+### メリット
+
+- 履歴が一直線になる
+- Merge Commitが作られない
+- `git log` が見やすい
+
+### デメリット
+
+- コミットハッシュが変わる
+- 公開済みブランチではリベースを避けるべきケースがある
+- Git初心者には少し理解が難しい
+
+## どれを使えばいいの？
+
+絶対的な正解はありません。
+
+チームの運用方針に合わせて選ぶのが一般的です。
+
+| マージ方法 | 履歴 | Merge Commit | コミット履歴 |
+| --- | --- | --- | --- |
+| Create a merge commit | 分岐が残る | ○ | 全て残る |
+| Squash merge | 一直線 | × | 1つにまとまる |
+| Rebase and merge | 一直線 | × | 全て残る |
+
+## まとめ
+
+それぞれのマージ方法には次のような特徴があります。
+
+- **Create a merge commit**: 開発の履歴をそのまま残したい場合に向いている
+- **Squash merge**: 履歴をシンプルに保ちたい場合に向いている
+- **Rebase and merge**: 履歴を一直線にしつつ、コミットも残したい場合に向いている
+
+普段は何気なくマージボタンを押しているかもしれませんが、それぞれの違いを理解しておくと、チームの開発スタイルや運用方針に合わせて適切に使い分けられるようになります。
