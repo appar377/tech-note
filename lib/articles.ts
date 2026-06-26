@@ -3,7 +3,7 @@ import path from "node:path";
 import GithubSlugger from "github-slugger";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import { absoluteUrl, githubEditUrl } from "./site";
+import { absoluteUrl } from "./site";
 import { normalizeSearchText, slugify, titleFromSlug } from "./slug";
 
 const PROJECT_ROOT = /* turbopackIgnore: true */ process.cwd();
@@ -64,7 +64,6 @@ export type Article = {
   sourcePath: string;
   url: string;
   canonicalUrl: string;
-  editUrl: string;
   content: string;
   plainText: string;
   readingTimeMinutes: number;
@@ -315,7 +314,6 @@ export function parseArticleFile(filePath: string): Article {
     sourcePath,
     url,
     canonicalUrl: absoluteUrl(url),
-    editUrl: githubEditUrl(sourcePath),
     content: parsed.content,
     plainText,
     readingTimeMinutes: estimateReadingTime(parsed.content),

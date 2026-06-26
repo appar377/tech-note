@@ -4,8 +4,6 @@ export const SITE_DESCRIPTION =
 export const SITE_URL = "https://appar377.github.io/tech-note";
 export const BASE_PATH = "/tech-note";
 export const GITHUB_REPO_URL = "https://github.com/appar377/tech-note";
-export const GITHUB_EDIT_BASE_URL =
-  "https://github.com/appar377/tech-note/edit/main";
 
 export function absoluteUrl(path = "/") {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -23,8 +21,4 @@ export function withBasePath(path: string) {
   }
 
   return `${BASE_PATH}${normalizedPath}`;
-}
-
-export function githubEditUrl(sourcePath: string) {
-  return `${GITHUB_EDIT_BASE_URL}/${sourcePath}`;
 }

@@ -130,7 +130,7 @@ export default async function ArticlePage({ params }: PageProps) {
           ))}
         </div>
         <div className="mt-6">
-          <ShareLinks title={article.title} url={article.canonicalUrl} editUrl={article.editUrl} />
+          <ShareLinks title={article.title} url={article.canonicalUrl} />
         </div>
       </header>
 
