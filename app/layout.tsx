@@ -59,6 +59,7 @@ export default function RootLayout({
     <html
       lang="ja"
       suppressHydrationWarning
+      data-au-theme="neutral"
       className={`${geistSans.variable} ${geistMono.variable} h-full scroll-smooth antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">

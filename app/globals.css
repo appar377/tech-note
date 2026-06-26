@@ -1,11 +1,12 @@
 @import "tailwindcss";
+@import "@appar377/atelier-css";
 @import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --background: var(--au-color-bg);
+  --foreground: var(--au-color-text);
   color-scheme: light;
 }
 
@@ -17,8 +18,8 @@
 }
 
 html.dark {
-  --background: #09090b;
-  --foreground: #f4f4f5;
+  --background: var(--au-color-bg);
+  --foreground: var(--au-color-text);
   color-scheme: dark;
 }
 
@@ -41,8 +42,8 @@ canvas {
 }
 
 ::selection {
-  background: #a7f3d0;
-  color: #064e3b;
+  background: var(--au-knowledge-accent-border);
+  color: var(--au-knowledge-accent-text);
 }
 
 .page-shell {

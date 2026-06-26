@@ -13,7 +13,9 @@ export function ThemeScript() {
       const stored = localStorage.getItem("${STORAGE_KEY}");
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const theme = stored || "system";
-      document.documentElement.classList.toggle("dark", theme === "dark" || (theme === "system" && prefersDark));
+      const isDark = theme === "dark" || (theme === "system" && prefersDark);
+      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.dataset.auTheme = isDark ? "dark" : "neutral";
     })();
   `;
 
@@ -33,10 +35,9 @@ export function ThemeToggle() {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
 
     function applyTheme() {
-      document.documentElement.classList.toggle(
-        "dark",
-        theme === "dark" || (theme === "system" && media.matches),
-      );
+      const isDark = theme === "dark" || (theme === "system" && media.matches);
+      document.documentElement.classList.toggle("dark", isDark);
+      document.documentElement.dataset.auTheme = isDark ? "dark" : "neutral";
     }
 
     applyTheme();
