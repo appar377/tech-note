@@ -1,0 +1,62 @@
+---
+title: ROW_NUMBERでグループ内の順位を付ける
+description: Window FunctionのROW_NUMBERを使い、ユーザーごとの最新レコードを取り出す方法を整理する。
+date: 2026-06-21
+tags:
+  - SQL
+  - Rails
+  - Window Function
+  - PostgreSQL
+category: Rails
+series:
+  name: Railsで生SQLを書くときに知っておきたいSQL
+  order: 2
+draft: false
+popular: true
+---
+
+## ROW_NUMBERとは
+
+`ROW_NUMBER()` は、指定した並び順に従って行番号を振るWindow Functionです。グループごとの最新行を1件だけ取りたいときに便利です。
+
+> [!NOTE]
+> `ROW_NUMBER()` は同順位を作りません。同じ値が並んでも必ず連番になります。
+
+## 最新ログインを1件だけ取得する
+
+```sql title="latest_login.sql"
+WITH ranked_logins AS (
+  SELECT
+    user_id,
+    logged_in_at,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY logged_in_at DESC
+    ) AS row_num
+  FROM login_events
+)
+SELECT user_id, logged_in_at
+FROM ranked_logins
+WHERE row_num = 1;
+```
+
+## PARTITION BYとORDER BY
+
+$$
+\text{row\_num} = f(partition, order)
+$$
+
+- `PARTITION BY user_id`: ユーザーごとに番号を振り直す
+- `ORDER BY logged_in_at DESC`: 新しいログインから順に並べる
+
+## Railsで使う場合
+
+```ruby title="latest_login_query.rb"
+LoginEvent
+  .select("user_id, logged_in_at")
+  .from("(#{ranked_sql}) ranked_logins")
+  .where(row_num: 1)
+```
+
+> [!WARNING]
+> ActiveRecordのクエリメソッドだけで無理に表現すると読みづらくなる場合があります。複雑なWindow FunctionはSQLとして管理する方が安全です。

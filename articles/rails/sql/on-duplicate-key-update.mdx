@@ -1,0 +1,54 @@
+---
+title: ON DUPLICATE KEY UPDATEでUPSERTする
+description: MySQLで重複キー時にINSERTではなくUPDATEへ切り替えるUPSERTパターンを整理する。
+date: 2026-06-22
+tags:
+  - SQL
+  - MySQL
+  - Rails
+  - UPSERT
+category: Rails
+series:
+  name: Railsで生SQLを書くときに知っておきたいSQL
+  order: 3
+draft: false
+popular: false
+---
+
+## UPSERTとは
+
+UPSERTは、存在しなければINSERTし、存在すればUPDATEする処理です。MySQLでは `ON DUPLICATE KEY UPDATE` を使います。
+
+## 基本形
+
+```sql title="upsert.sql"
+INSERT INTO user_scores (user_id, score, updated_at)
+VALUES (1, 120, NOW())
+ON DUPLICATE KEY UPDATE
+  score = VALUES(score),
+  updated_at = VALUES(updated_at);
+```
+
+`user_id` に一意制約がある場合、同じ `user_id` の行がすでにあればUPDATEに切り替わります。
+
+## 注意点
+
+> [!IMPORTANT]
+> 重複判定はUNIQUE INDEXまたはPRIMARY KEYに依存します。アプリケーション上の「同じはず」では発火しません。
+
+```mermaid
+sequenceDiagram
+  participant App
+  participant DB
+  App->>DB: INSERT
+  alt unique key exists
+    DB-->>DB: UPDATE
+  else no duplicate
+    DB-->>DB: INSERT
+  end
+  DB-->>App: result
+```
+
+## ActiveRecordの選択肢
+
+Railsには `upsert_all` もあります。生SQLを使うのは、式や複雑な更新条件が必要なときに限定すると扱いやすくなります。

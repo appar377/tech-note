@@ -1,0 +1,14 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" fill="#FAFAFA"/>
+  <rect x="120" y="96" width="960" height="438" rx="24" fill="#FFFFFF" stroke="#D4D4D8"/>
+  <rect x="180" y="156" width="360" height="48" rx="8" fill="#18181B"/>
+  <rect x="180" y="246" width="720" height="20" rx="10" fill="#A1A1AA"/>
+  <rect x="180" y="290" width="600" height="20" rx="10" fill="#D4D4D8"/>
+  <rect x="180" y="356" width="196" height="44" rx="8" fill="#ECFDF5"/>
+  <rect x="396" y="356" width="168" height="44" rx="8" fill="#EFF6FF"/>
+  <rect x="584" y="356" width="188" height="44" rx="8" fill="#FFFBEB"/>
+  <path d="M910 186H994V270H910V186Z" fill="#18181B"/>
+  <path d="M932 210H972V222H932V210Z" fill="#FAFAFA"/>
+  <path d="M932 237H972V249H932V237Z" fill="#FAFAFA"/>
+  <text x="180" y="480" fill="#18181B" font-family="Arial, sans-serif" font-size="54" font-weight="700">Tech Note</text>
+</svg>

@@ -1,0 +1,55 @@
+---
+title: Next.jsをGitHub Pagesへ静的Exportする
+description: App RouterのNext.jsサイトをGitHub Pagesで配信するためのoutput export、basePath、Actions設定を整理する。
+date: 2026-06-25
+tags:
+  - Next.js
+  - GitHub Pages
+  - GitHub Actions
+  - SSG
+category: Next.js
+draft: false
+popular: true
+---
+
+## GitHub Pagesで配信する前提
+
+GitHub Pagesは静的ファイルを配信する仕組みです。Next.jsで使う場合は、Node.jsサーバーが必要な機能を避け、ビルド時にHTML/CSS/JSを生成します。
+
+```ts title="next.config.ts"
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  output: "export",
+  basePath: "/tech-note",
+  trailingSlash: true,
+  images: {
+    unoptimized: true,
+  },
+};
+
+export default nextConfig;
+```
+
+## 避ける機能
+
+- Server Actions
+- ISR
+- Request依存のRoute Handler
+- cookies / headers
+- redirects / rewrites / proxy
+- デフォルトのImage Optimization
+
+> [!INFO]
+> 記事サイトのMVPは、ビルド時生成とクライアント検索だけで十分成立します。
+
+## Actionsの流れ
+
+```mermaid
+flowchart TD
+  A[mainへpush] --> B[npm ci]
+  B --> C[lint / typecheck / test]
+  C --> D[next build]
+  D --> E[outをartifact化]
+  E --> F[GitHub Pagesへdeploy]
+```

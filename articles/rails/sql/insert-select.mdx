@@ -1,0 +1,77 @@
+---
+title: INSERT SELECTで検索結果をまとめて投入する
+description: Railsから生SQLを書く前提で、INSERT SELECTの用途、注意点、ActiveRecordでの実行例を整理する。
+date: 2026-06-20
+updated: 2026-06-25
+tags:
+  - SQL
+  - Rails
+  - ActiveRecord
+  - MySQL
+category: Rails
+series:
+  name: Railsで生SQLを書くときに知っておきたいSQL
+  order: 1
+draft: false
+popular: true
+---
+
+## INSERT SELECTの使いどころ
+
+`INSERT SELECT` は、検索結果をそのまま別テーブルへ投入したいときに使うSQLです。アプリケーション側で一度配列に展開せず、データベース内で処理を完結できます。
+
+> [!TIP]
+> 大量データを扱う場合は、RubyのループよりもSQL側でまとめて処理した方が速く、メモリ使用量も安定します。
+
+## 基本形
+
+```sql title="insert_select.sql"
+INSERT INTO archived_users (user_id, email, archived_at)
+SELECT id, email, NOW()
+FROM users
+WHERE deleted_at IS NOT NULL;
+```
+
+| 句 | 役割 |
+| --- | --- |
+| `INSERT INTO` | 投入先のテーブルとカラム |
+| `SELECT` | 投入する値を作る検索 |
+| `WHERE` | 対象行の絞り込み |
+
+## ActiveRecordから実行する
+
+```ruby title="archive_users.rb"
+sql = <<~SQL.squish
+  INSERT INTO archived_users (user_id, email, archived_at)
+  SELECT id, email, NOW()
+  FROM users
+  WHERE deleted_at IS NOT NULL
+SQL
+
+ActiveRecord::Base.connection.execute(sql)
+```
+
+## 処理の流れ
+
+```mermaid
+flowchart LR
+  A[usersを検索] --> B[条件に合う行を抽出]
+  B --> C[archived_usersへINSERT]
+  C --> D[アーカイブ完了]
+```
+
+## チェックポイント
+
+- [x] 投入先カラムとSELECTの列数を一致させる
+- [x] 重複キーが起きる条件を確認する
+- [ ] 本番実行前に件数を確認する
+
+<Accordion title="実行前に確認するSELECT">
+
+```sql
+SELECT COUNT(*)
+FROM users
+WHERE deleted_at IS NOT NULL;
+```
+
+</Accordion>
