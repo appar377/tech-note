@@ -1,11 +1,46 @@
-<svg width="1200" height="675" viewBox="0 0 1200 675" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="1200" height="675" fill="#FAFAFA"/>
-  <rect x="64" y="64" width="1072" height="547" rx="28" fill="#FFFFFF" stroke="#E4E4E7"/>
-  <text x="108" y="148" fill="#B91C1C" font-family="Arial, sans-serif" font-size="30" font-weight="700">Rails + SQL</text>
-  <text x="108" y="226" fill="#18181B" font-family="Arial, sans-serif" font-size="66" font-weight="700">Raw SQL Patterns</text>
-  <rect x="108" y="340" width="984" height="190" rx="18" fill="#18181B"/>
-  <text x="150" y="404" fill="#A7F3D0" font-family="Arial, sans-serif" font-size="30" font-weight="700">execute(&lt;&lt;~SQL)</text>
-  <text x="150" y="462" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">INSERT ... SELECT</text>
-  <text x="530" y="462" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">ROW_NUMBER()</text>
-  <text x="150" y="508" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="30" font-weight="700">ON DUPLICATE KEY UPDATE</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Rails raw SQL patterns thumbnail</title>
+  <desc id="desc">Rails raw SQL cover showing migration snippets and practical SQL patterns.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#100B1F"/>
+      <stop offset="1" stop-color="#1F1833"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#F472B6" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#F472B6" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#34D399" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse">
+      <path d="M56 0H0V56" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#grid)" opacity="0.7"/>
+  <path d="M-60 580C170 456 293 528 514 406C726 289 857 114 1264 156V735H-60Z" fill="#F472B6" opacity="0.13"/>
+  <path d="M741 -80L1268 151V675H974L597 96Z" fill="#34D399" opacity="0.14"/>
+  <rect x="-120" y="210" width="1440" height="86" transform="rotate(-10 600 253)" fill="url(#shine)" opacity="0.8"/>
+  <rect x="28" y="28" width="1144" height="619" rx="34" fill="none" stroke="#FFFFFF" stroke-opacity="0.09"/>
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+    <rect x="72" y="72" width="240" height="42" rx="21" fill="#FFFFFF" fill-opacity="0.10" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <circle cx="94" cy="93" r="6" fill="#F472B6"/>
+    <text x="112" y="99" fill="#DDE6F3" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="22" font-weight="750" text-anchor="start">Rails + SQL</text>
+    <text x="72" y="188" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="68" font-weight="850" text-anchor="start">RAW SQL</text>
+  <text x="72" y="264" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="68" font-weight="850" text-anchor="start">PATTERNS</text>
+    <path d="M74 358H334" stroke="#F472B6" stroke-width="9" stroke-linecap="round"/>
+    <path d="M356 358H430" stroke="#34D399" stroke-width="9" stroke-linecap="round" opacity="0.72"/>
+    <text x="72" y="416" fill="#CBD5E1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif" font-size="28" font-weight="650" text-anchor="start">Migration snippets for real work</text>
+  </g>
+  <g font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" filter="url(#softShadow)">
+    <rect x="512" y="142" width="626" height="404" rx="30" fill="#050A12" fill-opacity="0.88" stroke="#FFFFFF" stroke-opacity="0.12"/>
+    <circle cx="554" cy="184" r="7" fill="#FB7185"/><circle cx="580" cy="184" r="7" fill="#FBBF24"/><circle cx="606" cy="184" r="7" fill="#34D399"/>
+    <text x="552" y="248" fill="#F472B6" font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" font-size="27" font-weight="800" text-anchor="start">execute(&lt;&lt;~SQL)</text>
+    <text x="586" y="302" fill="#E2E8F0" font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" font-size="27" font-weight="800" text-anchor="start">INSERT ... SELECT</text>
+    <text x="586" y="356" fill="#FBBF24" font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" font-size="27" font-weight="800" text-anchor="start">ROW_NUMBER() OVER</text>
+    <text x="586" y="410" fill="#34D399" font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" font-size="27" font-weight="800" text-anchor="start">ON DUPLICATE KEY UPDATE</text>
+    <text x="552" y="486" fill="#64748B" font-family="JetBrains Mono, SFMono-Regular, Consolas, ui-monospace, monospace" font-size="27" font-weight="800" text-anchor="start">SQL</text>
+  </g>
 </svg>
