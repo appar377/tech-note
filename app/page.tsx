@@ -4,24 +4,27 @@ import {
   BookOpen,
   Boxes,
   Hash,
-  Layers3,
   Library,
   type LucideIcon,
 } from "lucide-react";
 import { ArticleCard } from "@/components/article-card";
+import { BookCard } from "@/components/book-card";
 import { LogoMark } from "@/components/logo";
 import { SearchPanel } from "@/components/search-panel";
 import { TaxonomyList } from "@/components/taxonomy-list";
-import { getAllArticles, getCategories, getSearchIndex, getSeries, getTags } from "@/lib/articles";
+import { getAllArticles, getCategories, getSearchIndex, getTags } from "@/lib/articles";
+import { getAllBooks, getBookSearchIndex, getFeaturedBooks } from "@/lib/books";
 
 export default function Home() {
   const articles = getAllArticles();
+  const books = getAllBooks();
   const categories = getCategories();
   const tags = getTags();
-  const series = getSeries();
   const latestArticles = articles.slice(0, 4);
+  const featuredBooks = getFeaturedBooks(2);
   const featuredArticles = articles.filter((article) => article.popular).slice(0, 3);
   const featured = featuredArticles.length > 0 ? featuredArticles : articles.slice(0, 3);
+  const searchIndex = [...getBookSearchIndex(), ...getSearchIndex()];
 
   return (
     <div className="page-shell space-y-16">
@@ -49,17 +52,17 @@ export default function Home() {
           <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-600 dark:text-zinc-400 sm:text-lg">
             <span className="block">表面的な使い方ではなく、</span>
             <span className="block">内部実装・アルゴリズム・設計思想から理解する。</span>
-            <span className="block">記事・カテゴリ・タグ・シリーズを横断し、</span>
+            <span className="block">Books・Articles・カテゴリ・タグを横断し、</span>
             <span className="block">体系的に読み返せる技術知識サイトです。</span>
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <Metric icon={BookOpen} label="Articles" value={articles.length} />
+            <Metric icon={BookOpen} label="Books" value={books.length} />
             <Metric icon={Boxes} label="Categories" value={categories.length} />
             <Metric icon={Hash} label="Tags" value={tags.length} />
           </div>
         </div>
         <div className="min-w-0 space-y-4">
-          <SearchPanel index={getSearchIndex()} compact />
+          <SearchPanel index={searchIndex} compact />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {categories.slice(0, 4).map((category) => (
               <Link
@@ -87,10 +90,10 @@ export default function Home() {
       </section>
 
       <section>
-        <SectionHeader title="Latest Articles" href="/articles" />
+        <SectionHeader title="Books" href="/books" />
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {latestArticles.map((article) => (
-            <ArticleCard key={article.slug} article={article} />
+          {featuredBooks.map((book) => (
+            <BookCard key={book.slug} book={book} />
           ))}
         </div>
       </section>
@@ -110,44 +113,10 @@ export default function Home() {
       </div>
 
       <section>
-        <SectionHeader title="Series" href="/series" />
+        <SectionHeader title="Latest Articles" href="/articles" />
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {series.map((item) => (
-            <Link
-              key={item.slug}
-              href={`/series/${item.slug}`}
-              className="group rounded-lg border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-            >
-              <span className="flex items-start gap-3">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                  <Layers3 aria-hidden size={18} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                    {item.category} Book Series
-                  </span>
-                  <span className="block break-words text-lg font-semibold leading-7 text-zinc-950 dark:text-zinc-50">
-                    {item.name}
-                  </span>
-                  <span className="mt-1 block break-words text-sm font-medium leading-6 text-zinc-700 dark:text-zinc-300">
-                    {item.subtitle}
-                  </span>
-                </span>
-              </span>
-              <span className="mt-4 line-clamp-3 block break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-                {item.goal}
-              </span>
-              <ol className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
-                {item.articles.slice(0, 3).map((article, index) => (
-                  <li key={article.slug} className="flex min-w-0 items-start gap-2">
-                    <span className="mt-0.5 shrink-0 font-mono text-xs text-emerald-700 dark:text-emerald-300">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span className="min-w-0 break-words">{article.title}</span>
-                  </li>
-                ))}
-              </ol>
-            </Link>
+          {latestArticles.map((article) => (
+            <ArticleCard key={article.slug} article={article} />
           ))}
         </div>
       </section>

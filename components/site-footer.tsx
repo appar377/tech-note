@@ -11,6 +11,9 @@ export function SiteFooter() {
           <p className="min-w-0 break-words">Tech Note - personal engineering knowledge base.</p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
+          <Link href="/books" className="hover:text-zinc-950 dark:hover:text-zinc-50">
+            Books
+          </Link>
           <Link href="/search" className="hover:text-zinc-950 dark:hover:text-zinc-50">
             Search
           </Link>

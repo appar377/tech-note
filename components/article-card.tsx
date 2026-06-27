@@ -3,6 +3,7 @@ import { CalendarDays, Clock } from "lucide-react";
 import { ArticleThumbnail } from "@/components/article-thumbnail";
 import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import type { Article } from "@/lib/articles";
+import { getBookForSeries } from "@/lib/books";
 import { formatDate } from "@/lib/format";
 import { slugify } from "@/lib/slug";
 
@@ -13,6 +14,8 @@ export function ArticleCard({
   article: Article;
   compact?: boolean;
 }) {
+  const book = article.series ? getBookForSeries(article.series.name) : undefined;
+
   return (
     <article className="group flex h-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700">
       {article.thumbnail ? (
@@ -39,10 +42,10 @@ export function ArticleCard({
           </Link>
           {article.series ? (
             <Link
-              href={`/series/${article.series.slug}`}
+              href={book?.url ?? `/series/${article.series.slug}`}
               className="min-w-0 truncate rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700 transition hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-950"
             >
-              {article.series.name}
+              {book ? `Book: ${book.title}` : article.series.name}
             </Link>
           ) : null}
         </div>

@@ -16,6 +16,7 @@ import {
   getArticleBySlug,
   getRelatedArticles,
 } from "@/lib/articles";
+import { getBookForSeries } from "@/lib/books";
 import { formatDate } from "@/lib/format";
 import { absoluteUrl } from "@/lib/site";
 import { slugify } from "@/lib/slug";
@@ -91,6 +92,7 @@ export default async function ArticlePage({ params }: PageProps) {
   const adjacentArticles = getAdjacentArticles(article);
   const visibleTags = article.tags.slice(0, 4);
   const hiddenTagCount = Math.max(0, article.tags.length - visibleTags.length);
+  const book = article.series ? getBookForSeries(article.series.name) : undefined;
   const crumbs = [
     { label: "Home", href: "/" },
     { label: article.category, href: `/categories/${article.categorySlug}` },
@@ -119,10 +121,10 @@ export default async function ArticlePage({ params }: PageProps) {
           </Link>
           {article.series ? (
             <Link
-              href={`/series/${article.series.slug}`}
+              href={book?.url ?? `/series/${article.series.slug}`}
               className="max-w-full truncate rounded-lg bg-blue-50 px-3 py-1.5 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
             >
-              {article.series.name}
+              {book ? `Book: ${book.title}` : article.series.name}
             </Link>
           ) : null}
         </div>

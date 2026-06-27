@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import GithubSlugger from "github-slugger";
-import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import type { ArticleLevel, ArticleType } from "./article-metadata";
 import { compareKnowledgeDomainSlugs, getKnowledgeDomain } from "./knowledge-domains";
+import { listMdxFiles, parseMdxSource } from "./mdx-source";
 import { getSeriesBookDefinition, type SeriesBookDefinition } from "./series-books";
 import { absoluteUrl } from "./site";
 import { normalizeSearchText, slugify, titleFromSlug } from "./slug";
@@ -129,11 +129,7 @@ export type SearchEntry = {
 };
 
 export function getAllArticles(options: { includeDrafts?: boolean } = {}) {
-  if (!fs.existsSync(ARTICLES_DIR)) {
-    return [];
-  }
-
-  const articles = listArticleFiles(ARTICLES_DIR)
+  const articles = listMdxFiles(ARTICLES_DIR)
     .map(parseArticleFile)
     .filter((article) => options.includeDrafts || !article.draft)
     .sort(compareArticlesDesc);
@@ -347,7 +343,7 @@ export function parseArticleFile(filePath: string): Article {
     ? filePath
     : path.join(/* turbopackIgnore: true */ PROJECT_ROOT, filePath);
   const raw = fs.readFileSync(absolutePath, "utf8");
-  const parsed = parseFrontmatter(raw);
+  const parsed = parseMdxSource(raw);
   const frontmatter = frontmatterSchema.parse(parsed.data);
   const sourcePath = path.relative(PROJECT_ROOT, absolutePath).replaceAll(path.sep, "/");
   const slugSegments = path
@@ -375,34 +371,6 @@ export function parseArticleFile(filePath: string): Article {
     readingTimeMinutes: estimateReadingTime(parsed.content),
     headings: extractHeadings(parsed.content),
   };
-}
-
-function parseFrontmatter(raw: string) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(raw);
-
-  if (!match) {
-    return {
-      data: {},
-      content: raw,
-    };
-  }
-
-  return {
-    data: parseYaml(match[1]) ?? {},
-    content: raw.slice(match[0].length),
-  };
-}
-
-function listArticleFiles(directory: string): string[] {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const entryPath = path.join(directory, entry.name);
-
-    if (entry.isDirectory()) {
-      return listArticleFiles(entryPath);
-    }
-
-    return entry.isFile() && entry.name.endsWith(ARTICLE_EXTENSION) ? [entryPath] : [];
-  });
 }
 
 function compareArticlesDesc(a: Article, b: Article) {

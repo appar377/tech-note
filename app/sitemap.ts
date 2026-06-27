@@ -1,11 +1,12 @@
 import type { MetadataRoute } from "next";
-import { getAllArticles, getCategories, getSeries, getTags } from "@/lib/articles";
+import { getAllArticles, getCategories, getTags } from "@/lib/articles";
+import { getAllBooks } from "@/lib/books";
 import { absoluteUrl } from "@/lib/site";
 
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const staticPages = ["", "/articles", "/categories", "/tags", "/series", "/search"].map((path) => ({
+  const staticPages = ["", "/books", "/articles", "/categories", "/tags", "/search"].map((path) => ({
     url: absoluteUrl(path || "/"),
     lastModified: new Date(),
     changeFrequency: "weekly" as const,
@@ -17,6 +18,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     lastModified: new Date(article.updated ?? article.date),
     changeFrequency: "monthly" as const,
     priority: 0.8,
+  }));
+
+  const books = getAllBooks().map((book) => ({
+    url: book.canonicalUrl,
+    lastModified: new Date(book.updated ?? book.date),
+    changeFrequency: "monthly" as const,
+    priority: 0.9,
   }));
 
   const categories = getCategories().map((category) => ({
@@ -33,12 +41,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.4,
   }));
 
-  const series = getSeries().map((item) => ({
-    url: absoluteUrl(`/series/${item.slug}`),
-    lastModified: new Date(),
-    changeFrequency: "weekly" as const,
-    priority: 0.6,
-  }));
-
-  return [...staticPages, ...articles, ...categories, ...tags, ...series];
+  return [...staticPages, ...books, ...articles, ...categories, ...tags];
 }

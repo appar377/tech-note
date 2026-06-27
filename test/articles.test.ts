@@ -10,6 +10,7 @@ import {
   parseArticleFile,
 } from "../lib/articles";
 import { validateArticlesQuality } from "../lib/article-quality";
+import { getAllBooks, getBookBySlug, getBookForSeries, getBookSearchIndex } from "../lib/books";
 
 describe("articles", () => {
   it("loads published MDX articles with path-based slugs", () => {
@@ -71,6 +72,21 @@ describe("articles", () => {
     assert.ok("level" in index[0]);
     assert.ok("articleType" in index[0]);
     assert.equal(index.some((entry) => entry.content.includes("row_number")), true);
+  });
+
+  it("loads books as independent MDX content with reference articles", () => {
+    const books = getAllBooks();
+    const databaseBook = getBookBySlug("database-internal");
+    const railsBook = getBookForSeries("Railsで生SQLを書くときに知っておきたいSQL");
+    const bookIndex = getBookSearchIndex();
+
+    assert.ok(books.length >= 2);
+    assert.ok(databaseBook);
+    assert.equal(databaseBook!.references[0].href.startsWith("/articles/"), true);
+    assert.match(databaseBook!.plainText, /SQLがDB内部で/);
+    assert.ok(railsBook);
+    assert.equal(railsBook!.slug, "rails-raw-sql");
+    assert.equal(bookIndex.some((entry) => entry.url === "/books/database-internal"), true);
   });
 
   it("estimates a minimum reading time", () => {

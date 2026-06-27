@@ -5,10 +5,10 @@ import { SiteLogo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
+  { href: "/books", label: "Books" },
   { href: "/articles", label: "Articles" },
   { href: "/categories", label: "Categories" },
   { href: "/tags", label: "Tags" },
-  { href: "/series", label: "Series" },
 ];
 
 export function SiteHeader() {

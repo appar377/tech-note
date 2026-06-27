@@ -146,6 +146,22 @@ canvas {
   @apply my-8 rounded-lg border border-zinc-200 dark:border-zinc-800;
 }
 
+.book-prose {
+  @apply text-[1.03rem] leading-8;
+}
+
+.book-prose h2 {
+  @apply mt-16 pt-10 text-3xl;
+}
+
+.book-prose h3 {
+  @apply mt-10 text-2xl;
+}
+
+.book-prose p {
+  @apply my-6;
+}
+
 .heading-anchor {
   @apply ml-2 text-zinc-300 no-underline opacity-0 transition group-hover:opacity-100 dark:text-zinc-700;
 }
