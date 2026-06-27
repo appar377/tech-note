@@ -92,7 +92,6 @@ const components = {
 
 function transformMermaidFences(source: string) {
   return source.replace(/```mermaid\n([\s\S]*?)```/g, (_match, chart: string) => {
-    const escaped = chart.replace(/`/g, "\\`").replace(/\$/g, "\\$");
-    return `<Mermaid chart={\`${escaped.trim()}\`} />`;
+    return `<Mermaid encodedChart="${encodeURIComponent(chart.trim())}" />`;
   });
 }

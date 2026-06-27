@@ -4,17 +4,26 @@ import mermaid from "mermaid";
 import { useEffect, useId, useState } from "react";
 
 type MermaidProps = {
-  chart: string;
+  chart?: string;
+  encodedChart?: string;
 };
 
-export function Mermaid({ chart }: MermaidProps) {
+export function Mermaid({ chart, encodedChart }: MermaidProps) {
   const reactId = useId();
   const id = `mermaid-${reactId.replaceAll(":", "").replaceAll("_", "")}`;
+  const rawChart = typeof encodedChart === "string" ? decodeURIComponent(encodedChart) : chart;
+  const diagram = typeof rawChart === "string" ? rawChart.trim() : "";
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!diagram) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     mermaid.initialize({
       startOnLoad: false,
@@ -23,7 +32,7 @@ export function Mermaid({ chart }: MermaidProps) {
     });
 
     mermaid
-      .render(id, chart)
+      .render(id, diagram)
       .then((result) => {
         if (!cancelled) {
           setSvg(result.svg);
@@ -39,12 +48,12 @@ export function Mermaid({ chart }: MermaidProps) {
     return () => {
       cancelled = true;
     };
-  }, [chart, id]);
+  }, [diagram, id]);
 
-  if (error) {
+  if (!diagram || error) {
     return (
       <pre className="not-prose overflow-x-auto rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-950 dark:bg-red-950/30 dark:text-red-200">
-        {error}
+        {error || "Mermaid diagram source is empty."}
       </pre>
     );
   }
