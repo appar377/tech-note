@@ -1,17 +1,38 @@
 import Link from "next/link";
-import { ArrowRight, BookOpen, Clock, Lock, Unlock } from "lucide-react";
+import { ArrowRight, BookOpen, Clock } from "lucide-react";
 import { formatArticleLevel } from "@/lib/article-metadata";
-import { formatBookAccess, type Book } from "@/lib/books";
+import type { Book } from "@/lib/books";
+import { withBasePath } from "@/lib/site";
 
 export function BookCard({ book, compact = false }: { book: Book; compact?: boolean }) {
-  const AccessIcon = book.access === "premium" ? Lock : Unlock;
-
   return (
-    <article className="group flex h-full min-w-0 flex-col rounded-lg border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700">
-      <div className="flex items-start gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-          <BookOpen aria-hidden size={19} />
-        </span>
+    <article className="group grid h-full min-w-0 gap-5 overflow-hidden rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-950/10 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700 sm:grid-cols-[minmax(132px,0.42fr)_minmax(0,1fr)]">
+      {book.cover ? (
+        <Link
+          href={book.url}
+          className="block min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
+          aria-label={`${book.title}を読む`}
+        >
+          <span className="book-cover-card block aspect-[3/4] overflow-hidden rounded-md bg-zinc-950 shadow-xl shadow-zinc-950/20 ring-1 ring-zinc-950/10 dark:ring-white/10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={withBasePath(book.cover)}
+              alt={`${book.title} cover`}
+              width={960}
+              height={1280}
+              loading={compact ? "lazy" : "eager"}
+              decoding="async"
+              className="block h-full w-full object-cover"
+            />
+          </span>
+        </Link>
+      ) : (
+        <div className="grid aspect-[3/4] place-items-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <BookOpen aria-hidden size={34} />
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-col py-1">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
             <span className="font-medium text-emerald-700 dark:text-emerald-300">
@@ -34,30 +55,26 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
             {book.subtitle}
           </p>
         </div>
+        <p className="mt-4 line-clamp-3 break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+          {book.description}
+        </p>
+        <div className="mt-5 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-md border border-zinc-200 px-2 py-1 font-mono text-[11px] font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {formatArticleLevel(book.level)}
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <Clock aria-hidden size={12} />
+            {book.readingTimeMinutes} min
+          </span>
+        </div>
+        <Link
+          href={book.url}
+          className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+        >
+          Open book
+          <ArrowRight aria-hidden size={15} className="transition group-hover:translate-x-0.5" />
+        </Link>
       </div>
-      <p className="mt-4 line-clamp-3 break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-        {book.description}
-      </p>
-      <div className="mt-5 flex flex-wrap gap-2 text-xs">
-        <span className="rounded-md border border-zinc-200 px-2 py-1 font-mono text-[11px] font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          {formatArticleLevel(book.level)}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          <AccessIcon aria-hidden size={12} />
-          {formatBookAccess(book.access)}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-          <Clock aria-hidden size={12} />
-          {book.readingTimeMinutes} min
-        </span>
-      </div>
-      <Link
-        href={book.url}
-        className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-emerald-700 dark:text-emerald-300"
-      >
-        Read book
-        <ArrowRight aria-hidden size={15} className="transition group-hover:translate-x-0.5" />
-      </Link>
     </article>
   );
 }

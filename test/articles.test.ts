@@ -82,6 +82,7 @@ describe("articles", () => {
 
     assert.ok(books.length >= 2);
     assert.ok(databaseBook);
+    assert.equal(databaseBook!.cover, "/images/books/database-internal-cover.svg");
     assert.equal(databaseBook!.references[0].href.startsWith("/articles/"), true);
     assert.match(databaseBook!.plainText, /SQLがDB内部で/);
     assert.ok(railsBook);

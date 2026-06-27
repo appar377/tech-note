@@ -1,11 +1,13 @@
 "use client";
 
 import { Monitor, Moon, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 type Theme = "system" | "light" | "dark";
 
 const STORAGE_KEY = "tech-note-theme";
+const THEME_CHANGE_EVENT = "tech-note-theme-change";
+const THEMES = ["system", "light", "dark"] satisfies Theme[];
 
 export function ThemeScript() {
   const script = `
@@ -23,13 +25,7 @@ export function ThemeScript() {
 }
 
 export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window === "undefined") {
-      return "system";
-    }
-
-    return (localStorage.getItem(STORAGE_KEY) as Theme | null) ?? "system";
-  });
+  const theme = useSyncExternalStore(subscribeTheme, getThemeSnapshot, getServerThemeSnapshot);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -48,12 +44,13 @@ export function ThemeToggle() {
   }, [theme]);
 
   function updateTheme(nextTheme: Theme) {
-    setTheme(nextTheme);
     if (nextTheme === "system") {
       localStorage.removeItem(STORAGE_KEY);
     } else {
       localStorage.setItem(STORAGE_KEY, nextTheme);
     }
+
+    window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
   }
 
   const items: Array<{ value: Theme; label: string; icon: typeof Sun }> = [
@@ -85,4 +82,28 @@ export function ThemeToggle() {
       })}
     </div>
   );
+}
+
+function subscribeTheme(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(THEME_CHANGE_EVENT, onStoreChange);
+
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(THEME_CHANGE_EVENT, onStoreChange);
+  };
+}
+
+function getThemeSnapshot(): Theme {
+  const stored = localStorage.getItem(STORAGE_KEY);
+
+  return isTheme(stored) ? stored : "system";
+}
+
+function getServerThemeSnapshot(): Theme {
+  return "system";
+}
+
+function isTheme(value: string | null): value is Theme {
+  return THEMES.some((theme) => theme === value);
 }

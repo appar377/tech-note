@@ -44,6 +44,7 @@ const bookFrontmatterSchema = z.object({
   updated: dateStringSchema.optional(),
   category: z.string().min(1),
   level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  cover: z.string().min(1).optional(),
   access: z.enum(["free", "premium"]).default("free"),
   status: z.enum(["draft", "published"]).default("published"),
   featured: z.boolean().default(false),
@@ -70,6 +71,7 @@ export type Book = {
   category: string;
   categorySlug: string;
   level: 1 | 2 | 3;
+  cover?: string;
   access: BookAccess;
   status: "draft" | "published";
   featured: boolean;
@@ -127,10 +129,6 @@ export function getBookSearchIndex(): SearchEntry[] {
     series: "Book",
     content: normalizeSearchText(book.plainText),
   }));
-}
-
-export function formatBookAccess(access: BookAccess) {
-  return access === "premium" ? "Premium" : "Free";
 }
 
 export function parseBookFile(filePath: string): Book {

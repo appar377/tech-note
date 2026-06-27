@@ -67,6 +67,7 @@ description: Parser、Optimizer、Execution Plan、Storage Engineの流れを軸
 date: 2026-06-27
 category: Database
 level: 2
+cover: /images/books/database-internal-cover.svg
 access: free
 status: published
 featured: true
@@ -78,7 +79,8 @@ references:
 ---
 ```
 
-- `access` は `free` または `premium` を指定できます。現時点では表示ラベルのみで、課金処理は未実装です。
+- `cover` はBookの表紙画像として、一覧、詳細、OGPで利用します。
+- `access` は将来用のメタデータです。現時点では課金処理や公開画面のバッジ表示には使いません。
 - `references` はBookの参考記事リンクとして表示します。本文はBook側で再構成します。
 - 既存の `series` は記事側の分類互換として残しますが、主導線は `/books` です。
 

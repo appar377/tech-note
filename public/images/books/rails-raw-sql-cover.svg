@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1280" viewBox="0 0 960 1280" role="img" aria-labelledby="title desc">
+  <title id="title">Rails Raw SQL book cover</title>
+  <desc id="desc">A technical book cover showing Rails migrations sending set-based SQL to the database engine.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#160B16"/>
+      <stop offset="0.48" stop-color="#111827"/>
+      <stop offset="1" stop-color="#172315"/>
+    </linearGradient>
+    <linearGradient id="ruby" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FB7185"/>
+      <stop offset="0.52" stop-color="#F59E0B"/>
+      <stop offset="1" stop-color="#34D399"/>
+    </linearGradient>
+    <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+      <path d="M50 0H0V50" fill="none" stroke="#FFFFFF" stroke-opacity="0.055" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="24" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+  <rect width="960" height="1280" fill="url(#bg)"/>
+  <rect width="960" height="1280" fill="url(#grid)" opacity="0.85"/>
+  <path d="M-140 1010C120 876 244 1006 526 820C712 698 792 506 1042 558V1358H-140Z" fill="#34D399" opacity="0.11"/>
+  <path d="M622 -100L1060 118V1280H802L452 298Z" fill="#FB7185" opacity="0.14"/>
+  <path d="M-132 418L1058 238V356L-132 536Z" fill="url(#ruby)" opacity="0.18"/>
+  <rect x="54" y="54" width="852" height="1172" rx="38" fill="none" stroke="#FFFFFF" stroke-opacity="0.11"/>
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+    <rect x="96" y="100" width="236" height="44" rx="22" fill="#FFFFFF" fill-opacity="0.11" stroke="#FFFFFF" stroke-opacity="0.16"/>
+    <circle cx="121" cy="122" r="7" fill="#FB7185"/>
+    <text x="142" y="130" fill="#FFE4E6" font-size="22" font-weight="800">Rails + SQL</text>
+    <text x="96" y="250" fill="#FFFFFF" font-size="76" font-weight="880">Raw SQL</text>
+    <text x="96" y="336" fill="#FFFFFF" font-size="76" font-weight="880">Migration</text>
+    <text x="96" y="422" fill="#FFFFFF" font-size="76" font-weight="880">Patterns</text>
+    <path d="M100 504H448" stroke="#FB7185" stroke-width="10" stroke-linecap="round"/>
+    <path d="M474 504H586" stroke="#34D399" stroke-width="10" stroke-linecap="round" opacity="0.78"/>
+    <text x="96" y="574" fill="#CBD5E1" font-size="30" font-weight="650">INSERT SELECT, Window, UPSERT</text>
+  </g>
+  <g filter="url(#shadow)" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+    <rect x="142" y="686" width="676" height="342" rx="30" fill="#070A12" fill-opacity="0.86" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <rect x="182" y="732" width="596" height="250" rx="22" fill="#0F172A" fill-opacity="0.92" stroke="#FFFFFF" stroke-opacity="0.10"/>
+    <circle cx="218" cy="766" r="8" fill="#FB7185"/>
+    <circle cx="248" cy="766" r="8" fill="#FBBF24"/>
+    <circle cx="278" cy="766" r="8" fill="#34D399"/>
+    <text x="220" y="824" fill="#FB7185" font-size="24" font-weight="780">execute(&lt;&lt;~SQL)</text>
+    <text x="250" y="876" fill="#E2E8F0" font-size="25" font-weight="820">INSERT INTO profiles</text>
+    <text x="250" y="924" fill="#FBBF24" font-size="25" font-weight="820">SELECT users.*</text>
+    <text x="250" y="972" fill="#34D399" font-size="25" font-weight="820">ON DUPLICATE KEY UPDATE</text>
+    <path d="M220 1068H520" stroke="#FB7185" stroke-width="9" stroke-linecap="round"/>
+    <path d="M548 1068H642" stroke="#34D399" stroke-width="9" stroke-linecap="round"/>
+    <rect x="204" y="1104" width="162" height="52" rx="16" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.13"/>
+    <rect x="398" y="1104" width="162" height="52" rx="16" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.13"/>
+    <rect x="592" y="1104" width="162" height="52" rx="16" fill="#FFFFFF" fill-opacity="0.12" stroke="#FFFFFF" stroke-opacity="0.13"/>
+    <text x="285" y="1138" fill="#E2E8F0" font-size="17" font-weight="760" text-anchor="middle">bulk insert</text>
+    <text x="479" y="1138" fill="#E2E8F0" font-size="17" font-weight="760" text-anchor="middle">ranking</text>
+    <text x="673" y="1138" fill="#E2E8F0" font-size="17" font-weight="760" text-anchor="middle">idempotent</text>
+  </g>
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+    <text x="96" y="1132" fill="#94A3B8" font-size="22" font-weight="650">Tech Note Books</text>
+    <text x="96" y="1172" fill="#E2E8F0" font-size="26" font-weight="760">Move the right work into the database.</text>
+  </g>
+</svg>
