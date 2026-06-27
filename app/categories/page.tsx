@@ -16,7 +16,9 @@ export default function CategoriesPage() {
     <div className="page-shell">
       <header className="mb-10">
         <h1 className="page-heading">Categories</h1>
-        <p className="page-subtitle">技術領域ごとに記事を整理します。</p>
+        <p className="page-subtitle">
+          Git、SQL、Database、Linux、Docker、AWS、Rails、Flutter、Computer Scienceを軸に整理します。
+        </p>
       </header>
       <TaxonomyList title="All Categories" items={getCategories()} basePath="/categories" />
     </div>

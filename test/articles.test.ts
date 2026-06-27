@@ -8,6 +8,7 @@ import {
   getSearchIndex,
   parseArticleFile,
 } from "../lib/articles";
+import { validateArticlesQuality } from "../lib/article-quality";
 
 describe("articles", () => {
   it("loads published MDX articles with path-based slugs", () => {
@@ -23,6 +24,8 @@ describe("articles", () => {
 
     assert.match(article.title, /INSERT SELECT/);
     assert.equal(article.categorySlug, "rails");
+    assert.equal(article.level, 1);
+    assert.equal(article.articleType, "practical");
     assert.ok(article.readingTimeMinutes >= 1);
   });
 
@@ -48,10 +51,22 @@ describe("articles", () => {
     const index = getSearchIndex();
 
     assert.ok("title" in index[0]);
+    assert.ok("level" in index[0]);
+    assert.ok("articleType" in index[0]);
     assert.equal(index.some((entry) => entry.content.includes("row_number")), true);
   });
 
   it("estimates a minimum reading time", () => {
     assert.equal(estimateReadingTime("短い本文"), 1);
+  });
+
+  it("enforces published article quality gates", () => {
+    const report = validateArticlesQuality(getAllArticles());
+
+    for (const warning of report.warnings) {
+      console.warn(`[article-quality] ${warning.article}: ${warning.message}`);
+    }
+
+    assert.deepEqual(report.errors, []);
   });
 });

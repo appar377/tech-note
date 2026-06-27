@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CalendarDays, Clock } from "lucide-react";
 import { ArticleThumbnail } from "@/components/article-thumbnail";
+import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import type { Article } from "@/lib/articles";
 import { formatDate } from "@/lib/format";
 import { slugify } from "@/lib/slug";
@@ -24,6 +25,12 @@ export function ArticleCard({
       ) : null}
       <div className="flex flex-1 min-w-0 flex-col p-5">
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="rounded-md border border-zinc-200 px-2 py-1 font-mono text-[11px] font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {formatArticleLevel(article.level)}
+          </span>
+          <span className="rounded-md border border-zinc-200 px-2 py-1 font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {formatArticleType(article.articleType)}
+          </span>
           <Link
             href={`/categories/${article.categorySlug}`}
             className="rounded-md bg-emerald-50 px-2 py-1 font-medium text-emerald-700 transition hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-950"

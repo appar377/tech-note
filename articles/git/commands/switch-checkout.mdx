@@ -6,10 +6,65 @@ tags:
   - Git
   - コマンド
 category: Git
+level: 1
+articleType: internal
 draft: false
 thumbnail: /images/thumbnails/git-switch-checkout.svg
 popular: true
 ---
+
+## 概要
+
+`git switch` と `git checkout` はどちらもブランチ切り替えで見かけるコマンドですが、責務の広さが違います。
+
+この記事では、単なる使い分けだけでなく、HEAD、index、working treeがどう切り替わるのかまで整理します。
+
+## この記事で学べること
+
+- `git switch` と `git checkout` の違い
+- `git restore` が分離された理由
+- ブランチ切り替え時にHEAD、index、working treeで何が起きるか
+- 普段の作業でどのコマンドを選ぶべきか
+
+## 前提知識
+
+- Gitのブランチを使ったことがある
+- `main`、`feature` のようなブランチ名を見たことがある
+- 未コミットの変更がworking treeに残ることを知っている
+
+## 図解
+
+```mermaid
+flowchart LR
+  A[git checkout] --> B[branch switch]
+  A --> C[file restore]
+  A --> D[detach HEAD]
+  B --> E[git switch]
+  C --> F[git restore]
+```
+
+## Gitコマンド例
+
+```bash
+git switch develop
+git switch -c feature/login
+git restore app/models/user.rb
+git checkout main -- app/models/user.rb
+```
+
+## 内部動作
+
+```text
+git switch develop
+↓
+HEADの参照先をdevelopへ変更
+↓
+indexをdevelopのtreeに合わせる
+↓
+working treeをdevelopの内容に更新
+```
+
+## 本編
 
 ## git switch と git checkout は何が違うのか
 
@@ -221,3 +276,9 @@ git restore  = ファイル復元用
 つまり、`git switch` は `git checkout` のブランチ切り替え機能を、より分かりやすく扱えるようにしたコマンドです。
 
 今後、自分でコマンドを打つときは、ブランチ操作なら `git switch` を使っていこうと思います。
+
+## 参考文献
+
+- [Git Documentation: git-switch](https://git-scm.com/docs/git-switch)
+- [Git Documentation: git-checkout](https://git-scm.com/docs/git-checkout)
+- [Git Documentation: git-restore](https://git-scm.com/docs/git-restore)

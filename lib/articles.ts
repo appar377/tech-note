@@ -3,6 +3,8 @@ import path from "node:path";
 import GithubSlugger from "github-slugger";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import type { ArticleLevel, ArticleType } from "./article-metadata";
+import { compareKnowledgeDomainSlugs, getKnowledgeDomain } from "./knowledge-domains";
 import { absoluteUrl } from "./site";
 import { normalizeSearchText, slugify, titleFromSlug } from "./slug";
 
@@ -28,6 +30,9 @@ const dateStringSchema = z.preprocess((value) => {
   return value;
 }, z.string().min(1));
 
+const articleLevelSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+const articleTypeSchema = z.enum(["internal", "practical", "reference"]);
+
 const frontmatterSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
@@ -35,6 +40,8 @@ const frontmatterSchema = z.object({
   updated: dateStringSchema.optional(),
   tags: z.array(z.string().min(1)).default([]),
   category: z.string().min(1),
+  level: articleLevelSchema,
+  articleType: articleTypeSchema,
   series: seriesSchema.optional(),
   draft: z.boolean().default(false),
   thumbnail: z.string().optional(),
@@ -51,6 +58,8 @@ export type Article = {
   tags: string[];
   category: string;
   categorySlug: string;
+  level: ArticleLevel;
+  articleType: ArticleType;
   series?: {
     name: string;
     slug: string;
@@ -80,9 +89,12 @@ export type TaxonomyItem = {
   name: string;
   slug: string;
   count: number;
+  description?: string;
 };
 
 export type SeriesItem = TaxonomyItem & {
+  category: string;
+  categorySlug: string;
   articles: Article[];
 };
 
@@ -93,6 +105,8 @@ export type SearchEntry = {
   date: string;
   tags: string[];
   category: string;
+  level: ArticleLevel;
+  articleType: ArticleType;
   series?: string;
   content: string;
 };
@@ -147,7 +161,17 @@ export function getCategories(): TaxonomyItem[] {
       name: article.category,
       slug: article.categorySlug,
     })),
-  );
+  )
+    .map((category) => ({
+      ...category,
+      description: getKnowledgeDomain(category.slug)?.description,
+    }))
+    .sort(
+      (a, b) =>
+        compareKnowledgeDomainSlugs(a.slug, b.slug) ||
+        b.count - a.count ||
+        a.name.localeCompare(b.name),
+    );
 }
 
 export function getTags(): TaxonomyItem[] {
@@ -172,6 +196,8 @@ export function getSeries(): SeriesItem[] {
     const current = groups.get(article.series.slug) ?? {
       name: article.series.name,
       slug: article.series.slug,
+      category: article.category,
+      categorySlug: article.categorySlug,
       count: 0,
       articles: [],
     };
@@ -186,7 +212,11 @@ export function getSeries(): SeriesItem[] {
       ...series,
       articles: sortSeriesArticles(series.articles),
     }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    .sort(
+      (a, b) =>
+        compareKnowledgeDomainSlugs(a.categorySlug, b.categorySlug) ||
+        a.name.localeCompare(b.name),
+    );
 }
 
 export function getArticlesByCategory(categorySlug: string) {
@@ -212,6 +242,8 @@ export function getSearchIndex(): SearchEntry[] {
     date: article.date,
     tags: article.tags,
     category: article.category,
+    level: article.level,
+    articleType: article.articleType,
     series: article.series?.name,
     content: normalizeSearchText(article.plainText),
   }));

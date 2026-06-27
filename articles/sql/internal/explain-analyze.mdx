@@ -10,11 +10,98 @@ tags:
   - EXPLAIN ANALYZE
   - Optimizer
   - Performance
-category: SQL
+category: Database
+level: 2
+articleType: internal
+series:
+  name: Database Internal
+  order: 5
 draft: false
 thumbnail: /images/thumbnails/sql-explain-analyze.svg
 popular: true
 ---
+
+## 概要
+
+`EXPLAIN` と `EXPLAIN ANALYZE` は、SQLがDB内部でどのように実行されるかを確認するための構文です。
+
+この記事では、MySQLとPostgreSQLを例に、実行計画の見方、実測値の読み方、`ANALYZE` との違いを整理します。
+
+## この記事で学べること
+
+- `EXPLAIN` と `EXPLAIN ANALYZE` の違い
+- 推定値と実測値の読み方
+- MySQLとPostgreSQLの出力形式の違い
+- 実行計画から改善候補を見つける方法
+
+## 前提知識
+
+- `SELECT`、`WHERE`、Indexの基本を知っている
+- MySQLまたはPostgreSQLでSQLを実行したことがある
+- SQLが遅いときに原因を調べたい場面がある
+
+## 図解
+
+```mermaid
+flowchart TD
+  A[SQL] --> B[Parser]
+  B --> C[Optimizer]
+  C --> D[Execution Plan]
+  D --> E[EXPLAIN output]
+  D --> F[Executor]
+  F --> G[EXPLAIN ANALYZE output]
+```
+
+## SQL例
+
+```sql
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+## EXPLAIN
+
+```sql
+EXPLAIN
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+```text
+Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=128)
+  Index Cond: (email = 'alice@example.com'::text)
+```
+
+## 実際の性能比較
+
+```text
+Indexなし: Seq Scan / rows=100000 / Execution Time=25.000 ms
+Indexあり: Index Scan / rows=1 / Execution Time=0.061 ms
+```
+
+数値は環境によって変わりますが、実行計画を見ることで「全件読む」のか「Indexで絞る」のかを判断できます。
+
+## 内部動作
+
+```text
+SQL
+↓
+Parser
+↓
+Optimizer
+↓
+Execution Plan
+↓
+Executor
+↓
+Storage Engine / Table Access
+↓
+Result
+```
+
+## 本編
 
 SQLのパフォーマンスを調べるときによく出てくるのが `EXPLAIN` や `EXPLAIN ANALYZE` です。
 
@@ -636,7 +723,7 @@ Indexは検索を速くする一方で、INSERT、UPDATE、DELETEのコストや
 
 SQLのチューニングでは、推測だけで修正するのではなく、`EXPLAIN` と `EXPLAIN ANALYZE` で実行計画を確認することが重要です。
 
-## 参考
+## 参考文献
 
 - [MySQL Reference Manual: EXPLAIN Statement](https://dev.mysql.com/doc/en/explain.html)
 - [MySQL Reference Manual: EXPLAIN Output Format](https://dev.mysql.com/doc/en/explain-output.html)

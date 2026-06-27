@@ -25,6 +25,7 @@ export function TaxonomyList({
           >
             <span className="min-w-0 truncate">{item.name}</span>
             <span className="shrink-0 text-xs text-zinc-400">{item.count}</span>
+            {item.description ? <span className="sr-only">{item.description}</span> : null}
           </Link>
         ))}
       </div>

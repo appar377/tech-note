@@ -6,11 +6,66 @@ tags:
   - Git
   - GitHub
   - Pull Request
-category: GitHub
+category: Git
+level: 1
+articleType: practical
 draft: false
 thumbnail: /images/thumbnails/github-pr-merge-methods.svg
 popular: true
 ---
+
+## 概要
+
+GitHubのPull Requestには、Create a merge commit、Squash merge、Rebase and mergeという複数のマージ方法があります。
+
+この記事では、ボタン名の違いだけでなく、mainブランチの履歴にどのようなコミットグラフが残るのかを基準に整理します。
+
+## この記事で学べること
+
+- 3種類のPRマージ方法の違い
+- Merge Commitが残る場合と残らない場合
+- Squash Mergeでコミットが1つにまとめられる仕組み
+- チーム開発でどのマージ方法を選ぶべきか
+
+## 前提知識
+
+- GitHub Pull Requestを使ったことがある
+- Gitのコミットとブランチの概念を知っている
+- `main` と `feature` のような開発ブランチ運用を知っている
+
+## 図解
+
+```mermaid
+flowchart TD
+  A[Pull Request] --> B[Create a merge commit]
+  A --> C[Squash merge]
+  A --> D[Rebase and merge]
+  B --> E[branch history remains]
+  C --> F[one new commit]
+  D --> G[linear history with copied commits]
+```
+
+## Gitコマンド例
+
+```bash
+git merge --no-ff feature
+git merge --squash feature
+git rebase main
+```
+
+## 内部動作
+
+```text
+Pull Request
+↓
+GitHubが選択されたマージ方式に応じてGit操作を実行
+↓
+mainにmerge commitまたは新しいcommit群を作成
+↓
+履歴の形が変わる
+```
+
+## 本編
 
 GitHubでPull Requestをマージするとき、何となくデフォルトのボタンを押していませんか？
 
@@ -172,3 +227,9 @@ A → B → C → D' → E' → F'
 - **Rebase and merge**: 履歴を一直線にしつつ、コミットも残したい場合に向いている
 
 普段は何気なくマージボタンを押しているかもしれませんが、それぞれの違いを理解しておくと、チームの開発スタイルや運用方針に合わせて適切に使い分けられるようになります。
+
+## 参考文献
+
+- [GitHub Docs: About pull request merges](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges)
+- [Git Documentation: git-merge](https://git-scm.com/docs/git-merge)
+- [Git Documentation: git-rebase](https://git-scm.com/docs/git-rebase)

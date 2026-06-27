@@ -8,6 +8,8 @@ tags:
   - Window Function
   - PostgreSQL
 category: Rails
+level: 1
+articleType: practical
 series:
   name: Railsで生SQLを書くときに知っておきたいSQL
   order: 2
@@ -15,6 +17,65 @@ draft: false
 thumbnail: /images/thumbnails/rails-row-number.svg
 popular: true
 ---
+
+## 概要
+
+`ROW_NUMBER()` は、グループ内で順位を付けるWindow Functionです。
+
+Railsのバッチや集計SQLでは、「ユーザーごとの最新レコードを1件だけ取る」のような処理でよく使います。
+
+## この記事で学べること
+
+- `ROW_NUMBER()` の基本
+- `PARTITION BY` と `ORDER BY` の役割
+- 各グループから最新1件を取り出すSQL
+- RailsからWindow Functionを使う考え方
+
+## 前提知識
+
+- `SELECT` と `ORDER BY` の基本を知っている
+- RailsからSQLを実行したことがある
+- 同じユーザーに複数レコードが紐づくテーブルを扱ったことがある
+
+## 図解
+
+```mermaid
+flowchart TD
+  A[login_events] --> B[PARTITION BY user_id]
+  B --> C[ORDER BY logged_in_at DESC]
+  C --> D[ROW_NUMBER]
+  D --> E[rn = 1]
+```
+
+## 実装コード例
+
+```ruby
+ranked_sql = <<~SQL
+  SELECT
+    login_events.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY logged_in_at DESC
+    ) AS row_num
+  FROM login_events
+SQL
+```
+
+## 内部動作
+
+```text
+FROM login_events
+↓
+user_idごとにpartitionを作る
+↓
+partition内をlogged_in_at DESCで並べる
+↓
+各行に連番を付ける
+↓
+row_num = 1だけを残す
+```
+
+## 本編
 
 ## ROW_NUMBERとは
 
@@ -61,3 +122,14 @@ LoginEvent
 
 > [!WARNING]
 > ActiveRecordのクエリメソッドだけで無理に表現すると読みづらくなる場合があります。複雑なWindow FunctionはSQLとして管理する方が安全です。
+
+## まとめ
+
+`ROW_NUMBER()` は、グループ内の順位付けをSQL側で表現できるWindow Functionです。
+
+Railsで最新レコード抽出や重複排除を行う場合、Rubyで後処理する前にSQLで集合処理できないかを検討するとよいです。
+
+## 参考文献
+
+- [PostgreSQL Documentation: Window Functions](https://www.postgresql.org/docs/current/functions-window.html)
+- [MySQL Reference Manual: Window Function Descriptions](https://dev.mysql.com/doc/refman/8.4/en/window-function-descriptions.html)

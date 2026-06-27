@@ -8,6 +8,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { MdxContent } from "@/components/mdx-content";
 import { ShareLinks } from "@/components/share-links";
 import { TableOfContents } from "@/components/toc";
+import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import {
   displaySegment,
   getAdjacentArticles,
@@ -103,6 +104,12 @@ export default async function ArticlePage({ params }: PageProps) {
       <Breadcrumbs items={crumbs} />
       <header className="mt-8 border-b border-zinc-200 pb-8 dark:border-zinc-800">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="inline-flex items-center rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {formatArticleLevel(article.level)}
+          </span>
+          <span className="inline-flex items-center rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            {formatArticleType(article.articleType)}
+          </span>
           <Link
             href={`/categories/${article.categorySlug}`}
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"

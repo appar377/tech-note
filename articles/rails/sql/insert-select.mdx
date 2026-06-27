@@ -9,6 +9,8 @@ tags:
   - ActiveRecord
   - MySQL
 category: Rails
+level: 1
+articleType: practical
 series:
   name: Railsで生SQLを書くときに知っておきたいSQL
   order: 1
@@ -16,6 +18,65 @@ draft: false
 thumbnail: /images/thumbnails/rails-insert-select.svg
 popular: true
 ---
+
+## 概要
+
+`INSERT SELECT` は、検索結果をそのまま別テーブルへ投入したいときに使うSQLです。
+
+RailsのMigrationやバッチ処理で大量データを移行するとき、Rubyで1件ずつループするよりもDB内部でまとめて処理できるため、実務で重要になります。
+
+## この記事で学べること
+
+- `INSERT SELECT` の基本形
+- RubyループではなくSQLで一括投入する理由
+- Railsから `execute` で生SQLを実行する方法
+- データ移行時に確認すべきポイント
+
+## 前提知識
+
+- Rails Migrationの基本を知っている
+- `INSERT` と `SELECT` の基本構文を知っている
+- ActiveRecordでレコード作成をしたことがある
+
+## 図解
+
+```mermaid
+flowchart LR
+  A[users] --> B[SELECT]
+  B --> C[INSERT SELECT]
+  C --> D[archived_users]
+```
+
+## 実装コード例
+
+```ruby
+class ArchiveDeletedUsers < ActiveRecord::Migration[8.0]
+  def up
+    execute(<<~SQL)
+      INSERT INTO archived_users (user_id, email, archived_at)
+      SELECT id, email, NOW()
+      FROM users
+      WHERE deleted_at IS NOT NULL
+    SQL
+  end
+end
+```
+
+## 内部動作
+
+```text
+Migration
+↓
+execute
+↓
+DBへSQL送信
+↓
+SELECT結果をDB内部で生成
+↓
+生成結果をINSERT先テーブルへ投入
+```
+
+## 本編
 
 ## INSERT SELECTの使いどころ
 
@@ -76,3 +137,14 @@ WHERE deleted_at IS NOT NULL;
 ```
 
 </Accordion>
+
+## まとめ
+
+`INSERT SELECT` は、DB内部でSELECT結果をそのままINSERTできるため、データ移行やバックフィルで強力です。
+
+Railsでは `execute` を使うことで、ActiveRecordだけでは書きづらい一括処理を明示できます。
+
+## 参考文献
+
+- [Ruby on Rails Guides: Active Record Migrations](https://guides.rubyonrails.org/active_record_migrations.html)
+- [MySQL Reference Manual: INSERT ... SELECT Statement](https://dev.mysql.com/doc/refman/8.4/en/insert-select.html)

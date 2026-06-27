@@ -10,11 +10,105 @@ tags:
   - CTE
   - Temporary Table
   - Optimizer
-category: SQL
+category: Database
+level: 2
+articleType: internal
+series:
+  name: Database Internal
+  order: 4
 draft: false
 thumbnail: /images/thumbnails/sql-view-derived-cte-temp-table.svg
 popular: true
 ---
+
+## 概要
+
+View、派生テーブル、CTE、Temporary Tableは、どれも「テーブルのように扱える」構文です。
+
+ただし、SQLだけを保存するのか、Optimizerで展開されるのか、実際に一時テーブルを作るのかは大きく異なります。
+
+## この記事で学べること
+
+- View、派生テーブル、CTE、Temporary Tableの違い
+- OptimizerがMergeまたはMaterializeする考え方
+- `EXPLAIN` で実体化されたかどうかを見る方法
+- どの場面でどの構文を選ぶべきか
+
+## 前提知識
+
+- `SELECT`、`FROM`、`WITH` の基本を知っている
+- 実行計画という言葉を聞いたことがある
+- MySQLまたはPostgreSQLでSQLを実行したことがある
+
+## 図解
+
+```mermaid
+flowchart TD
+  A[SQL] --> B[Parser]
+  B --> C[Resolver / Rewrite]
+  C --> D[Optimizer]
+  D --> E{Merge possible?}
+  E -- yes --> F[Inline / Merge]
+  E -- no --> G[Materialize]
+  F --> H[Execution]
+  G --> H
+```
+
+## SQL例
+
+```sql
+WITH active_users AS (
+  SELECT *
+  FROM users
+  WHERE deleted_at IS NULL
+)
+SELECT *
+FROM active_users;
+```
+
+## EXPLAIN
+
+```sql
+EXPLAIN
+WITH active_users AS (
+  SELECT *
+  FROM users
+  WHERE deleted_at IS NULL
+)
+SELECT *
+FROM active_users;
+```
+
+```text
+Seq Scan on users  (cost=0.00..1820.00 rows=1000 width=128)
+  Filter: (deleted_at IS NULL)
+```
+
+## 実際の性能比較
+
+```text
+単純なCTE: Optimizerでインライン化され、元テーブルへのアクセスだけに見える
+MaterializeされるCTE: 一時結果を作るため、読み書きコストが増える場合がある
+Temporary Table: 明示的に中間結果を保存できるが、作成と管理のコストがある
+```
+
+## 内部動作
+
+```text
+SQL
+↓
+Parser
+↓
+Resolver / Rewrite
+↓
+Optimizer
+↓
+Merge または Materialize
+↓
+Execution
+```
+
+## 本編
 
 SQLには「テーブルのように扱えるもの」が複数存在します。
 
@@ -488,7 +582,7 @@ Materializeが重いなら書き換えを検討
 
 `EXPLAIN` や `EXPLAIN ANALYZE` を見ることで、見た目は似ていても、データベース内部では違う処理が行われていることが分かります。
 
-## 参考
+## 参考文献
 
 - [MySQL 8.4 Reference Manual: Optimizing Derived Tables, View References, and Common Table Expressions](https://dev.mysql.com/doc/refman/8.4/en/derived-table-optimization.html)
 - [MySQL 8.0 Reference Manual: CREATE TEMPORARY TABLE Statement](https://dev.mysql.com/doc/refman/8.0/en/create-temporary-table.html)

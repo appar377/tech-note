@@ -43,14 +43,14 @@ export default function Home() {
             </div>
           </div>
           <h2 className="max-w-3xl break-words text-3xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
-            <span className="block sm:inline">技術知識を、</span>
-            <span className="block sm:inline">探せる形で残す。</span>
+            <span className="block sm:inline">技術書を、</span>
+            <span className="block sm:inline">Webで育てる。</span>
           </h2>
           <p className="mt-5 max-w-2xl text-base leading-8 text-zinc-600 dark:text-zinc-400 sm:text-lg">
-            <span className="block">Markdownを書くだけで公開される、</span>
-            <span className="block">個人の技術ブログ兼ナレッジベース。</span>
-            <span className="block">記事・カテゴリ・タグ・シリーズから、</span>
-            <span className="block">必要な知識へすばやく戻れる場所です。</span>
+            <span className="block">表面的な使い方ではなく、</span>
+            <span className="block">内部実装・アルゴリズム・設計思想から理解する。</span>
+            <span className="block">記事・カテゴリ・タグ・シリーズを横断し、</span>
+            <span className="block">体系的に読み返せる技術知識サイトです。</span>
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <Metric icon={BookOpen} label="Articles" value={articles.length} />
