@@ -5,6 +5,7 @@ import {
   extractHeadings,
   getAllArticles,
   getRelatedArticles,
+  getSeries,
   getSearchIndex,
   parseArticleFile,
 } from "../lib/articles";
@@ -45,6 +46,22 @@ describe("articles", () => {
     const related = getRelatedArticles(source!);
 
     assert.match(related[0]?.slug ?? "", /^rails\/sql\//);
+  });
+
+  it("builds series as book pages with published chapters", () => {
+    const series = getSeries();
+    const databaseBook = series.find((item) => item.slug === "database-internal");
+    const railsBook = series.find(
+      (item) => item.name === "Railsで生SQLを書くときに知っておきたいSQL",
+    );
+
+    assert.ok(databaseBook);
+    assert.match(databaseBook!.goal, /EXPLAIN/);
+    assert.equal(databaseBook!.sections.every((section) => section.articles.length > 0), true);
+    assert.equal(databaseBook!.articles.map((article) => article.series?.order).join(","), "1,2");
+
+    assert.ok(railsBook);
+    assert.equal(railsBook!.articles[0].slug, "rails/sql/raw-sql-summary");
   });
 
   it("builds a static search index", () => {

@@ -123,14 +123,30 @@ export default function Home() {
                   <Layers3 aria-hidden size={18} />
                 </span>
                 <span className="min-w-0">
+                  <span className="block text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    {item.category} Book Series
+                  </span>
                   <span className="block break-words text-lg font-semibold leading-7 text-zinc-950 dark:text-zinc-50">
                     {item.name}
                   </span>
-                  <span className="mt-1 block text-sm text-zinc-500 dark:text-zinc-400">
-                    {item.count} articles
+                  <span className="mt-1 block break-words text-sm font-medium leading-6 text-zinc-700 dark:text-zinc-300">
+                    {item.subtitle}
                   </span>
                 </span>
               </span>
+              <span className="mt-4 line-clamp-3 block break-words text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+                {item.goal}
+              </span>
+              <ol className="mt-4 space-y-2 text-sm text-zinc-600 dark:text-zinc-400">
+                {item.articles.slice(0, 3).map((article, index) => (
+                  <li key={article.slug} className="flex min-w-0 items-start gap-2">
+                    <span className="mt-0.5 shrink-0 font-mono text-xs text-emerald-700 dark:text-emerald-300">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <span className="min-w-0 break-words">{article.title}</span>
+                  </li>
+                ))}
+              </ol>
             </Link>
           ))}
         </div>

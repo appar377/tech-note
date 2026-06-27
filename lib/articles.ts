@@ -5,6 +5,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import type { ArticleLevel, ArticleType } from "./article-metadata";
 import { compareKnowledgeDomainSlugs, getKnowledgeDomain } from "./knowledge-domains";
+import { getSeriesBookDefinition, type SeriesBookDefinition } from "./series-books";
 import { absoluteUrl } from "./site";
 import { normalizeSearchText, slugify, titleFromSlug } from "./slug";
 
@@ -93,8 +94,24 @@ export type TaxonomyItem = {
 };
 
 export type SeriesItem = TaxonomyItem & {
+  description: string;
   category: string;
   categorySlug: string;
+  subtitle: string;
+  goal: string;
+  audience: string[];
+  prerequisites: string[];
+  outcomes: string[];
+  concept: string;
+  sections: SeriesSection[];
+  notes: SeriesBookDefinition["notes"];
+  references: SeriesBookDefinition["references"];
+  articles: Article[];
+};
+
+export type SeriesSection = {
+  title: string;
+  description: string;
   articles: Article[];
 };
 
@@ -198,6 +215,16 @@ export function getSeries(): SeriesItem[] {
       slug: article.series.slug,
       category: article.category,
       categorySlug: article.categorySlug,
+      description: "",
+      subtitle: "",
+      goal: "",
+      audience: [],
+      prerequisites: [],
+      outcomes: [],
+      concept: "",
+      sections: [],
+      notes: [],
+      references: [],
       count: 0,
       articles: [],
     };
@@ -208,10 +235,7 @@ export function getSeries(): SeriesItem[] {
   }
 
   return Array.from(groups.values())
-    .map((series) => ({
-      ...series,
-      articles: sortSeriesArticles(series.articles),
-    }))
+    .map((series) => buildSeriesItem(series))
     .sort(
       (a, b) =>
         compareKnowledgeDomainSlugs(a.categorySlug, b.categorySlug) ||
@@ -449,6 +473,94 @@ function sortSeriesArticles(articles: Article[]) {
     const bOrder = b.series?.order ?? Number.MAX_SAFE_INTEGER;
     return aOrder - bOrder || compareArticlesAsc(a, b);
   });
+}
+
+function buildSeriesItem(series: SeriesItem): SeriesItem {
+  const definition = getSeriesBookDefinition(series.slug);
+  const articles = sortSeriesArticles(series.articles);
+  const name = definition?.name ?? series.name;
+  const category = definition?.category ?? series.category;
+  const categorySlug = definition?.categorySlug ?? series.categorySlug;
+
+  return {
+    ...series,
+    name,
+    category,
+    categorySlug,
+    description:
+      definition?.description ??
+      `${name}に関連する公開済み記事を、学習しやすい順番でまとめたシリーズです。`,
+    subtitle: definition?.subtitle ?? "公開済みの記事を、章立てとして順番に辿るシリーズ。",
+    goal:
+      definition?.goal ??
+      `${name}の主要な考え方を、記事を順番に読みながら説明できる状態を目指します。`,
+    audience: definition?.audience ?? [],
+    prerequisites: definition?.prerequisites ?? [],
+    outcomes: definition?.outcomes ?? [],
+    concept: definition?.concept ?? "",
+    sections: buildSeriesSections(definition, articles, name),
+    notes: definition?.notes ?? [],
+    references: definition?.references ?? [],
+    articles,
+  };
+}
+
+function buildSeriesSections(
+  definition: SeriesBookDefinition | undefined,
+  articles: Article[],
+  seriesName: string,
+): SeriesSection[] {
+  if (!definition) {
+    return [
+      {
+        title: "公開済みの章",
+        description: `${seriesName}の公開済み記事です。`,
+        articles,
+      },
+    ];
+  }
+
+  const articlesBySlug = new Map(articles.map((article) => [article.slug, article]));
+  const usedArticleSlugs = new Set<string>();
+  const sections = definition.sections
+    .map((section) => {
+      const sectionArticles = section.articleSlugs.flatMap((slug) => {
+        const article = articlesBySlug.get(slug);
+
+        if (!article) {
+          return [];
+        }
+
+        usedArticleSlugs.add(article.slug);
+        return [article];
+      });
+
+      return {
+        title: section.title,
+        description: section.description,
+        articles: sectionArticles,
+      };
+    })
+    .filter((section) => section.articles.length > 0);
+
+  const remainingArticles = articles.filter((article) => !usedArticleSlugs.has(article.slug));
+  if (remainingArticles.length > 0) {
+    sections.push({
+      title: "補足章",
+      description: "シリーズ定義にまだ分類していない公開済み記事です。",
+      articles: remainingArticles,
+    });
+  }
+
+  return sections.length > 0
+    ? sections
+    : [
+        {
+          title: "公開済みの章",
+          description: `${seriesName}の公開済み記事です。`,
+          articles,
+        },
+      ];
 }
 
 function stripInlineMarkdown(value: string) {
