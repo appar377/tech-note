@@ -162,23 +162,220 @@ WHERE email = 'alice@example.com';
 
 MySQLの `EXPLAIN ANALYZE` はツリー形式で、各処理の実行時間や行数を確認できます。
 
-## ANALYZEだけは別物
+## 実行すると実際にどう表示されるのか
 
-`ANALYZE` という名前が出てくるため混乱しやすいですが、`ANALYZE` と `EXPLAIN ANALYZE` は別物です。
+ここでは、次のSQLを例にします。
 
-PostgreSQLの `ANALYZE` は、テーブルの統計情報を収集します。
+```sql title="target_query.sql"
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+数値は環境やデータ件数によって変わります。
+
+見るべきなのは、細かい数値そのものよりも、どのような形式で表示され、どの項目を読むのかです。
+
+### MySQLのEXPLAIN
+
+MySQLで `EXPLAIN` を実行すると、通常は表形式で表示されます。
+
+```sql title="mysql_explain.sql"
+EXPLAIN
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+例えば、`email` にIndexがある場合は次のように表示されます。
+
+```text title="mysql_explain_output.txt"
++----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
+| id | select_type | table | partitions | type | possible_keys   | key             | key_len | ref   | rows | filtered | Extra       |
++----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
+|  1 | SIMPLE      | users | NULL       | ref  | idx_users_email | idx_users_email | 1022    | const |    1 |   100.00 | Using where |
++----+-------------+-------+------------+------+-----------------+-----------------+---------+-------+------+----------+-------------+
+```
+
+この出力では、`key` に `idx_users_email` が表示されています。
+
+つまり、Optimizerが `idx_users_email` を使う計画を選んだことが分かります。
+
+一方、Indexが使われない場合は、次のようになります。
+
+```text title="mysql_explain_full_scan.txt"
++----+-------------+-------+------------+------+---------------+------+---------+------+--------+----------+-------------+
+| id | select_type | table | partitions | type | possible_keys | key  | key_len | ref  | rows   | filtered | Extra       |
++----+-------------+-------+------------+------+---------------+------+---------+------+--------+----------+-------------+
+|  1 | SIMPLE      | users | NULL       | ALL  | NULL          | NULL | NULL    | NULL | 100000 |    10.00 | Using where |
++----+-------------+-------+------------+------+---------------+------+---------+------+--------+----------+-------------+
+```
+
+`type` が `ALL`、`key` が `NULL` なので、Indexを使わずに全件スキャンする計画です。
+
+### MySQLのEXPLAIN ANALYZE
+
+MySQLで `EXPLAIN ANALYZE` を実行すると、実行計画がツリー形式で表示されます。
+
+```sql title="mysql_explain_analyze.sql"
+EXPLAIN ANALYZE
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+出力例は次のようになります。
+
+```text title="mysql_explain_analyze_output.txt"
++--------------------------------------------------------------------------------------------------------------------------------+
+| EXPLAIN                                                                                                                        |
++--------------------------------------------------------------------------------------------------------------------------------+
+| -> Index lookup on users using idx_users_email (email='alice@example.com')  (cost=0.35 rows=1) (actual time=0.041..0.043 rows=1 loops=1) |
++--------------------------------------------------------------------------------------------------------------------------------+
+```
+
+ここで重要なのは、`cost` と `actual` の違いです。
+
+| 表示 | 意味 |
+| --- | --- |
+| `cost=0.35 rows=1` | Optimizerが見積もったコストと行数 |
+| `actual time=0.041..0.043` | 実際に処理にかかった時間 |
+| `rows=1` in `actual` | 実際に返した行数 |
+| `loops=1` | その処理が実行された回数 |
+
+`EXPLAIN` だけでは推定値しか分かりません。
+
+`EXPLAIN ANALYZE` を使うと、推定と実測がどれくらいズレているかを確認できます。
+
+### PostgreSQLのEXPLAIN
+
+PostgreSQLで `EXPLAIN` を実行すると、ツリー形式で表示されます。
+
+```sql title="postgres_explain.sql"
+EXPLAIN
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+Indexが使われる場合は、次のような出力になります。
+
+```text title="postgres_explain_output.txt"
+                                      QUERY PLAN
+--------------------------------------------------------------------------------------
+ Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=128)
+   Index Cond: (email = 'alice@example.com'::text)
+(2 rows)
+```
+
+`Index Scan using idx_users_email` と表示されているため、`idx_users_email` が使われています。
+
+Indexがない場合は、次のように `Seq Scan` になります。
+
+```text title="postgres_explain_seq_scan.txt"
+                       QUERY PLAN
+---------------------------------------------------------
+ Seq Scan on users  (cost=0.00..1820.00 rows=1 width=128)
+   Filter: (email = 'alice@example.com'::text)
+(2 rows)
+```
+
+`Seq Scan` は、テーブルを先頭から順番に読む処理です。
+
+大量データで `Seq Scan` が出ている場合は、Indexが必要かどうかを検討します。
+
+### PostgreSQLのEXPLAIN ANALYZE
+
+PostgreSQLで `EXPLAIN ANALYZE` を実行すると、`actual time`、実際の `rows`、`loops` が追加されます。
+
+```sql title="postgres_explain_analyze.sql"
+EXPLAIN ANALYZE
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+出力例は次のとおりです。
+
+```text title="postgres_explain_analyze_output.txt"
+                                      QUERY PLAN
+---------------------------------------------------------------------------------------
+ Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=128)
+                                           (actual time=0.031..0.033 rows=1 loops=1)
+   Index Cond: (email = 'alice@example.com'::text)
+ Planning Time: 0.210 ms
+ Execution Time: 0.061 ms
+(5 rows)
+```
+
+PostgreSQLでは、`BUFFERS` を付けることも多いです。
+
+```sql title="postgres_explain_analyze_buffers.sql"
+EXPLAIN (ANALYZE, BUFFERS)
+SELECT *
+FROM users
+WHERE email = 'alice@example.com';
+```
+
+この場合は、共有バッファをどれくらい読んだかも表示されます。
+
+```text title="postgres_explain_analyze_buffers_output.txt"
+                                      QUERY PLAN
+---------------------------------------------------------------------------------------
+ Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=128)
+                                           (actual time=0.031..0.033 rows=1 loops=1)
+   Index Cond: (email = 'alice@example.com'::text)
+   Buffers: shared hit=4
+ Planning:
+   Buffers: shared hit=12
+ Planning Time: 0.210 ms
+ Execution Time: 0.061 ms
+(8 rows)
+```
+
+`shared hit=4` は、ディスクから直接読むのではなく、共有バッファ上にあるページを読んだことを表します。
+
+IOが重いSQLでは、`BUFFERS` を付けると原因を追いやすくなります。
+
+### ANALYZE / ANALYZE TABLEの表示
+
+`ANALYZE` は実行計画を見る構文ではなく、統計情報を更新する構文です。
+
+PostgreSQLでは、成功するとシンプルに `ANALYZE` と表示されます。
 
 ```sql title="postgres_analyze.sql"
 ANALYZE users;
 ```
 
-MySQLでは `ANALYZE TABLE` を使います。
+```text title="postgres_analyze_output.txt"
+ANALYZE
+```
+
+MySQLでは `ANALYZE TABLE` を使い、表形式で結果が表示されます。
 
 ```sql title="mysql_analyze_table.sql"
 ANALYZE TABLE users;
 ```
 
-これは、実行計画を表示するための構文ではありません。
+```text title="mysql_analyze_table_output.txt"
++-----------+---------+----------+----------+
+| Table     | Op      | Msg_type | Msg_text |
++-----------+---------+----------+----------+
+| app.users | analyze | status   | OK       |
++-----------+---------+----------+----------+
+```
+
+`EXPLAIN ANALYZE` と名前は似ていますが、出力されるものはまったく違います。
+
+`ANALYZE` / `ANALYZE TABLE` は、Optimizerが使う統計情報を更新するためのものです。
+
+## ANALYZEだけは別物
+
+`ANALYZE` という名前が出てくるため混乱しやすいですが、`ANALYZE` と `EXPLAIN ANALYZE` は別物です。
+
+PostgreSQLでは `ANALYZE users;`、MySQLでは `ANALYZE TABLE users;` のように使います。
+
+これらは、実行計画を表示するための構文ではありません。
 
 DBがより良い実行計画を作れるように、テーブルの統計情報を更新するための構文です。
 
