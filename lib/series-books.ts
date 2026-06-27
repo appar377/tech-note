@@ -93,11 +93,6 @@ export const SERIES_BOOKS = [
         body:
           "このシリーズでは、個別のSQL構文を覚える前に「SQLがどの処理段階で変換されるのか」を押さえます。記事単体でも読めますが、上から順に読むと実行計画の意味がつながります。",
       },
-      {
-        title: "今後の拡張",
-        body:
-          "Index、B+Tree、Join Algorithm、MVCC、Buffer Poolなどの記事を追加しても、このページでは公開済みの章だけを表示します。",
-      },
     ],
     references: [
       {
