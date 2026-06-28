@@ -168,6 +168,84 @@ export const SERIES_BOOKS = [
       },
     ],
   }),
+  defineSeriesBook({
+    name: "Ubuntu MT5 Server",
+    category: "Linux",
+    subtitle: "Wine、display layer、Python API、systemdをつなぐMT5サーバー設計",
+    description:
+      "Ubuntu系LinuxでMetaTrader 5を動かすときに、OS選定、GUI検証、headless設計、Wine、Python連携、systemd運用を分けて整理するシリーズです。",
+    goal:
+      "MT5のインストール手順だけでなく、Wine、DISPLAY、WINEPREFIX、Python実行環境、systemd起動順序の境界を説明できる状態を目指します。",
+    audience: [
+      "Ubuntu系VPSでMT5を検証したいエンジニア",
+      "Wine上のGUIアプリをsystemdで扱いたい人",
+      "MT5 APIとPython botの実行環境を切り分けたい人",
+    ],
+    prerequisites: [
+      "Linuxの基本的なCLI操作",
+      "systemd serviceとjournalctlの基本",
+      "Python仮想環境とプロセス管理の基本",
+    ],
+    outcomes: [
+      "GUIあり検証とUbuntu Server本番設計を分けて考えられる",
+      "Wine prefix、terminal path、DISPLAYのズレを切り分けられる",
+      "MT5 terminal、Python worker、bot、systemdの責務境界を設計できる",
+    ],
+    concept:
+      "Ubuntu Server -> display layer -> Wine -> MT5 terminal -> Python API / bridge -> systemd という実行境界を、記事ごとに分解して理解します。",
+    sections: [
+      {
+        title: "全体像とOS選定",
+        description:
+          "最初に、なぜOSごとに分けず、検証環境と本番環境で切るのかを整理します。",
+        articleSlugs: [
+          "linux/mt5-ubuntu/00-series-overview",
+          "linux/mt5-ubuntu/01-os-selection",
+        ],
+      },
+      {
+        title: "GUI検証からheadless設計へ",
+        description:
+          "GUIあり環境でMT5の初回ログインや表示を潰し、その後Ubuntu ServerでDISPLAYをどう用意するかを扱います。",
+        articleSlugs: [
+          "linux/mt5-ubuntu/02-gui-flavors-validation",
+          "linux/mt5-ubuntu/03-ubuntu-server-headless-design",
+        ],
+      },
+      {
+        title: "Wine、Python、systemdをつなぐ",
+        description:
+          "Wine prefixとterminal path、MetaTrader5 packageの実行環境、systemdの起動順序を整理します。",
+        articleSlugs: [
+          "linux/mt5-ubuntu/04-wine-mt5-installation",
+          "linux/mt5-ubuntu/05-mt5-python-api-integration",
+          "linux/mt5-ubuntu/06-systemd-operation",
+          "linux/mt5-ubuntu/07-final-architecture-troubleshooting",
+        ],
+      },
+    ],
+    notes: [
+      {
+        title: "金融系記事としての扱い",
+        body:
+          "このシリーズは投資助言や売買ロジックの解説ではなく、Linux上でWindows前提のMT5を運用するための技術構成と切り分けの記録です。",
+      },
+    ],
+    references: [
+      {
+        title: "MetaTrader 5 Help: Installation on Linux",
+        href: "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      },
+      {
+        title: "MQL5 Reference: Python Integration",
+        href: "https://www.mql5.com/en/docs/python_metatrader5",
+      },
+      {
+        title: "Ubuntu: Ubuntu flavors",
+        href: "https://ubuntu.com/desktop/flavors",
+      },
+    ],
+  }),
 ] as const satisfies readonly SeriesBookDefinition[];
 
 const seriesBookBySlug = new Map(SERIES_BOOKS.map((book) => [book.slug, book]));
