@@ -60,7 +60,7 @@ export function ThemeToggle() {
   ];
 
   return (
-    <div className="flex h-9 items-center rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="tech-shell flex h-9 items-center rounded-lg border p-1">
       {items.map((item) => {
         const Icon = item.icon;
         return (
@@ -69,8 +69,8 @@ export function ThemeToggle() {
             type="button"
             className={`grid h-7 w-7 place-items-center rounded-md transition ${
               theme === item.value
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950"
-                : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                ? "bg-cyan-600 text-white shadow-sm shadow-cyan-500/20 dark:bg-cyan-300 dark:text-zinc-950"
+                : "text-zinc-500 hover:bg-cyan-500/10 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-cyan-400/10 dark:hover:text-zinc-50"
             }`}
             onClick={() => updateTheme(item.value)}
             aria-label={item.label}

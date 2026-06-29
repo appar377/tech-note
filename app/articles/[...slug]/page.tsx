@@ -104,7 +104,7 @@ export default async function ArticlePage({ params }: PageProps) {
   return (
     <article className="page-shell">
       <Breadcrumbs items={crumbs} />
-      <header className="mt-8 border-b border-zinc-200 pb-8 dark:border-zinc-800">
+      <header className="article-hero mt-8 border-b pb-8">
         <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
           <span className="inline-flex items-center rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
             {formatArticleLevel(article.level)}
@@ -122,7 +122,7 @@ export default async function ArticlePage({ params }: PageProps) {
           {article.series ? (
             <Link
               href={book?.url ?? `/series/${article.series.slug}`}
-              className="max-w-full truncate rounded-lg bg-blue-50 px-3 py-1.5 font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+              className="max-w-full truncate rounded-lg bg-cyan-50 px-3 py-1.5 font-medium text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300"
             >
               {book ? `Book: ${book.title}` : article.series.name}
             </Link>
@@ -151,7 +151,7 @@ export default async function ArticlePage({ params }: PageProps) {
             <Link
               key={tag}
               href={`/tags/${slugify(tag)}`}
-              className="max-w-full break-words rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:border-zinc-300 hover:text-zinc-950 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-50"
+              className="max-w-full break-words rounded-md border border-zinc-200 bg-white/40 px-2 py-1 text-xs text-zinc-600 hover:border-cyan-300 hover:text-zinc-950 dark:border-zinc-800 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-cyan-700 dark:hover:text-zinc-50"
             >
               #{tag}
             </Link>
@@ -184,7 +184,7 @@ export default async function ArticlePage({ params }: PageProps) {
       <nav className="mt-12 grid gap-4 border-t border-zinc-200 pt-8 dark:border-zinc-800 md:grid-cols-2">
         {adjacentArticles.previous ? (
           <Link
-            className="min-w-0 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+            className="tech-card min-w-0 rounded-lg border p-4 transition hover:-translate-y-0.5"
             href={adjacentArticles.previous.url}
           >
             <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -200,7 +200,7 @@ export default async function ArticlePage({ params }: PageProps) {
         )}
         {adjacentArticles.next ? (
           <Link
-            className="min-w-0 rounded-lg border border-zinc-200 bg-white p-4 text-right shadow-sm shadow-zinc-950/5 transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+            className="tech-card min-w-0 rounded-lg border p-4 text-right transition hover:-translate-y-0.5"
             href={adjacentArticles.next.url}
           >
             <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
@@ -229,9 +229,12 @@ export default async function ArticlePage({ params }: PageProps) {
 }
 
 function ResponsiveText({ text, maxUnits }: { text: string; maxUnits: number }) {
-  return chunkText(text, maxUnits).map((chunk, index) => (
+  const chunks = chunkText(text, maxUnits);
+
+  return chunks.map((chunk, index) => (
     <span key={`${chunk}-${index}`} className="block sm:inline">
       {chunk}
+      {index < chunks.length - 1 ? " " : null}
     </span>
   ));
 }

@@ -7,14 +7,14 @@ export function TableOfContents({ headings }: { headings: TableOfContentsItem[] 
   }
 
   return (
-    <nav className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-900/40">
+    <nav className="tech-shell rounded-lg border p-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
         Contents
       </p>
       <ol className="mt-3 space-y-2 text-sm">
         {headings.map((heading) => (
           <li key={heading.id} style={{ paddingLeft: `${Math.max(0, heading.depth - 2) * 12}px` }}>
-            <Link href={`#${heading.id}`} className="text-zinc-600 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50">
+            <Link href={`#${heading.id}`} className="text-zinc-600 hover:text-cyan-700 dark:text-zinc-400 dark:hover:text-cyan-300">
               {heading.text}
             </Link>
           </li>

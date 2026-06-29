@@ -20,8 +20,8 @@ export function ArticleThumbnail({
     <div
       className={
         framed
-          ? "aspect-video w-full overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 dark:border-zinc-800 dark:bg-zinc-900"
-          : "aspect-video w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900"
+          ? "tech-thumbnail aspect-video w-full overflow-hidden rounded-lg border"
+          : "tech-thumbnail aspect-video w-full overflow-hidden"
       }
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -3,13 +3,13 @@ import Link from "next/link";
 export function LogoMark({ className = "h-9 w-9" }: { className?: string }) {
   return (
     <span
-      className={`grid shrink-0 place-items-center rounded-lg border border-zinc-900 bg-zinc-950 text-white shadow-sm shadow-zinc-950/10 dark:border-zinc-200 dark:bg-zinc-50 dark:text-zinc-950 ${className}`}
+      className={`logo-mark grid shrink-0 place-items-center rounded-lg border ${className}`}
       aria-hidden
     >
       <svg viewBox="0 0 40 40" className="h-full w-full" fill="none">
         <path
           d="M12 10.5H28"
-          stroke="#34D399"
+          stroke="#22D3EE"
           strokeWidth="2.6"
           strokeLinecap="round"
         />
@@ -43,8 +43,8 @@ export function SiteLogo() {
         <span className="block truncate text-sm font-semibold leading-5 text-zinc-950 dark:text-zinc-50">
           Tech Note
         </span>
-        <span className="hidden truncate text-xs leading-4 text-zinc-500 dark:text-zinc-400 sm:block">
-          Engineering Library
+        <span className="hidden truncate text-xs leading-4 text-cyan-700 dark:text-cyan-300 sm:block">
+          Internal Library
         </span>
       </span>
     </Link>

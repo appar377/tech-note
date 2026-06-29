@@ -17,11 +17,11 @@ export function ArticleCard({
   const book = article.series ? getBookForSeries(article.series.name) : undefined;
 
   return (
-    <article className="group flex h-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700">
+    <article className="tech-card group flex h-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border transition hover:-translate-y-0.5">
       {article.thumbnail ? (
         <Link
           href={article.url}
-          className="block outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+          className="block outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
         >
           <ArticleThumbnail article={article} framed={false} />
         </Link>
@@ -43,14 +43,14 @@ export function ArticleCard({
           {article.series ? (
             <Link
               href={book?.url ?? `/series/${article.series.slug}`}
-              className="min-w-0 truncate rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700 transition hover:bg-blue-100 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-950"
+              className="min-w-0 truncate rounded-md bg-cyan-50 px-2 py-1 font-medium text-cyan-700 transition hover:bg-cyan-100 dark:bg-cyan-950/50 dark:text-cyan-300 dark:hover:bg-cyan-950"
             >
               {book ? `Book: ${book.title}` : article.series.name}
             </Link>
           ) : null}
         </div>
         <h2 className={`${compact ? "text-base" : "text-lg"} min-w-0 max-w-full whitespace-normal break-words font-semibold leading-7 text-zinc-950 [overflow-wrap:anywhere] dark:text-zinc-50`}>
-          <Link href={article.url} className="block min-w-0 max-w-full whitespace-normal outline-none transition [overflow-wrap:anywhere] group-hover:text-emerald-700 focus-visible:text-emerald-700 dark:group-hover:text-emerald-300 dark:focus-visible:text-emerald-300">
+          <Link href={article.url} className="block min-w-0 max-w-full whitespace-normal outline-none transition [overflow-wrap:anywhere] group-hover:text-cyan-700 focus-visible:text-cyan-700 dark:group-hover:text-cyan-300 dark:focus-visible:text-cyan-300">
             {article.title}
           </Link>
         </h2>
@@ -62,7 +62,7 @@ export function ArticleCard({
             <Link
               key={tag}
               href={`/tags/${slugify(tag)}`}
-              className="max-w-full break-words rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:border-zinc-300 hover:text-zinc-950 dark:border-zinc-800 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-50"
+              className="max-w-full break-words rounded-md border border-zinc-200/80 bg-white/40 px-2 py-1 text-xs text-zinc-600 hover:border-cyan-300 hover:text-zinc-950 dark:border-zinc-800/80 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-cyan-700 dark:hover:text-zinc-50"
             >
               #{tag}
             </Link>

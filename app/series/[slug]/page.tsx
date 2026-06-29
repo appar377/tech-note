@@ -77,7 +77,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
     <div className="page-shell">
       <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Series", href: "/series" }, { label: series.name }]} />
       <header className="mb-10 mt-8">
-        <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+        <p className="tech-pill mb-3 gap-2 text-sm">
           <BookOpen aria-hidden size={15} />
           {series.category} Book Series
         </p>
@@ -95,7 +95,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
       <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 space-y-12">
           <section>
-            <p className="text-sm font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
               Mastery Goal
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
@@ -109,7 +109,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                 {series.outcomes.map((outcome) => (
                   <li
                     key={outcome}
-                    className="flex min-w-0 items-start gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm leading-6 text-zinc-700 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+                    className="tech-shell flex min-w-0 items-start gap-3 rounded-lg border p-4 text-sm leading-6 text-zinc-700 dark:text-zinc-300"
                   >
                     <Check
                       aria-hidden
@@ -125,20 +125,20 @@ export default async function SeriesDetailPage({ params }: PageProps) {
 
           {series.concept ? (
             <section>
-              <p className="text-sm font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
                 Concept Map
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
                 全体像
               </h2>
-              <p className="mt-4 break-words rounded-lg bg-zinc-50 p-5 text-base leading-8 text-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-300">
+              <p className="tech-shell mt-4 break-words rounded-lg border p-5 text-base leading-8 text-zinc-700 dark:text-zinc-300">
                 {series.concept}
               </p>
             </section>
           ) : null}
 
           <section>
-            <p className="text-sm font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
               Table of Contents
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
@@ -157,7 +157,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                     {section.articles.map(({ article, chapterNumber: currentChapter }) => (
                       <li
                         key={article.slug}
-                        className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm shadow-zinc-950/5 transition hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                        className="tech-card rounded-lg border p-5 transition hover:-translate-y-0.5"
                       >
                         <Link
                           href={article.url}
@@ -165,7 +165,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                         >
                           <span className="flex items-center gap-3">
                             <Square aria-hidden size={18} className="text-zinc-400" />
-                            <span className="grid h-12 w-12 place-items-center rounded-lg bg-zinc-100 font-mono text-sm font-semibold text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                            <span className="grid h-12 w-12 place-items-center rounded-lg bg-cyan-500/10 font-mono text-sm font-semibold text-cyan-700 dark:text-cyan-300">
                               {String(currentChapter).padStart(2, "0")}
                             </span>
                           </span>
@@ -199,7 +199,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
 
           {series.notes.length > 0 ? (
             <section>
-              <p className="text-sm font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
                 Series Notes
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
@@ -263,7 +263,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                     {reference.href ? (
                       <a
                         href={reference.href}
-                        className="text-emerald-700 underline decoration-emerald-200 underline-offset-4 hover:text-emerald-800 dark:text-emerald-300 dark:decoration-emerald-900 dark:hover:text-emerald-200"
+                        className="text-cyan-700 underline decoration-cyan-200 underline-offset-4 hover:text-cyan-800 dark:text-cyan-300 dark:decoration-cyan-900 dark:hover:text-cyan-200"
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -290,7 +290,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
 
 function SeriesMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="tech-card rounded-lg border p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-500">
         {label}
       </p>

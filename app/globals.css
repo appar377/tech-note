@@ -7,6 +7,23 @@
 :root {
   --background: var(--au-color-bg);
   --foreground: var(--au-color-text);
+  --tech-page-bg:
+    linear-gradient(180deg, rgb(237 245 255 / 0.96) 0%, rgb(255 255 255 / 0.88) 360px, rgb(248 250 252 / 0.95) 100%),
+    linear-gradient(115deg, rgb(14 165 233 / 0.11) 0%, transparent 34%, rgb(16 185 129 / 0.08) 58%, transparent 78%),
+    repeating-linear-gradient(90deg, rgb(15 23 42 / 0.035) 0 1px, transparent 1px 88px),
+    repeating-linear-gradient(0deg, rgb(15 23 42 / 0.028) 0 1px, transparent 1px 88px);
+  --tech-surface: rgb(255 255 255 / 0.82);
+  --tech-surface-strong: rgb(255 255 255 / 0.94);
+  --tech-border: rgb(15 23 42 / 0.1);
+  --tech-border-strong: rgb(14 165 233 / 0.32);
+  --tech-muted-border: rgb(15 23 42 / 0.08);
+  --tech-cyan: #0284c7;
+  --tech-emerald: #059669;
+  --tech-violet: #7c3aed;
+  --tech-amber: #d97706;
+  --tech-glow: 0 18px 42px rgb(2 132 199 / 0.12), 0 1px 0 rgb(255 255 255 / 0.7) inset;
+  --tech-glow-hover: 0 22px 56px rgb(2 132 199 / 0.18), 0 0 0 1px rgb(14 165 233 / 0.16);
+  --tech-grid-line: rgb(14 165 233 / 0.11);
   color-scheme: light;
 }
 
@@ -20,11 +37,31 @@
 html.dark {
   --background: var(--au-color-bg);
   --foreground: var(--au-color-text);
+  --tech-page-bg:
+    linear-gradient(180deg, rgb(3 7 18 / 0.98) 0%, rgb(7 11 28 / 0.98) 420px, rgb(8 13 24 / 0.99) 100%),
+    linear-gradient(118deg, rgb(14 165 233 / 0.2) 0%, transparent 31%, rgb(16 185 129 / 0.15) 56%, transparent 75%),
+    repeating-linear-gradient(90deg, rgb(56 189 248 / 0.07) 0 1px, transparent 1px 92px),
+    repeating-linear-gradient(0deg, rgb(129 140 248 / 0.045) 0 1px, transparent 1px 92px);
+  --tech-surface: rgb(9 15 30 / 0.78);
+  --tech-surface-strong: rgb(10 16 32 / 0.93);
+  --tech-border: rgb(148 163 184 / 0.16);
+  --tech-border-strong: rgb(56 189 248 / 0.36);
+  --tech-muted-border: rgb(148 163 184 / 0.11);
+  --tech-cyan: #38bdf8;
+  --tech-emerald: #34d399;
+  --tech-violet: #a78bfa;
+  --tech-amber: #fbbf24;
+  --tech-glow: 0 22px 54px rgb(0 0 0 / 0.28), 0 0 34px rgb(14 165 233 / 0.08);
+  --tech-glow-hover: 0 26px 66px rgb(0 0 0 / 0.38), 0 0 44px rgb(56 189 248 / 0.16);
+  --tech-grid-line: rgb(56 189 248 / 0.13);
   color-scheme: dark;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
+  background-image: var(--tech-page-bg);
+  background-attachment: fixed;
+  background-size: auto, auto, 92px 92px, 92px 92px;
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
@@ -47,7 +84,7 @@ canvas {
 }
 
 .page-shell {
-  @apply mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14;
+  @apply relative mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:py-14;
   line-break: strict;
   overflow-wrap: anywhere;
 }
@@ -75,12 +112,148 @@ canvas {
   @apply text-xl font-semibold text-zinc-950 dark:text-zinc-50;
 }
 
+.section-title::before {
+  @apply mr-2 inline-block h-3 w-1 rounded-full align-baseline;
+  content: "";
+  background: linear-gradient(180deg, var(--tech-cyan), var(--tech-emerald));
+  box-shadow: 0 0 18px rgb(34 211 238 / 0.38);
+}
+
+.tech-shell {
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
+  backdrop-filter: blur(18px);
+}
+
+.tech-shell-strong {
+  background: var(--tech-surface-strong);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
+  backdrop-filter: blur(18px);
+}
+
+.tech-card {
+  @apply relative overflow-hidden;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.035), transparent 42%),
+    var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
+  backdrop-filter: blur(18px);
+}
+
+.tech-card:hover {
+  border-color: var(--tech-border-strong);
+  box-shadow: var(--tech-glow-hover);
+}
+
+.tech-card::before {
+  @apply pointer-events-none absolute inset-x-0 top-0 h-px opacity-70;
+  content: "";
+  background: linear-gradient(90deg, transparent, var(--tech-cyan), var(--tech-emerald), transparent);
+}
+
+.tech-grid-panel {
+  @apply relative overflow-hidden;
+  background:
+    linear-gradient(135deg, rgb(56 189 248 / 0.12), transparent 28%, rgb(52 211 153 / 0.1) 62%, transparent 100%),
+    var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
+  backdrop-filter: blur(18px);
+}
+
+.tech-grid-panel::before {
+  @apply pointer-events-none absolute inset-0 opacity-70;
+  content: "";
+  background-image:
+    linear-gradient(var(--tech-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tech-grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: linear-gradient(180deg, black, transparent 86%);
+  mask-image: linear-gradient(180deg, black, transparent 86%);
+}
+
+.tech-pill {
+  @apply inline-flex items-center rounded-lg border px-3 py-1.5 font-medium;
+  background: rgb(56 189 248 / 0.1);
+  border-color: var(--tech-border);
+  color: var(--tech-cyan);
+}
+
+.tech-accent-text {
+  background: linear-gradient(90deg, var(--tech-cyan), var(--tech-emerald), var(--tech-violet));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.logo-mark {
+  background:
+    linear-gradient(135deg, rgb(56 189 248 / 0.16), transparent 42%),
+    linear-gradient(315deg, rgb(52 211 153 / 0.16), transparent 38%),
+    #030712;
+  border-color: rgb(56 189 248 / 0.36);
+  color: white;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06) inset, 0 0 28px rgb(56 189 248 / 0.2);
+}
+
+.logo-mark svg {
+  filter: drop-shadow(0 0 7px rgb(34 211 238 / 0.45));
+}
+
+.tech-thumbnail {
+  background: #030712;
+  border-color: var(--tech-border);
+  box-shadow: 0 16px 40px rgb(2 6 23 / 0.14);
+}
+
+.tech-thumbnail img {
+  transform: scale(1.001);
+  transition: transform 240ms cubic-bezier(0.2, 0, 0, 1), filter 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.group:hover .tech-thumbnail img,
+.group:focus-within .tech-thumbnail img {
+  transform: scale(1.025);
+  filter: saturate(1.08) contrast(1.03);
+}
+
+.article-hero {
+  border-color: var(--tech-border);
+}
+
+.article-hero::after {
+  @apply mt-8 block h-px w-full;
+  content: "";
+  background: linear-gradient(90deg, var(--tech-cyan), var(--tech-emerald), transparent);
+  opacity: 0.8;
+}
+
 .icon-button {
-  @apply inline-grid h-9 w-9 place-items-center rounded-lg border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-50;
+  @apply inline-grid h-9 w-9 place-items-center rounded-lg border text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50;
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.5) inset;
+  backdrop-filter: blur(14px);
+}
+
+.icon-button:hover {
+  border-color: var(--tech-border-strong);
+  box-shadow: 0 0 22px rgb(56 189 248 / 0.14);
 }
 
 .icon-text-button {
-  @apply inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50;
+  @apply inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50;
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  backdrop-filter: blur(14px);
+}
+
+.icon-text-button:hover {
+  border-color: var(--tech-border-strong);
+  box-shadow: 0 0 22px rgb(56 189 248 / 0.14);
 }
 
 .prose {
@@ -126,7 +299,10 @@ canvas {
 }
 
 .prose blockquote {
-  @apply my-6 border-l-4 border-zinc-300 bg-zinc-50 px-4 py-3 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300;
+  @apply my-6 rounded-lg border-l-4 px-4 py-3 text-zinc-700 dark:text-zinc-300;
+  background: var(--tech-surface);
+  border-color: var(--tech-border-strong);
+  box-shadow: 0 12px 30px rgb(15 23 42 / 0.06);
 }
 
 .prose table {
@@ -139,11 +315,14 @@ canvas {
 }
 
 .prose th {
-  @apply bg-zinc-100 font-semibold text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50;
+  @apply font-semibold text-zinc-950 dark:text-zinc-50;
+  background: linear-gradient(90deg, rgb(14 165 233 / 0.1), rgb(16 185 129 / 0.08));
 }
 
 .prose img {
-  @apply my-8 rounded-lg border border-zinc-200 dark:border-zinc-800;
+  @apply my-8 rounded-lg border;
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
 }
 
 .book-prose {
@@ -153,9 +332,10 @@ canvas {
 .book-hero {
   @apply relative isolate grid gap-8 overflow-hidden rounded-lg bg-zinc-950 p-5 shadow-xl shadow-zinc-950/10 ring-1 ring-zinc-950/10 dark:ring-white/10 sm:p-8 lg:grid-cols-[420px_minmax(0,1fr)] lg:items-center;
   background:
-    radial-gradient(circle at 20% 10%, rgb(52 211 153 / 0.24), transparent 34%),
-    radial-gradient(circle at 78% 18%, rgb(96 165 250 / 0.22), transparent 32%),
-    linear-gradient(135deg, #07111f 0%, #0f172a 54%, #10231f 100%);
+    linear-gradient(118deg, rgb(56 189 248 / 0.24), transparent 32%),
+    linear-gradient(243deg, rgb(167 139 250 / 0.2), transparent 36%),
+    linear-gradient(135deg, #030712 0%, #07111f 46%, #0b172f 100%);
+  box-shadow: 0 28px 80px rgb(2 6 23 / 0.3), 0 0 0 1px rgb(56 189 248 / 0.12);
 }
 
 .book-hero::before {
@@ -169,6 +349,7 @@ canvas {
 
 .book-hero__cover {
   @apply mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-md bg-zinc-900 shadow-2xl shadow-black/40 ring-1 ring-white/15 lg:max-w-none;
+  box-shadow: 0 24px 72px rgb(0 0 0 / 0.45), 0 0 38px rgb(56 189 248 / 0.18);
   transform: perspective(1100px) rotateY(-3deg) rotateX(1deg);
   transform-origin: center;
 }
@@ -183,6 +364,7 @@ canvas {
 
 .book-hero__metric {
   @apply inline-flex min-w-0 items-center gap-2 rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/10;
+  box-shadow: 0 0 22px rgb(56 189 248 / 0.08) inset;
 }
 
 .book-cover-card {
@@ -211,12 +393,16 @@ canvas {
 }
 
 .book-reader__toolbar {
-  @apply sticky top-20 z-20 mb-4 flex min-w-0 items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white/90 p-3 shadow-sm shadow-zinc-950/5 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90;
+  @apply sticky top-20 z-20 mb-4 flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3 shadow-sm shadow-zinc-950/5 backdrop-blur;
+  background: var(--tech-surface-strong);
+  border-color: var(--tech-border);
 }
 
 .book-reader__button,
 .book-reader__mode {
-  @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50;
+  @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:text-zinc-50;
+  background: rgb(56 189 248 / 0.08);
+  border-color: var(--tech-border);
 }
 
 .book-reader__button {
@@ -228,11 +414,16 @@ canvas {
 }
 
 .book-reader__progress span {
-  @apply block h-full rounded-full bg-emerald-500 transition-all duration-500 dark:bg-emerald-400;
+  @apply block h-full rounded-full transition-all duration-500;
+  background: linear-gradient(90deg, var(--tech-cyan), var(--tech-emerald), var(--tech-violet));
+  box-shadow: 0 0 18px rgb(56 189 248 / 0.45);
 }
 
 .book-page-shell {
-  @apply relative overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900;
+  @apply relative overflow-hidden rounded-lg border shadow-sm shadow-zinc-950/5;
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
 }
 
 .book-page-shell__spine {
@@ -240,7 +431,10 @@ canvas {
 }
 
 .book-page {
-  @apply relative min-w-0 bg-white px-5 py-7 dark:bg-zinc-950 sm:px-9 sm:py-10 lg:px-12;
+  @apply relative min-w-0 px-5 py-7 sm:px-9 sm:py-10 lg:px-12;
+  background:
+    linear-gradient(90deg, rgb(14 165 233 / 0.045), transparent 20%),
+    var(--tech-surface-strong);
   box-shadow:
     inset 18px 0 26px rgb(15 23 42 / 0.045),
     inset -1px 0 0 rgb(15 23 42 / 0.06);
@@ -261,7 +455,14 @@ canvas {
 }
 
 .book-reader__pager {
-  @apply inline-flex min-w-0 items-center gap-3 rounded-lg border border-zinc-200 bg-white p-4 text-left text-sm text-zinc-700 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:text-zinc-950 hover:shadow-md hover:shadow-zinc-950/5 disabled:pointer-events-none disabled:opacity-45 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-zinc-50;
+  @apply inline-flex min-w-0 items-center gap-3 rounded-lg border p-4 text-left text-sm text-zinc-700 transition hover:-translate-y-0.5 hover:text-zinc-950 disabled:pointer-events-none disabled:opacity-45 dark:text-zinc-300 dark:hover:text-zinc-50;
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  box-shadow: var(--tech-glow);
+}
+
+.book-reader__pager:hover {
+  border-color: var(--tech-border-strong);
 }
 
 .book-reader__pager--next {
@@ -318,7 +519,9 @@ canvas {
 }
 
 .code-block pre {
-  @apply my-0 max-h-[560px] max-w-full overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-950 p-4 text-sm leading-6 text-zinc-100 dark:border-zinc-800;
+  @apply my-0 max-h-[560px] max-w-full overflow-x-auto rounded-lg border bg-zinc-950 p-4 text-sm leading-6 text-zinc-100;
+  border-color: rgb(56 189 248 / 0.18);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 18px 46px rgb(2 6 23 / 0.18);
 }
 
 .code-copy-button {
@@ -326,7 +529,9 @@ canvas {
 }
 
 figure[data-rehype-pretty-code-figure] {
-  @apply my-8 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-950 dark:border-zinc-800;
+  @apply my-8 overflow-hidden rounded-lg border bg-zinc-950;
+  border-color: rgb(56 189 248 / 0.18);
+  box-shadow: 0 20px 52px rgb(2 6 23 / 0.18);
 }
 
 figure[data-rehype-pretty-code-figure] .code-block pre {
@@ -334,7 +539,8 @@ figure[data-rehype-pretty-code-figure] .code-block pre {
 }
 
 figcaption[data-rehype-pretty-code-title] {
-  @apply border-b border-white/10 bg-zinc-900 px-4 py-2 font-mono text-xs text-zinc-300;
+  @apply border-b border-white/10 px-4 py-2 font-mono text-xs text-zinc-300;
+  background: linear-gradient(90deg, rgb(14 165 233 / 0.16), rgb(15 23 42 / 0.96));
 }
 
 code:not(pre code) {

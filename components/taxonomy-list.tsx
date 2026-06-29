@@ -21,7 +21,7 @@ export function TaxonomyList({
           <Link
             key={item.slug}
             href={`${basePath}/${item.slug}`}
-            className="inline-flex max-w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:text-zinc-950 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-zinc-50"
+            className="tech-shell inline-flex max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm text-zinc-700 transition hover:-translate-y-0.5 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50"
           >
             <span className="min-w-0 truncate">{item.name}</span>
             <span className="shrink-0 text-xs text-zinc-400">{item.count}</span>

@@ -28,19 +28,19 @@ export default function Home() {
 
   return (
     <div className="page-shell space-y-16">
-      <section className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)] lg:items-center">
+      <section className="relative isolate grid gap-10 overflow-hidden py-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)] lg:items-center">
         <div className="min-w-0">
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+          <p className="tech-pill mb-5 gap-2 text-sm">
             <Library aria-hidden size={15} />
             Personal technology library
           </p>
           <div className="mb-5 flex items-center gap-4">
             <LogoMark className="h-14 w-14" />
             <div className="min-w-0">
-              <h1 className="truncate text-4xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
+              <h1 className="tech-accent-text truncate text-4xl font-semibold tracking-tight sm:text-5xl">
                 Tech Note
               </h1>
-              <p className="mt-1 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+              <p className="mt-1 text-sm font-medium text-cyan-700 dark:text-cyan-300">
                 Single Source of Truth
               </p>
             </div>
@@ -68,7 +68,7 @@ export default function Home() {
               <Link
                 key={category.slug}
                 href={`/categories/${category.slug}`}
-                className="group rounded-lg border border-zinc-200 bg-white p-4 text-sm shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                className="tech-card group block rounded-lg border p-4 text-sm transition hover:-translate-y-0.5"
               >
                 <span className="flex items-center justify-between gap-3">
                   <span className="min-w-0 truncate font-semibold text-zinc-950 dark:text-zinc-50">
@@ -77,7 +77,7 @@ export default function Home() {
                   <ArrowRight
                     aria-hidden
                     size={15}
-                    className="shrink-0 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-emerald-600 dark:group-hover:text-emerald-300"
+                    className="shrink-0 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-cyan-600 dark:group-hover:text-cyan-300"
                   />
                 </span>
                 <span className="mt-2 block text-xs text-zinc-500 dark:text-zinc-400">
@@ -134,8 +134,8 @@ function Metric({
   value: number;
 }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950">
-      <Icon aria-hidden size={18} className="text-emerald-600 dark:text-emerald-400" />
+    <div className="tech-card rounded-lg border p-4">
+      <Icon aria-hidden size={18} className="text-cyan-600 dark:text-cyan-300" />
       <span className="mt-3 block text-2xl font-semibold text-zinc-950 dark:text-zinc-50">
         {value}
       </span>

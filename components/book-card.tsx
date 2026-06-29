@@ -6,14 +6,14 @@ import { withBasePath } from "@/lib/site";
 
 export function BookCard({ book, compact = false }: { book: Book; compact?: boolean }) {
   return (
-    <article className="group grid h-full min-w-0 gap-5 overflow-hidden rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-lg hover:shadow-zinc-950/10 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700 sm:grid-cols-[minmax(132px,0.42fr)_minmax(0,1fr)]">
+    <article className="tech-card group grid h-full min-w-0 gap-5 overflow-hidden rounded-lg border p-4 transition hover:-translate-y-0.5 sm:grid-cols-[minmax(132px,0.42fr)_minmax(0,1fr)]">
       {book.cover ? (
         <Link
           href={book.url}
-          className="block min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
+          className="block min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
           aria-label={`${book.title}を読む`}
         >
-          <span className="book-cover-card block aspect-video overflow-hidden rounded-md bg-zinc-950 shadow-xl shadow-zinc-950/20 ring-1 ring-zinc-950/10 dark:ring-white/10">
+          <span className="book-cover-card tech-thumbnail block aspect-video overflow-hidden rounded-md border">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={withBasePath(book.cover)}
@@ -35,7 +35,7 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
       <div className="flex min-w-0 flex-col py-1">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="font-medium text-emerald-700 dark:text-emerald-300">
+            <span className="font-medium text-cyan-700 dark:text-cyan-300">
               {book.category}
             </span>
             <span aria-hidden>・</span>
@@ -46,7 +46,7 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
           >
             <Link
               href={book.url}
-              className="outline-none transition group-hover:text-emerald-700 focus-visible:text-emerald-700 dark:group-hover:text-emerald-300 dark:focus-visible:text-emerald-300"
+              className="outline-none transition group-hover:text-cyan-700 focus-visible:text-cyan-700 dark:group-hover:text-cyan-300 dark:focus-visible:text-cyan-300"
             >
               {book.title}
             </Link>
@@ -69,7 +69,7 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
         </div>
         <Link
           href={book.url}
-          className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-emerald-700 dark:text-emerald-300"
+          className="mt-auto inline-flex items-center gap-2 pt-5 text-sm font-medium text-cyan-700 dark:text-cyan-300"
         >
           Open book
           <ArrowRight aria-hidden size={15} className="transition group-hover:translate-x-0.5" />

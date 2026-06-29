@@ -151,7 +151,7 @@ export default async function BookPage({ params }: PageProps) {
         <aside className="order-first space-y-8 lg:sticky lg:top-24 lg:order-none lg:self-start">
           <TableOfContents headings={book.headings} />
           {book.references.length > 0 ? (
-            <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950">
+            <section className="tech-shell rounded-lg border p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                 Reference Articles
               </h2>
@@ -163,14 +163,14 @@ export default async function BookPage({ params }: PageProps) {
                         href={reference.href}
                         target="_blank"
                         rel="noreferrer"
-                        className="block break-words font-medium text-zinc-950 transition hover:text-emerald-700 dark:text-zinc-50 dark:hover:text-emerald-300"
+                        className="block break-words font-medium text-zinc-950 transition hover:text-cyan-700 dark:text-zinc-50 dark:hover:text-cyan-300"
                       >
                         {reference.title}
                       </a>
                     ) : (
                       <Link
                         href={reference.href}
-                        className="block break-words font-medium text-zinc-950 transition hover:text-emerald-700 dark:text-zinc-50 dark:hover:text-emerald-300"
+                        className="block break-words font-medium text-zinc-950 transition hover:text-cyan-700 dark:text-zinc-50 dark:hover:text-cyan-300"
                       >
                         {reference.title}
                       </Link>
