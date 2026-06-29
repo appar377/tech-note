@@ -151,7 +151,7 @@ canvas {
 }
 
 .book-hero {
-  @apply relative isolate grid gap-8 overflow-hidden rounded-lg bg-zinc-950 p-5 shadow-xl shadow-zinc-950/10 ring-1 ring-zinc-950/10 dark:ring-white/10 sm:p-8 lg:grid-cols-[320px_minmax(0,1fr)] lg:items-center;
+  @apply relative isolate grid gap-8 overflow-hidden rounded-lg bg-zinc-950 p-5 shadow-xl shadow-zinc-950/10 ring-1 ring-zinc-950/10 dark:ring-white/10 sm:p-8 lg:grid-cols-[420px_minmax(0,1fr)] lg:items-center;
   background:
     radial-gradient(circle at 20% 10%, rgb(52 211 153 / 0.24), transparent 34%),
     radial-gradient(circle at 78% 18%, rgb(96 165 250 / 0.22), transparent 32%),
@@ -168,8 +168,8 @@ canvas {
 }
 
 .book-hero__cover {
-  @apply mx-auto aspect-[3/4] w-full max-w-72 overflow-hidden rounded-md bg-zinc-900 shadow-2xl shadow-black/40 ring-1 ring-white/15 lg:max-w-none;
-  transform: perspective(1100px) rotateY(-7deg) rotateX(2deg);
+  @apply mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-md bg-zinc-900 shadow-2xl shadow-black/40 ring-1 ring-white/15 lg:max-w-none;
+  transform: perspective(1100px) rotateY(-3deg) rotateX(1deg);
   transform-origin: center;
 }
 

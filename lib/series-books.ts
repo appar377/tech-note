@@ -173,9 +173,9 @@ export const SERIES_BOOKS = [
     category: "Linux",
     subtitle: "Wine、display layer、Python API、systemdをつなぐMT5サーバー設計",
     description:
-      "Ubuntu系LinuxでMetaTrader 5を動かすときに、OS選定、GUI検証、headless設計、Wine、Python連携、systemd運用を分けて整理するシリーズです。",
+      "Ubuntu系LinuxでMetaTrader 5を動かすときに、OS選定、GUI検証、Wayland / X11 / XAuthority、headless設計、Wine、Python連携、systemd運用を分けて整理するシリーズです。",
     goal:
-      "MT5のインストール手順だけでなく、Wine、DISPLAY、WINEPREFIX、Python実行環境、systemd起動順序の境界を説明できる状態を目指します。",
+      "MT5のインストール手順だけでなく、Wine、DISPLAY、XAUTHORITY、WINEPREFIX、Python実行環境、systemd起動順序の境界を説明できる状態を目指します。",
     audience: [
       "Ubuntu系VPSでMT5を検証したいエンジニア",
       "Wine上のGUIアプリをsystemdで扱いたい人",
@@ -188,11 +188,11 @@ export const SERIES_BOOKS = [
     ],
     outcomes: [
       "GUIあり検証とUbuntu Server本番設計を分けて考えられる",
-      "Wine prefix、terminal path、DISPLAYのズレを切り分けられる",
+      "Wine prefix、terminal path、DISPLAY、XAUTHORITYのズレを切り分けられる",
       "MT5 terminal、Python worker、bot、systemdの責務境界を設計できる",
     ],
     concept:
-      "Ubuntu Server -> display layer -> Wine -> MT5 terminal -> Python API / bridge -> systemd という実行境界を、記事ごとに分解して理解します。",
+      "Ubuntu Server -> display layer -> X11 auth -> Wine -> MT5 terminal -> Python API / bridge -> systemd という実行境界を、記事ごとに分解して理解します。",
     sections: [
       {
         title: "全体像とOS選定",
@@ -204,13 +204,19 @@ export const SERIES_BOOKS = [
         ],
       },
       {
-        title: "GUI検証からheadless設計へ",
+        title: "GUI検証からdisplay認証の切り分けへ",
         description:
-          "GUIあり環境でMT5の初回ログインや表示を潰し、その後Ubuntu ServerでDISPLAYをどう用意するかを扱います。",
+          "GUIあり環境でMT5の初回ログインや表示を潰し、Wayland / X11 / XAuthorityの違いを分けて扱います。",
         articleSlugs: [
           "linux/mt5-ubuntu/02-gui-flavors-validation",
-          "linux/mt5-ubuntu/03-ubuntu-server-headless-design",
+          "linux/mt5-ubuntu/03-wayland-x11-xauthority",
         ],
+      },
+      {
+        title: "Ubuntu Serverのheadless設計",
+        description:
+          "Ubuntu ServerでDISPLAYとXAUTHORITYをどう用意し、Xvfb / VNC / run userをどう固定するかを扱います。",
+        articleSlugs: ["linux/mt5-ubuntu/03-ubuntu-server-headless-design"],
       },
       {
         title: "Wine、Python、systemdをつなぐ",
@@ -243,6 +249,14 @@ export const SERIES_BOOKS = [
       {
         title: "Ubuntu: Ubuntu flavors",
         href: "https://ubuntu.com/desktop/flavors",
+      },
+      {
+        title: "Wayland",
+        href: "https://wayland.freedesktop.org/",
+      },
+      {
+        title: "X.Org: Xsecurity manual page",
+        href: "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html",
       },
     ],
   }),

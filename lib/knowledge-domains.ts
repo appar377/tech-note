@@ -38,6 +38,11 @@ export const KNOWLEDGE_DOMAINS = [
     description: "VPC、IAM、Route53、ロードバランサなどクラウド基盤を体系化する。",
   },
   {
+    name: "Architecture",
+    slug: "architecture",
+    description: "認証、認可、分散設計、セキュリティ境界など設計上の判断を整理する。",
+  },
+  {
     name: "Rails",
     slug: "rails",
     description: "ActiveRecord、Rack、ZeitwerkなどRailsの内部と実務パターンを扱う。",

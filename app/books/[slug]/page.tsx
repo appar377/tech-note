@@ -47,8 +47,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       images: [
         {
           url: absoluteUrl(ogImage),
-          width: book.cover ? 960 : 1200,
-          height: book.cover ? 1280 : 630,
+          width: 1200,
+          height: book.cover ? 675 : 630,
           alt: book.title,
         },
       ],
@@ -82,8 +82,8 @@ export default async function BookPage({ params }: PageProps) {
             <img
               src={withBasePath(book.cover)}
               alt={`${book.title} cover`}
-              width={960}
-              height={1280}
+              width={1200}
+              height={675}
               loading="eager"
               decoding="async"
             />

@@ -13,13 +13,13 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
           className="block min-w-0 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-zinc-950"
           aria-label={`${book.title}を読む`}
         >
-          <span className="book-cover-card block aspect-[3/4] overflow-hidden rounded-md bg-zinc-950 shadow-xl shadow-zinc-950/20 ring-1 ring-zinc-950/10 dark:ring-white/10">
+          <span className="book-cover-card block aspect-video overflow-hidden rounded-md bg-zinc-950 shadow-xl shadow-zinc-950/20 ring-1 ring-zinc-950/10 dark:ring-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={withBasePath(book.cover)}
               alt={`${book.title} cover`}
-              width={960}
-              height={1280}
+              width={1200}
+              height={675}
               loading={compact ? "lazy" : "eager"}
               decoding="async"
               className="block h-full w-full object-cover"
@@ -27,7 +27,7 @@ export function BookCard({ book, compact = false }: { book: Book; compact?: bool
           </span>
         </Link>
       ) : (
-        <div className="grid aspect-[3/4] place-items-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        <div className="grid aspect-video place-items-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
           <BookOpen aria-hidden size={34} />
         </div>
       )}
