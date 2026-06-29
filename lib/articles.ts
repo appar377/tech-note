@@ -19,6 +19,7 @@ const seriesSchema = z.union([
   z.string(),
   z.object({
     name: z.string().min(1),
+    slug: z.string().min(1).optional(),
     order: z.number().int().positive().optional(),
   }),
 ]);
@@ -391,11 +392,12 @@ function normalizeSeries(series: ArticleFrontmatter["series"]): Article["series"
   }
 
   const name = typeof series === "string" ? series : series.name;
+  const slug = typeof series === "string" ? slugify(name) : (series.slug ?? slugify(name));
   const order = typeof series === "string" ? undefined : series.order;
 
   return {
     name,
-    slug: slugify(name),
+    slug,
     order,
   };
 }

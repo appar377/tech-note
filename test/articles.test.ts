@@ -51,18 +51,17 @@ describe("articles", () => {
 
   it("builds series as book pages with published chapters", () => {
     const series = getSeries();
-    const databaseBook = series.find((item) => item.slug === "database-internal");
-    const railsBook = series.find(
-      (item) => item.name === "Railsで生SQLを書くときに知っておきたいSQL",
+    const extensionSeries = series.find((item) => item.name === "世界の拡張子");
+
+    assert.equal(series.length, 1);
+    assert.ok(extensionSeries);
+    assert.equal(extensionSeries!.slug, "world-file-extensions");
+    assert.match(extensionSeries!.goal, /拡張子/);
+    assert.equal(
+      extensionSeries!.sections.every((section) => section.articles.length > 0),
+      true,
     );
-
-    assert.ok(databaseBook);
-    assert.match(databaseBook!.goal, /EXPLAIN/);
-    assert.equal(databaseBook!.sections.every((section) => section.articles.length > 0), true);
-    assert.equal(databaseBook!.articles.map((article) => article.series?.order).join(","), "1,2");
-
-    assert.ok(railsBook);
-    assert.equal(railsBook!.articles[0].slug, "rails/sql/raw-sql-summary");
+    assert.equal(extensionSeries!.articles[0].slug, "file-formats/extensions/mdx");
   });
 
   it("builds a static search index", () => {

@@ -43,6 +43,11 @@ export const KNOWLEDGE_DOMAINS = [
     description: "認証、認可、分散設計、セキュリティ境界など設計上の判断を整理する。",
   },
   {
+    name: "File Formats",
+    slug: "file-formats",
+    description: "拡張子、ファイル形式、用途、扱うツール、注意点を図鑑のように整理する。",
+  },
+  {
     name: "Rails",
     slug: "rails",
     description: "ActiveRecord、Rack、ZeitwerkなどRailsの内部と実務パターンを扱う。",

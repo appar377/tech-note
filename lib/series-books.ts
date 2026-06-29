@@ -49,214 +49,59 @@ function defineSeriesBook(book: SeriesBookInput): SeriesBookDefinition {
 
 export const SERIES_BOOKS = [
   defineSeriesBook({
-    name: "Database Internal",
-    category: "Database",
-    subtitle: "SQLが実行される流れを、OptimizerとExecution Planから読む技術書",
+    name: "世界の拡張子",
+    slug: "world-file-extensions",
+    category: "File Formats",
+    subtitle: "拡張子ごとに、用途・中身・関連ツール・注意点を一つずつ整理する図鑑シリーズ",
     description:
-      "SQL構文の暗記ではなく、Parser、Optimizer、Execution Plan、Storage Engineの流れを軸に、DBが問い合わせをどう解釈し、なぜ速い・遅いが生まれるのかを学ぶシリーズです。",
+      "`.mdx`、`.json`、`.yaml`、`.env`、`.lock` など、開発で出会う拡張子を1本ずつ取り上げ、何のためのファイルなのか、何で開くのか、実務でどこに注意するのかを整理するシリーズです。",
     goal:
-      "EXPLAINを根拠に、SQLがどの段階で展開・最適化・実行されるのかを説明でき、推測ではなく実行計画から改善方針を立てられる状態を目指します。",
+      "ファイル名の末尾だけで判断せず、拡張子が示す形式、実際の中身、利用するツール、壊しやすいポイントを説明できる状態を目指します。",
     audience: [
-      "SQLの実行計画を読めるようになりたいエンジニア",
-      "View、CTE、派生テーブルなどを内部動作から使い分けたい人",
-      "DBチューニングを暗記ではなく仕組みから理解したい人",
+      "見慣れない拡張子を見るたびに調べ直している人",
+      "プロジェクト内の設定ファイルや生成ファイルの役割を整理したい人",
+      "記事、設定、ビルド、ロックファイルなどの違いを拡張子から理解したい人",
     ],
     prerequisites: [
-      "SELECT、WHERE、JOINの基本構文",
-      "Indexという言葉の基本的な意味",
-      "MySQLまたはPostgreSQLでSQLを実行した経験",
+      "ファイル名と拡張子の基本的な見方",
+      "テキストファイルとバイナリファイルがあること",
+      "エディタやターミナルでファイルを開いた経験",
     ],
     outcomes: [
-      "SQLがParserからOptimizerへ渡される流れを説明できる",
-      "View、CTE、Temporary Tableの違いを実行計画と結びつけて判断できる",
-      "EXPLAINとEXPLAIN ANALYZEの出力から、推定値と実測値を読み分けられる",
+      "拡張子が示す用途と、実際のファイル形式を分けて説明できる",
+      "編集してよいファイルと、生成物として扱うべきファイルを見分けやすくなる",
+      "未知の拡張子でも、関連ツール・中身・注意点の順に調べられる",
     ],
     concept:
-      "Application -> SQL -> Parser -> Resolver / Rewrite -> Optimizer -> Execution Plan -> Executor -> Storage Engine -> Buffer Pool / Disk という流れを、各記事で少しずつ分解します。",
+      "Extension -> File format -> Content model -> Toolchain -> Runtime / Build impact -> Operational caveats の順で、拡張子ごとに同じ型で整理します。",
     sections: [
       {
-        title: "問い合わせはどこで形を変えるのか",
+        title: "ドキュメントとコードが混ざる拡張子",
         description:
-          "View、派生テーブル、CTE、一時テーブルを、見た目ではなくOptimizerとStorage Engineがどう扱うかで整理します。",
-        articleSlugs: ["sql/internal/view-derived-table-cte-temporary-table"],
-      },
-      {
-        title: "実行計画を読んで根拠を持つ",
-        description:
-          "EXPLAINとEXPLAIN ANALYZEを使い、推定値・実測値・スキャン方式からSQLの実行内容を読み解きます。",
-        articleSlugs: ["sql/internal/explain-analyze"],
+          "Markdown系の拡張子から始め、文章、コード、コンポーネントがどこで混ざるのかを整理します。",
+        articleSlugs: ["file-formats/extensions/mdx"],
       },
     ],
     notes: [
       {
-        title: "読み方",
+        title: "シリーズの使い方",
         body:
-          "このシリーズでは、個別のSQL構文を覚える前に「SQLがどの処理段階で変換されるのか」を押さえます。記事単体でも読めますが、上から順に読むと実行計画の意味がつながります。",
+          "このシリーズはカテゴリ横断の関連記事まとめではなく、拡張子ごとの図鑑として育てます。各記事は同じ観点で、用途、中身、関連ツール、実務上の注意点を扱います。",
+      },
+      {
+        title: "今後追加する候補",
+        body:
+          ".json、.yaml、.env、.lock、.ts、.tsx、.sql、.md、.csv、.svg、.png、.webp などを、必要になった順に1拡張子1記事で追加していきます。",
       },
     ],
     references: [
       {
-        title: "MySQL EXPLAIN documentation",
-        href: "https://dev.mysql.com/doc/refman/8.4/en/explain.html",
+        title: "IANA Media Types",
+        href: "https://www.iana.org/assignments/media-types/media-types.xhtml",
       },
       {
-        title: "PostgreSQL EXPLAIN documentation",
-        href: "https://www.postgresql.org/docs/current/using-explain.html",
-      },
-    ],
-  }),
-  defineSeriesBook({
-    name: "Railsで生SQLを書くときに知っておきたいSQL",
-    category: "Rails",
-    subtitle: "Migrationとバッチ処理で、ActiveRecordだけに閉じないSQL設計を身につける",
-    description:
-      "Rails実務で生SQLを書く場面を、集合処理、Window Function、UPSERTの順に整理します。Rubyで1件ずつ処理する前に、DB内部でまとめて処理できないか判断するためのシリーズです。",
-    goal:
-      "Migrationやバッチ処理で、ActiveRecordの外に出るべき場面を判断し、SQLで一括処理する設計・実装・注意点を説明できる状態を目指します。",
-    audience: [
-      "普段はActiveRecord中心で開発しているRailsエンジニア",
-      "Migrationやデータ移行で大量データを扱う人",
-      "SQLを実務のRailsコードに落とし込んで理解したい人",
-    ],
-    prerequisites: [
-      "RailsのMigrationとActiveRecordの基本",
-      "SELECT、INSERT、UPDATEの基本構文",
-      "MySQLまたはPostgreSQLの基本操作",
-    ],
-    outcomes: [
-      "RubyループとSQL集合処理の違いを説明できる",
-      "INSERT SELECTやWindow FunctionをMigrationで使える",
-      "UPSERTを使って冪等なデータ投入を設計できる",
-    ],
-    concept:
-      "Rails code -> execute -> SQL -> DB Engine -> Set-based processing という流れで、アプリケーション側に持ち出さずDB内部で処理する判断基準を作ります。",
-    sections: [
-      {
-        title: "Railsから生SQLを読むための全体像",
-        description:
-          "まず、Migrationやバッチで生SQLが必要になる場面と、ActiveRecordだけでは見えにくいSQLの考え方を押さえます。",
-        articleSlugs: ["rails/sql/raw-sql-summary"],
-      },
-      {
-        title: "集合処理としてSQLを書く",
-        description:
-          "検索結果をそのまま投入する、グループ内順位を付けるなど、RubyループではなくSQLでまとめて処理する考え方を学びます。",
-        articleSlugs: ["rails/sql/insert-select", "rails/sql/row-number"],
-      },
-      {
-        title: "再実行に強い投入処理を作る",
-        description:
-          "一度失敗して再実行しても壊れにくいMigrationを作るため、重複キー時のUPSERTを整理します。",
-        articleSlugs: ["rails/sql/on-duplicate-key-update"],
-      },
-    ],
-    notes: [
-      {
-        title: "Rails記事としての位置づけ",
-        body:
-          "このシリーズはSQLそのものの網羅ではなく、RailsのMigrationやバッチ処理で生SQLを安全に使うための実務書として扱います。",
-      },
-    ],
-    references: [
-      {
-        title: "Rails Active Record Migrations guide",
-        href: "https://guides.rubyonrails.org/active_record_migrations.html",
-      },
-      {
-        title: "MySQL INSERT ... ON DUPLICATE KEY UPDATE documentation",
-        href: "https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html",
-      },
-    ],
-  }),
-  defineSeriesBook({
-    name: "Ubuntu MT5 Server",
-    category: "Linux",
-    subtitle: "Wine、display layer、Python API、systemdをつなぐMT5サーバー設計",
-    description:
-      "Ubuntu系LinuxでMetaTrader 5を動かすときに、OS選定、GUI検証、Wayland / X11 / XAuthority、headless設計、Wine、Python連携、systemd運用を分けて整理するシリーズです。",
-    goal:
-      "MT5のインストール手順だけでなく、Wine、DISPLAY、XAUTHORITY、WINEPREFIX、Python実行環境、systemd起動順序の境界を説明できる状態を目指します。",
-    audience: [
-      "Ubuntu系VPSでMT5を検証したいエンジニア",
-      "Wine上のGUIアプリをsystemdで扱いたい人",
-      "MT5 APIとPython botの実行環境を切り分けたい人",
-    ],
-    prerequisites: [
-      "Linuxの基本的なCLI操作",
-      "systemd serviceとjournalctlの基本",
-      "Python仮想環境とプロセス管理の基本",
-    ],
-    outcomes: [
-      "GUIあり検証とUbuntu Server本番設計を分けて考えられる",
-      "Wine prefix、terminal path、DISPLAY、XAUTHORITYのズレを切り分けられる",
-      "MT5 terminal、Python worker、bot、systemdの責務境界を設計できる",
-    ],
-    concept:
-      "Ubuntu Server -> display layer -> X11 auth -> Wine -> MT5 terminal -> Python API / bridge -> systemd という実行境界を、記事ごとに分解して理解します。",
-    sections: [
-      {
-        title: "全体像とOS選定",
-        description:
-          "最初に、なぜOSごとに分けず、検証環境と本番環境で切るのかを整理します。",
-        articleSlugs: [
-          "linux/mt5-ubuntu/00-series-overview",
-          "linux/mt5-ubuntu/01-os-selection",
-        ],
-      },
-      {
-        title: "GUI検証からdisplay認証の切り分けへ",
-        description:
-          "GUIあり環境でMT5の初回ログインや表示を潰し、Wayland / X11 / XAuthorityの違いを分けて扱います。",
-        articleSlugs: [
-          "linux/mt5-ubuntu/02-gui-flavors-validation",
-          "linux/mt5-ubuntu/03-wayland-x11-xauthority",
-        ],
-      },
-      {
-        title: "Ubuntu Serverのheadless設計",
-        description:
-          "Ubuntu ServerでDISPLAYとXAUTHORITYをどう用意し、Xvfb / VNC / run userをどう固定するかを扱います。",
-        articleSlugs: ["linux/mt5-ubuntu/03-ubuntu-server-headless-design"],
-      },
-      {
-        title: "Wine、Python、systemdをつなぐ",
-        description:
-          "Wine prefixとterminal path、MetaTrader5 packageの実行環境、systemdの起動順序を整理します。",
-        articleSlugs: [
-          "linux/mt5-ubuntu/04-wine-mt5-installation",
-          "linux/mt5-ubuntu/05-mt5-python-api-integration",
-          "linux/mt5-ubuntu/06-systemd-operation",
-          "linux/mt5-ubuntu/07-final-architecture-troubleshooting",
-        ],
-      },
-    ],
-    notes: [
-      {
-        title: "金融系記事としての扱い",
-        body:
-          "このシリーズは投資助言や売買ロジックの解説ではなく、Linux上でWindows前提のMT5を運用するための技術構成と切り分けの記録です。",
-      },
-    ],
-    references: [
-      {
-        title: "MetaTrader 5 Help: Installation on Linux",
-        href: "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
-      },
-      {
-        title: "MQL5 Reference: Python Integration",
-        href: "https://www.mql5.com/en/docs/python_metatrader5",
-      },
-      {
-        title: "Ubuntu: Ubuntu flavors",
-        href: "https://ubuntu.com/desktop/flavors",
-      },
-      {
-        title: "Wayland",
-        href: "https://wayland.freedesktop.org/",
-      },
-      {
-        title: "X.Org: Xsecurity manual page",
-        href: "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html",
+        title: "MDN Web Docs: Common MIME types",
+        href: "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types",
       },
     ],
   }),
