@@ -86,18 +86,21 @@ body > footer {
 .site-backdrop::before {
   content: "";
   position: absolute;
-  top: 4rem;
-  right: -18vw;
-  width: min(82rem, 90vw);
-  height: min(60rem, 80vh);
+  inset: 0;
   background-image: var(--site-backdrop-image);
-  background-repeat: no-repeat;
-  background-position: top right;
-  background-size: contain;
-  opacity: 0.28;
+  background-repeat: repeat-y;
+  background-position: top center;
+  background-size: min(1120px, 96vw) auto;
+  opacity: 0.16;
   filter: saturate(1.05);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 18%, black 72%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0%, black 18%, black 72%, transparent 100%);
+  -webkit-mask-image:
+    linear-gradient(90deg, transparent 0%, black 10%, black 90%, transparent 100%),
+    linear-gradient(180deg, black 0%, black 82%, transparent 100%);
+  mask-image:
+    linear-gradient(90deg, transparent 0%, black 10%, black 90%, transparent 100%),
+    linear-gradient(180deg, black 0%, black 82%, transparent 100%);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
 }
 
 .site-backdrop::after {
@@ -105,20 +108,18 @@ body > footer {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, var(--background) 0%, transparent 34%, transparent 66%, var(--background) 100%),
-    linear-gradient(180deg, transparent 0%, var(--background) 92%);
+    linear-gradient(90deg, var(--background) 0%, transparent 16%, transparent 84%, var(--background) 100%),
+    linear-gradient(180deg, transparent 0%, transparent 76%, var(--background) 100%);
 }
 
 html.dark .site-backdrop::before {
-  opacity: 0.34;
+  opacity: 0.22;
 }
 
 @media (max-width: 48rem) {
   .site-backdrop::before {
-    top: 10rem;
-    right: -54vw;
-    width: 58rem;
-    opacity: 0.18;
+    background-size: 46rem auto;
+    opacity: 0.12;
   }
 }
 
@@ -536,13 +537,28 @@ canvas {
   @apply mb-5 flex max-w-full gap-2 overflow-x-auto rounded-lg border p-2;
   background: var(--tech-surface);
   border-color: var(--tech-border);
+  overscroll-behavior-x: contain;
   scrollbar-width: thin;
 }
 
+.book-reader__chapter-rail > li {
+  flex: 0 0 auto;
+}
+
 .book-reader__chapter-tab {
-  @apply inline-flex h-10 max-w-64 min-w-44 items-center gap-2 rounded-md border px-3 text-left text-xs font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50;
+  @apply inline-flex h-10 items-center gap-2 rounded-md border px-3 text-left text-xs font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50;
+  width: 12.75rem;
+  min-width: 12.75rem;
+  max-width: 12.75rem;
   background: rgb(255 255 255 / 0.38);
   border-color: var(--tech-muted-border);
+}
+
+.book-reader__chapter-tab > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dark .book-reader__chapter-tab {
