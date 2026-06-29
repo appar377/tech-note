@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeScript } from "@/components/theme-toggle";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl } from "@/lib/site";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl, withBasePath } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -64,6 +65,15 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <ThemeScript />
+        <div
+          className="site-backdrop"
+          aria-hidden="true"
+          style={
+            {
+              "--site-backdrop-image": `url("${withBasePath("/images/site/ambient-blueprint.svg")}")`,
+            } as CSSProperties
+          }
+        />
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />

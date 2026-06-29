@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { CSSProperties } from "react";
 import { BookOpen, CalendarDays, Clock, Folder, ListChecks } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { BookReader } from "@/components/book-reader";
@@ -71,11 +72,18 @@ export default async function BookPage({ params }: PageProps) {
   }
 
   const chapterCount = book.headings.filter((heading) => heading.depth === 2).length;
+  const bookHeroStyle = book.cover
+    ? ({
+        "--book-cover-image": `url("${withBasePath(book.cover)}")`,
+      } as CSSProperties)
+    : undefined;
 
   return (
-    <article className="page-shell">
-      <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Books", href: "/books" }, { label: book.title }]} />
-      <header className="book-hero mt-8">
+    <article className="page-shell book-shell">
+      <div className="book-breadcrumbs">
+        <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Books", href: "/books" }, { label: book.title }]} />
+      </div>
+      <header className="book-hero mt-8" style={bookHeroStyle}>
         <div className="book-hero__cover">
           {book.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -140,7 +148,7 @@ export default async function BookPage({ params }: PageProps) {
         </div>
       </header>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="book-page-layout mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_300px]">
         <main className="min-w-0">
           <BookReader chapters={book.headings}>
             <div className="book-prose prose max-w-none">
@@ -148,7 +156,7 @@ export default async function BookPage({ params }: PageProps) {
             </div>
           </BookReader>
         </main>
-        <aside className="order-first space-y-8 lg:sticky lg:top-24 lg:order-none lg:self-start">
+        <aside className="book-sidebar order-first space-y-8 lg:sticky lg:top-24 lg:order-none lg:self-start">
           <TableOfContents headings={book.headings} />
           {book.references.length > 0 ? (
             <section className="tech-shell rounded-lg border p-4">

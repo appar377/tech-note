@@ -69,6 +69,14 @@ export function BookReader({ chapters, children }: BookReaderProps) {
   }, [chapterList]);
 
   useEffect(() => {
+    document.body.classList.toggle("book-reading-mode", focusMode);
+
+    return () => {
+      document.body.classList.remove("book-reading-mode");
+    };
+  }, [focusMode]);
+
+  useEffect(() => {
     if (!focusMode) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -101,6 +109,10 @@ export function BookReader({ chapters, children }: BookReaderProps) {
           <p className="mt-1 truncate text-sm font-semibold text-zinc-950 dark:text-zinc-50">
             {activeChapter?.text ?? "Start"}
           </p>
+        </div>
+        <div className="book-reader__mode-indicator" aria-hidden>
+          <span className={focusMode ? "" : "is-active"}>通常</span>
+          <span className={focusMode ? "is-active" : ""}>読書</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -136,6 +148,34 @@ export function BookReader({ chapters, children }: BookReaderProps) {
       <div className="book-reader__progress" aria-hidden>
         <span style={{ width: `${progress}%` }} />
       </div>
+
+      {chapterList.length > 0 ? (
+        <ol className="book-reader__chapter-rail" aria-label="Chapters">
+          {chapterList.map((chapter, index) => {
+            const isActive = index === activeIndex;
+
+            return (
+              <li key={chapter.id} className="min-w-0">
+                <button
+                  type="button"
+                  className={
+                    isActive
+                      ? "book-reader__chapter-tab book-reader__chapter-tab--active"
+                      : "book-reader__chapter-tab"
+                  }
+                  onClick={() => goToChapter(index)}
+                  aria-current={isActive ? "step" : undefined}
+                >
+                  <span className="book-reader__chapter-number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span className="truncate">{chapter.text}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
 
       <div className="book-page-shell">
         <span className="book-page-shell__spine" aria-hidden />

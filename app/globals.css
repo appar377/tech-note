@@ -58,12 +58,68 @@ html.dark {
 }
 
 body {
+  position: relative;
+  isolation: isolate;
   background-color: var(--background);
   background-image: var(--tech-page-bg);
   background-attachment: fixed;
   background-size: auto, auto, 92px 92px, 92px 92px;
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+body > header,
+body > main,
+body > footer {
+  position: relative;
+  z-index: 1;
+}
+
+.site-backdrop {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.site-backdrop::before {
+  content: "";
+  position: absolute;
+  top: 4rem;
+  right: -18vw;
+  width: min(82rem, 90vw);
+  height: min(60rem, 80vh);
+  background-image: var(--site-backdrop-image);
+  background-repeat: no-repeat;
+  background-position: top right;
+  background-size: contain;
+  opacity: 0.28;
+  filter: saturate(1.05);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 18%, black 72%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, black 18%, black 72%, transparent 100%);
+}
+
+.site-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, var(--background) 0%, transparent 34%, transparent 66%, var(--background) 100%),
+    linear-gradient(180deg, transparent 0%, var(--background) 92%);
+}
+
+html.dark .site-backdrop::before {
+  opacity: 0.34;
+}
+
+@media (max-width: 48rem) {
+  .site-backdrop::before {
+    top: 10rem;
+    right: -54vw;
+    width: 58rem;
+    opacity: 0.18;
+  }
 }
 
 html,
@@ -347,11 +403,37 @@ canvas {
   background-size: 48px 48px;
 }
 
+.book-hero::after {
+  @apply pointer-events-none absolute -inset-20 -z-10 opacity-30 blur-3xl;
+  content: "";
+  background-image:
+    linear-gradient(90deg, rgb(3 7 18 / 0.78), transparent 54%, rgb(3 7 18 / 0.72)),
+    var(--book-cover-image);
+  background-position: center;
+  background-size: cover;
+  transform: scale(1.05);
+}
+
 .book-hero__cover {
-  @apply mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-md bg-zinc-900 shadow-2xl shadow-black/40 ring-1 ring-white/15 lg:max-w-none;
-  box-shadow: 0 24px 72px rgb(0 0 0 / 0.45), 0 0 38px rgb(56 189 248 / 0.18);
-  transform: perspective(1100px) rotateY(-3deg) rotateX(1deg);
+  @apply relative mx-auto aspect-video w-full max-w-xl overflow-hidden rounded-md bg-zinc-900 shadow-2xl shadow-black/40 ring-1 ring-white/15 lg:max-w-none;
+  box-shadow: 0 26px 80px rgb(0 0 0 / 0.52), 0 0 42px rgb(56 189 248 / 0.2);
+  transform: perspective(1100px) rotateY(-4deg) rotateX(1.4deg);
   transform-origin: center;
+}
+
+.book-hero__cover::before {
+  @apply pointer-events-none absolute inset-y-0 left-0 z-10 w-12;
+  content: "";
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.52), rgb(255 255 255 / 0.08), transparent);
+}
+
+.book-hero__cover::after {
+  @apply pointer-events-none absolute inset-0 z-10;
+  content: "";
+  background:
+    linear-gradient(115deg, transparent 28%, rgb(255 255 255 / 0.16) 44%, transparent 58%),
+    linear-gradient(180deg, rgb(255 255 255 / 0.08), transparent 35%, rgb(0 0 0 / 0.18));
+  mix-blend-mode: screen;
 }
 
 .book-hero__cover img {
@@ -365,6 +447,14 @@ canvas {
 .book-hero__metric {
   @apply inline-flex min-w-0 items-center gap-2 rounded-lg bg-white/10 px-3 py-2 ring-1 ring-white/10;
   box-shadow: 0 0 22px rgb(56 189 248 / 0.08) inset;
+}
+
+.book-page-layout {
+  transition: grid-template-columns 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.book-sidebar {
+  transition: opacity 180ms cubic-bezier(0.2, 0, 0, 1), transform 180ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .book-cover-card {
@@ -390,12 +480,29 @@ canvas {
 
 .book-reader {
   @apply min-w-0;
+  transition: max-width 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 
 .book-reader__toolbar {
-  @apply sticky top-20 z-20 mb-4 flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3 shadow-sm shadow-zinc-950/5 backdrop-blur;
+  @apply sticky top-20 z-20 mb-4 grid min-w-0 items-center gap-3 rounded-lg border p-3 shadow-sm shadow-zinc-950/5 backdrop-blur sm:grid-cols-[minmax(0,1fr)_auto_auto];
   background: var(--tech-surface-strong);
   border-color: var(--tech-border);
+}
+
+.book-reader__mode-indicator {
+  @apply hidden shrink-0 rounded-lg border p-1 text-xs font-medium sm:inline-flex;
+  background: rgb(15 23 42 / 0.04);
+  border-color: var(--tech-border);
+}
+
+.book-reader__mode-indicator span {
+  @apply rounded-md px-2.5 py-1 text-zinc-500 transition dark:text-zinc-400;
+}
+
+.book-reader__mode-indicator .is-active {
+  color: var(--tech-cyan);
+  background: rgb(56 189 248 / 0.12);
+  box-shadow: 0 0 18px rgb(56 189 248 / 0.12);
 }
 
 .book-reader__button,
@@ -403,6 +510,12 @@ canvas {
   @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-300 dark:hover:text-zinc-50;
   background: rgb(56 189 248 / 0.08);
   border-color: var(--tech-border);
+}
+
+.book-reader__button:hover,
+.book-reader__mode:hover {
+  border-color: var(--tech-border-strong);
+  box-shadow: 0 0 20px rgb(56 189 248 / 0.12);
 }
 
 .book-reader__button {
@@ -419,6 +532,35 @@ canvas {
   box-shadow: 0 0 18px rgb(56 189 248 / 0.45);
 }
 
+.book-reader__chapter-rail {
+  @apply mb-5 flex max-w-full gap-2 overflow-x-auto rounded-lg border p-2;
+  background: var(--tech-surface);
+  border-color: var(--tech-border);
+  scrollbar-width: thin;
+}
+
+.book-reader__chapter-tab {
+  @apply inline-flex h-10 max-w-64 min-w-44 items-center gap-2 rounded-md border px-3 text-left text-xs font-medium text-zinc-600 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50;
+  background: rgb(255 255 255 / 0.38);
+  border-color: var(--tech-muted-border);
+}
+
+.dark .book-reader__chapter-tab {
+  background: rgb(255 255 255 / 0.035);
+}
+
+.book-reader__chapter-tab:hover,
+.book-reader__chapter-tab--active {
+  border-color: var(--tech-border-strong);
+  color: var(--tech-cyan);
+  background: rgb(56 189 248 / 0.1);
+}
+
+.book-reader__chapter-number {
+  @apply shrink-0 font-mono text-[11px];
+  color: var(--tech-emerald);
+}
+
 .book-page-shell {
   @apply relative overflow-hidden rounded-lg border shadow-sm shadow-zinc-950/5;
   background: var(--tech-surface);
@@ -427,7 +569,9 @@ canvas {
 }
 
 .book-page-shell__spine {
-  @apply pointer-events-none absolute inset-y-6 left-0 z-10 w-1 rounded-r-full bg-zinc-300/80 dark:bg-zinc-700/80;
+  @apply pointer-events-none absolute inset-y-6 left-0 z-10 w-1 rounded-r-full;
+  background: linear-gradient(180deg, var(--tech-cyan), var(--tech-emerald));
+  box-shadow: 0 0 18px rgb(56 189 248 / 0.3);
 }
 
 .book-page {
@@ -446,8 +590,80 @@ canvas {
     inset -1px 0 0 rgb(255 255 255 / 0.06);
 }
 
+body.book-reading-mode .book-shell {
+  max-width: 66rem;
+  padding-top: 1.5rem;
+}
+
+body.book-reading-mode .book-breadcrumbs,
+body.book-reading-mode .book-hero {
+  @apply hidden;
+}
+
+body.book-reading-mode .book-page-layout {
+  @apply mt-0 lg:grid-cols-1;
+}
+
+body.book-reading-mode .book-sidebar {
+  @apply hidden;
+}
+
+body.book-reading-mode .book-reader {
+  @apply mx-auto max-w-5xl;
+}
+
+.book-reader--focus .book-reader__toolbar {
+  @apply top-16;
+  border-color: var(--tech-border-strong);
+  box-shadow: 0 18px 48px rgb(2 6 23 / 0.16), 0 0 34px rgb(56 189 248 / 0.1);
+}
+
+.book-reader--focus .book-reader__chapter-rail {
+  @apply hidden;
+}
+
 .book-reader--focus .book-page-shell {
-  @apply border-emerald-200 shadow-xl shadow-emerald-950/10 dark:border-emerald-950;
+  @apply rounded-xl border-emerald-200 shadow-xl shadow-emerald-950/10 dark:border-emerald-950;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.78), rgb(248 250 252 / 0.82));
+}
+
+.dark .book-reader--focus .book-page-shell {
+  background: linear-gradient(180deg, rgb(10 16 32 / 0.9), rgb(5 10 22 / 0.94));
+}
+
+.book-reader--focus .book-page-shell__spine {
+  @apply hidden;
+}
+
+.book-reader--focus .book-page {
+  @apply px-6 py-10 sm:px-12 sm:py-14 lg:px-20 lg:py-16;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.62), rgb(248 250 252 / 0.84)),
+    radial-gradient(circle at 50% 0%, rgb(56 189 248 / 0.08), transparent 44%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7);
+}
+
+.dark .book-reader--focus .book-page {
+  background:
+    linear-gradient(180deg, rgb(15 23 42 / 0.52), rgb(3 7 18 / 0.76)),
+    radial-gradient(circle at 50% 0%, rgb(56 189 248 / 0.1), transparent 44%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+}
+
+.book-reader--focus .book-prose {
+  @apply mx-auto max-w-3xl text-[1.12rem] leading-9;
+}
+
+.book-reader--focus .book-prose h2 {
+  @apply mt-20 text-4xl;
+}
+
+.book-reader--focus .book-prose h3 {
+  @apply mt-12 text-2xl;
+}
+
+.book-reader--focus .book-prose p {
+  @apply my-7;
 }
 
 .book-reader__footer {
