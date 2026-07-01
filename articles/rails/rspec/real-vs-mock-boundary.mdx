@@ -1,0 +1,401 @@
+---
+title: "RSpecではどこまで本物を使うべきか？Railsにおけるモックと実データの使い分け"
+description: RailsのRSpecで本物のmodelやDBを使うべき場面と、外部依存をモックするべき場面を整理する。
+date: 2026-07-01
+tags:
+  - Rails
+  - RSpec
+  - Testing
+  - Mock
+  - Service Object
+category: Rails
+level: 1
+articleType: practical
+draft: false
+thumbnail: /images/thumbnails/rails-rspec-real-vs-mock.png
+popular: false
+---
+
+## 概要
+
+RSpecを書いていると、次のような判断が必要になります。
+
+```text
+本物のモデルを使うべきか
+instance_doubleを使うべきか
+DBに保存するべきか
+外部サービスをスタブするべきか
+```
+
+すべて本物で動かせば実際の挙動に近くなります。
+一方で、すべて本物にするとテストが遅くなったり、失敗原因の切り分けが難しくなったりします。
+
+逆に、すべてをモックするとテストは速くなりますが、実際の挙動をほとんど保証できなくなります。
+
+この記事では、Railsアプリケーションにおいて、どこまで本物を使い、どこからモックすべきかを整理します。
+
+## この記事で学べること
+
+- Railsのテストで本物に寄せるべき対象
+- モック・スタブに寄せるべき外部依存
+- 状態確認と呼び出し確認の使い分け
+- request spec、model spec、service specの境界
+
+## 前提知識
+
+- RSpecでmodel specまたはrequest specを書いたことがある
+- FactoryBotなどでテストデータを作ったことがある
+- 外部APIを呼ぶ処理のテストに関心がある
+
+## 実装コード例
+
+この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
+
+```ruby
+class OrderCheckoutService
+  def initialize(order)
+    @order = order
+  end
+
+  def call
+    PaymentClient.charge(amount: @order.total_price)
+    @order.update!(status: "paid")
+  end
+end
+
+RSpec.describe OrderCheckoutService do
+  it "外部決済だけをスタブして注文状態はDBで確認する" do
+    order = create(:order, status: "pending", total_price: 1000)
+
+    allow(PaymentClient).to receive(:charge).and_return(true)
+
+    described_class.new(order).call
+
+    expect(order.reload.status).to eq("paid")
+  end
+end
+```
+
+## 本編
+
+### 基本方針
+
+まず、基本方針は次の通りです。
+
+```text
+アプリ内部の重要なロジックは本物で動かす。
+外部サービス・時刻・ランダム・重い処理・異常系はスタブする。
+```
+
+つまり、「本物かモックか」を一律に決めるのではなく、依存対象の性質で判断します。
+
+### 本物を使った方がよいもの
+
+Railsでは、次のようなものは基本的に本物で確認した方がよいです。
+
+```text
+- ActiveRecordのvalidation
+- association
+- scope
+- DB保存
+- DB更新
+- callbackの結果
+- 業務上重要なモデルメソッド
+- request specでのAPIレスポンス
+```
+
+例えば、ユーザー名を更新する処理がある場合、次のように最終的なDB状態を見るテストは価値があります。
+
+```ruby
+RSpec.describe UserNameUpdater do
+  describe "#call" do
+    it "ユーザー名を更新する" do
+      user = create(:user, name: "Before")
+
+      described_class.new(user: user, name: "After").call
+
+      expect(user.reload.name).to eq("After")
+    end
+  end
+end
+```
+
+このテストは、内部で `update!` を呼んだかどうかではなく、結果としてユーザー名が更新されたことを確認しています。
+
+これは、実装詳細に依存しにくいテストです。
+
+### モックした方がよいもの
+
+一方で、次のようなものはモックやスタブを使うことが多いです。
+
+```text
+- 外部API
+- 決済処理
+- メール送信
+- Slackなどの通知
+- S3などの外部ストレージ
+- 画像変換
+- PDF生成
+- 現在時刻
+- ランダム値
+- ネットワーク通信
+```
+
+これらを本物で動かすと、テストが遅くなったり、不安定になったりします。
+
+例えば、通知処理を本当に送る必要はありません。
+
+```ruby
+allow(NotificationClient)
+  .to receive(:send_message)
+  .and_return(true)
+```
+
+このようにして、通知が成功した前提でアプリケーション側の処理を確認します。
+
+### 状態を見るか、呼び出しを見るか
+
+テストを書くときは、次のどちらを確認したいのかを考えます。
+
+```text
+状態を確認したいのか
+相互作用を確認したいのか
+```
+
+#### 状態を確認する例
+
+```ruby
+expect(user.reload.name).to eq("After")
+```
+
+これは、最終的な状態を確認しています。
+
+#### 相互作用を確認する例
+
+```ruby
+expect(NotificationClient)
+  .to receive(:send_message)
+  .with(user)
+```
+
+これは、通知クライアントが呼ばれたことを確認しています。
+
+どちらもテストですが、保証している内容が違います。
+
+### 悪い例：内部ロジックをすべてモックする
+
+次のようなテストは、あまり価値が高くありません。
+
+```ruby
+user = instance_double(User)
+
+allow(user)
+  .to receive(:active?)
+  .and_return(true)
+
+allow(user)
+  .to receive(:update!)
+  .and_return(true)
+
+result = described_class.new(user: user).call
+
+expect(result).to eq(true)
+```
+
+このテストでは、`user.active?` が本当に正しいかも、`user.update!` が本当に保存できるかも確認していません。
+
+つまり、アプリケーション内部の重要なロジックをすべて偽物にしてしまっています。
+
+この場合、テストは通っていても、本番で壊れる可能性があります。
+
+### 良い例：外部依存だけをスタブする
+
+例えば、決済後に注文を完了状態にする処理を考えます。
+
+```ruby
+class OrderCheckoutService
+  def initialize(order)
+    @order = order
+  end
+
+  def call
+    PaymentClient.charge(amount: order.total_price)
+
+    order.update!(status: "paid")
+  end
+
+  private
+
+  attr_reader :order
+end
+```
+
+この場合、`PaymentClient` は外部APIなのでスタブします。
+一方で、`order.update!` は本物で確認します。
+
+```ruby
+RSpec.describe OrderCheckoutService do
+  describe "#call" do
+    it "決済成功後に注文をpaidにする" do
+      order = create(:order, status: "pending", total_price: 1000)
+
+      allow(PaymentClient)
+        .to receive(:charge)
+        .with(amount: 1000)
+        .and_return(true)
+
+      described_class.new(order).call
+
+      expect(order.reload.status).to eq("paid")
+    end
+  end
+end
+```
+
+このテストは、次のようなバランスです。
+
+```text
+PaymentClient: 偽物
+Order: 本物
+DB更新: 本物
+```
+
+実務では、このくらいの切り分けが扱いやすいです。
+
+### request specでは本物に寄せる
+
+request specでは、なるべくアプリ内部を本物で通した方がよいです。
+
+```ruby
+RSpec.describe "Orders", type: :request do
+  describe "POST /orders/:id/checkout" do
+    it "注文を決済済みにする" do
+      order = create(:order, status: "pending")
+
+      allow(PaymentClient)
+        .to receive(:charge)
+        .and_return(true)
+
+      post "/orders/#{order.id}/checkout"
+
+      expect(response).to have_http_status(:ok)
+      expect(order.reload.status).to eq("paid")
+    end
+  end
+end
+```
+
+request specでは、Controller、Routing、Params、Service、Model、DBをできるだけ本物で通します。
+ただし、外部APIだけはスタブします。
+
+### model specでは本物を使うことが多い
+
+model specでは、基本的に本物のActiveRecordオブジェクトを使うことが多いです。
+
+```ruby
+RSpec.describe User, type: :model do
+  describe "#active?" do
+    it "退会していなければtrueを返す" do
+      user = build(:user, deleted_at: nil)
+
+      expect(user).to be_active
+    end
+  end
+end
+```
+
+モデルのメソッドやvalidationをモックしてしまうと、model specとしての価値が落ちます。
+
+### service specでは境界を決める
+
+service specでは、依存先ごとに判断します。
+
+```text
+- DB更新まで見る
+- 外部APIはスタブする
+- 重い処理はスタブする
+- 異常系はスタブで再現する
+```
+
+service specはモックを使いやすい場所ですが、内部ロジックまで過剰にモックしないように注意が必要です。
+
+### メリット・デメリット
+
+#### 本物を使うメリット
+
+```text
+- 実際の挙動に近い
+- リファクタリングに強い
+- DBやvalidationの問題に気づける
+```
+
+#### 本物を使うデメリット
+
+```text
+- 遅くなりやすい
+- 失敗原因が広くなる
+- 外部依存を含むと不安定になる
+```
+
+#### モックを使うメリット
+
+```text
+- 速い
+- 失敗原因を切り分けやすい
+- 外部依存を排除できる
+- 異常系を再現しやすい
+```
+
+#### モックを使うデメリット
+
+```text
+- 実際の挙動とのズレが起きる
+- 実装詳細に依存しやすい
+- モックしすぎると保証範囲が狭くなる
+```
+
+## 図解
+
+![RSpecではどこまで本物を使うべきか？Railsにおけるモックと実データの使い分け](/images/thumbnails/rails-rspec-real-vs-mock.png)
+
+```mermaid
+flowchart LR
+  A[テスト対象] --> B[自社DB・重要ロジック]
+  A --> C[外部API・通知・重い処理]
+  B --> D[本物で状態確認]
+  C --> E[スタブで境界を固定]
+  D --> F[実際の保存を保証]
+  E --> G[テストの安定性を確保]
+```
+
+## 内部動作
+
+Railsのテストは、すべて本物にすると遅く不安定になり、すべてモックにすると実際の挙動を保証しにくくなります。境界は「アプリ内部の重要ロジックか」「外部依存か」で切ると判断しやすくなります。ActiveRecordのvalidation、association、DB更新は本物で確認し、外部API、時刻、ランダム、ネットワークはスタブで制御します。
+
+## まとめ
+
+RSpecでは、すべて本物にする必要も、すべてモックにする必要もありません。
+
+判断基準は次の通りです。
+
+```text
+- アプリ内部の重要なロジックは本物で確認する
+- DB保存が重要ならDB状態を見る
+- 外部APIはスタブする
+- 重い処理や再現困難な異常系はスタブする
+- 呼び出し自体が仕様ならモックで確認する
+```
+
+重要なのは、テスト対象の境界を明確にすることです。
+
+```text
+このspecはどこまでを本物で見るのか
+どこから先を依存先として切り離すのか
+```
+
+この境界を意識すると、RSpecのテストはかなり書きやすくなります。
+
+## 参考文献
+
+- [RSpec Mocks](https://rspec.info/features/3-13/rspec-mocks/)
+- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
