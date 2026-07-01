@@ -5,11 +5,12 @@ import { SiteLogo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
+  { href: "/articles", label: "Articles" },
   { href: "/books", label: "Books" },
   { href: "/series", label: "Series" },
-  { href: "/articles", label: "Articles" },
-  { href: "/categories", label: "Categories" },
-  { href: "/tags", label: "Tags" },
+  { href: "/notes", label: "Notes" },
+  { href: "/reading", label: "Reading" },
+  { href: "/profile", label: "Profile" },
 ];
 
 export function SiteHeader() {

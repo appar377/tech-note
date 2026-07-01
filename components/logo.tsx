@@ -44,7 +44,7 @@ export function SiteLogo() {
           Tech Note
         </span>
         <span className="hidden truncate text-xs leading-4 text-cyan-700 dark:text-cyan-300 sm:block">
-          Internal Library
+          Learning Library
         </span>
       </span>
     </Link>

@@ -8,11 +8,20 @@ export function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-8 text-sm text-zinc-600 dark:text-zinc-400 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           <LogoMark className="h-8 w-8" />
-          <p className="min-w-0 break-words">Tech Note - personal engineering knowledge base.</p>
+          <p className="min-w-0 break-words">Tech Note - portfolio and learning library.</p>
         </div>
         <div className="flex flex-wrap items-center gap-4">
+          <Link href="/articles" className="hover:text-cyan-700 dark:hover:text-cyan-300">
+            Articles
+          </Link>
           <Link href="/books" className="hover:text-cyan-700 dark:hover:text-cyan-300">
             Books
+          </Link>
+          <Link href="/notes" className="hover:text-cyan-700 dark:hover:text-cyan-300">
+            Notes
+          </Link>
+          <Link href="/reading" className="hover:text-cyan-700 dark:hover:text-cyan-300">
+            Reading
           </Link>
           <Link href="/search" className="hover:text-cyan-700 dark:hover:text-cyan-300">
             Search

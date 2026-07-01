@@ -1,6 +1,6 @@
 export const SITE_NAME = "Tech Note";
 export const SITE_DESCRIPTION =
-  "内部動作まで理解したいエンジニアのための、技術書をWeb化した知識サイト。";
+  "技術記事、Book、雑記メモ、読書記録を育てるポートフォリオ兼ラーニングライブラリ。";
 export const SITE_URL = "https://appar377.github.io/tech-note";
 export const BASE_PATH = "/tech-note";
 export const GITHUB_REPO_URL = "https://github.com/appar377/tech-note";
