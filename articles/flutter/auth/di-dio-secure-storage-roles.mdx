@@ -1,0 +1,156 @@
+---
+title: "DI・Dio・SecureStorageを一度に見て混乱したので役割を分解する"
+description: "DIは依存オブジェクトの生成と受け渡しを外へ出す設計手法、DioはHTTPクライアント、Secure StorageはOSの保護領域へ値を保存する実装である。抽象インターフェースと具象を分けると役割が見える。"
+date: 2026-07-20
+tags:
+  - "Flutter"
+  - "Dart"
+  - "Dependency Injection"
+  - "Dio"
+  - "Secure Storage"
+category: "Flutter"
+level: 2
+articleType: practical
+draft: false
+thumbnail: "/images/thumbnails/di-dio-secure-storage-roles.png"
+popular: false
+---
+
+## 概要
+
+認証実装でDI、Dio、FlutterSecureStorageが同じファイルに登場し、すべて「依存関係の仕組み」のように見えた。実際には、設計原則、HTTPライブラリ、永続ストレージ実装という別レイヤーだった。
+
+DIは依存オブジェクトの生成と受け渡しを外へ出す設計手法、DioはHTTPクライアント、Secure StorageはOSの保護領域へ値を保存する実装である。抽象インターフェースと具象を分けると役割が見える。
+
+## この記事で学べること
+
+- DIが解決する問題：生成責務、差し替え、テスト
+- Dioの責務：HTTP、interceptor、timeout、cancel
+- Secure Storageの責務：永続化とOS保護機構への委譲
+- `TokenStorage` interfaceと`SecureTokenStorage`
+- constructor injection
+- Provider/RiverpodをDIコンテナと呼ぶときの範囲
+
+## 前提知識
+
+- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![DI・Dio・SecureStorageを一度に見て混乱したので役割を分解する](/images/thumbnails/di-dio-secure-storage-roles.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```dart
+class AuthApi {
+  AuthApi(this._dio, this._storage);
+
+  final Dio _dio;
+  final TokenStorage _storage;
+
+  Future<User> fetchMe() async {
+    final token = await _storage.readAccessToken();
+    final response = await _dio.get('/me', options: Options(headers: {
+      'Authorization': 'Bearer $token',
+    }));
+
+    return User.fromJson(response.data as Map<String, Object?>);
+  }
+}
+```
+
+## 本編
+
+### 発生した状況
+
+認証実装でDI、Dio、FlutterSecureStorageが同じファイルに登場し、すべて「依存関係の仕組み」のように見えた。実際には、設計原則、HTTPライブラリ、永続ストレージ実装という別レイヤーだった。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、DIは依存オブジェクトの生成と受け渡しを外へ出す設計手法、DioはHTTPクライアント、Secure StorageはOSの保護領域へ値を保存する実装である。抽... という観点で見る必要がありました。
+
+### 観測したこと
+
+- `abstract interface class TokenStorage`
+- `SecureTokenStorage(this._storage)`
+- RepositoryへDio/TokenStorageを注入する例
+- Fake実装を注入するunit test
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| 抽象化 | テスト容易性／interfaceと配線が増える |
+| 具象直結 | 小規模では単純／変更とテストが難しい |
+
+## 内部動作
+
+FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+
+- Secure Storageは端末が完全に安全であることを保証しない
+- DIは特定パッケージ名ではない
+
+```text
+Widget lifecycle
+  -> state owner
+  -> async operation
+  -> network/storage boundary
+  -> UI update
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- Secure Storageは端末が完全に安全であることを保証しない
+- DIは特定パッケージ名ではない
+
+## 再発防止テスト
+
+```dart
+void main() {
+  test('di-dio-secure-storage-roles', () async {
+    final subject = TestSubject();
+
+    expect(await subject.call(), isNotNull);
+  });
+}
+
+class TestSubject {
+  Future<Object> call() async => Object();
+}
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+ライブラリ名を見る前に、「これは設計・通信・保存のどの責務か」を分類する。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- DI=Dioと混同する説明を残さない
+- すべてのクラスにinterfaceを作ることを推奨しない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

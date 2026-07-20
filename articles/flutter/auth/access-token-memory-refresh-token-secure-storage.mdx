@@ -1,0 +1,154 @@
+---
+title: "Access Tokenはメモリ、Refresh TokenはSecure Storageに保存する理由"
+description: "一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせる。ただし絶対解ではなく、脅威モデル、UX、認証基盤の仕様で判断する。"
+date: 2026-07-20
+tags:
+  - "Flutter"
+  - "Authentication"
+  - "Access Token"
+  - "Refresh Token"
+  - "Secure Storage"
+category: "Flutter"
+level: 3
+articleType: practical
+draft: false
+thumbnail: "/images/thumbnails/access-token-memory-refresh-token-secure-storage.png"
+popular: false
+---
+
+## 概要
+
+Access TokenとRefresh Tokenを同じストレージへ保存する実装が単純に見えたが、寿命、権限、再起動後の必要性、漏洩時の影響が異なる。メモリ保持とSecure Storageの分離を検討した。
+
+一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせる。ただし絶対解ではなく、脅威モデル、UX、認証基盤の仕様で判断する。
+
+## この記事で学べること
+
+- Access TokenとRefresh Tokenの権限・寿命
+- アプリ再起動時にAccess Tokenをrefreshで再取得する流れ
+- ログアウト時の削除範囲
+- `deleteAll()`ではなく専用キー削除を検討
+- refresh token rotation
+- 端末紛失・root/jailbreak・ログ漏洩
+
+## 前提知識
+
+- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![Access Tokenはメモリ、Refresh TokenはSecure Storageに保存する理由](/images/thumbnails/access-token-memory-refresh-token-secure-storage.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```dart
+class TokenStore {
+  String? _accessToken;
+  final SecureStorage secureStorage;
+
+  TokenStore(this.secureStorage);
+
+  Future<void> saveTokens(TokenPair pair) async {
+    _accessToken = pair.accessToken;
+    await secureStorage.write('refresh_token', pair.refreshToken);
+  }
+}
+```
+
+## 本編
+
+### 発生した状況
+
+Access TokenとRefresh Tokenを同じストレージへ保存する実装が単純に見えたが、寿命、権限、再起動後の必要性、漏洩時の影響が異なる。メモリ保持とSecure Storageの分離を検討した。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせ... という観点で見る必要がありました。
+
+### 観測したこと
+
+- `AuthTokenHolder`のメモリ実装
+- `TokenStorage`のrefresh token専用API
+- 起動時bootstrapとlogoutの例
+- Access Tokenが永続化されていないことを確認するtest
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| メモリ保持 | 永続漏洩面を減らす／再起動時refreshが必要 |
+| 永続化 | UXが単純／保存秘密と攻撃面が増える |
+
+## 内部動作
+
+FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+
+- OAuth/OIDCサーバーの仕様を確認する
+- Secure Storageは暗号化やOS保護を利用するが、侵害端末での完全防御ではない
+- Access Tokenをメモリだけに置けない要件もある
+
+```text
+Widget lifecycle
+  -> state owner
+  -> async operation
+  -> network/storage boundary
+  -> UI update
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- OAuth/OIDCサーバーの仕様を確認する
+- Secure Storageは暗号化やOS保護を利用するが、侵害端末での完全防御ではない
+- Access Tokenをメモリだけに置けない要件もある
+
+## 再発防止テスト
+
+```dart
+void main() {
+  test('access-token-memory-refresh-token-secure-storage', () async {
+    final subject = TestSubject();
+
+    expect(await subject.call(), isNotNull);
+  });
+}
+
+class TestSubject {
+  Future<Object> call() async => Object();
+}
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+トークンの保存場所は「秘密だから全部Secure Storage」ではなく、寿命と再発行能力に応じて最小化する。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- この保存戦略が全アプリの唯一解と断定しない
+- Refresh Tokenをログへ出さない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

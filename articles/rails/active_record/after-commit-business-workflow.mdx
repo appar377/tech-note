@@ -1,0 +1,156 @@
+---
+title: "Railsのafter_commitは便利だが、業務フローの中心に置くと壊れやすい"
+description: "`after_commit`は「DB確定後に行う副作用」には適するが、重要な業務オーケストレーションの唯一の入口にすると暗黙性と再実行性が問題になる。重要度に応じて明示実行、冪等ジョブ、Outboxを使い分ける。"
+date: 2026-07-20
+tags:
+  - "Rails"
+  - "Callbacks"
+  - "after_commit"
+  - "Outbox Pattern"
+category: "Rails"
+level: 3
+articleType: internal
+draft: false
+thumbnail: "/images/thumbnails/after-commit-business-workflow.png"
+popular: false
+---
+
+## 概要
+
+モデル更新を起点にジョブ作成や外部連携を自動化するため、`after_commit`へ業務処理を集めた。呼び出し側が短くなる一方、どの更新が何を引き起こすか見えにくくなり、Dirty Trackingやトランザクション境界の影響を受けた。
+
+`after_commit`は「DB確定後に行う副作用」には適するが、重要な業務オーケストレーションの唯一の入口にすると暗黙性と再実行性が問題になる。重要度に応じて明示実行、冪等ジョブ、Outboxを使い分ける。
+
+## この記事で学べること
+
+- `after_save`ではなく`after_commit`を選ぶ理由
+- 便利さ：ロールバックされた更新で副作用を起こしにくい
+- 危険性：発生源がモデル更新から見えない
+- 複数更新経路・一括更新・`update_columns`等との関係
+- Dirty Tracking条件とreloadの影響
+- ジョブ投入に成功して外部処理が失敗する場合
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![Railsのafter_commitは便利だが、業務フローの中心に置くと壊れやすい](/images/thumbnails/after-commit-business-workflow.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class Order < ApplicationRecord
+  after_commit :enqueue_sync_job, on: :update
+
+  private
+
+  def enqueue_sync_job
+    return unless saved_change_to_status?
+
+    ExternalSyncJob.perform_later(id)
+  end
+end
+
+class OrderStatusUpdater
+  def call(order)
+    order.update!(status: "completed")
+    ExternalSyncJob.perform_later(order.id)
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+モデル更新を起点にジョブ作成や外部連携を自動化するため、`after_commit`へ業務処理を集めた。呼び出し側が短くなる一方、どの更新が何を引き起こすか見えにくくなり、Dirty Trackingやトランザクション境界の影響を受けた。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`after_commit`は「DB確定後に行う副作用」には適するが、重要な業務オーケストレーションの唯一の入口にすると暗黙性と再実行性が問題になる。重要度に応... という観点で見る必要がありました。
+
+### 観測したこと
+
+- コールバック実装とサービス層実装を並べる
+- Outboxレコードを同じDBトランザクションで作る例
+- 冪等キー付きジョブのRSpec
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| コールバック | 呼び出し側が簡潔、横断処理に便利／暗黙的、テストと追跡が難しい |
+| 明示実行 | 可読性と制御性／呼び出し漏れ対策が必要 |
+| Outbox | DBとの整合性／運用部品が増える |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- `after_commit`はDBコミット後に実行されるが、外部システム成功までは保証しない
+- コールバックをスキップする更新APIが存在する
+- 非同期ジョブは少なくとも一度実行や重複実行を前提に設計する
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- `after_commit`はDBコミット後に実行されるが、外部システム成功までは保証しない
+- コールバックをスキップする更新APIが存在する
+- 非同期ジョブは少なくとも一度実行や重複実行を前提に設計する
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "after-commit-business-workflow" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+副作用の重要度と失敗時の回復要件に応じて、暗黙性をどこまで許容するかを決める、という設計判断で締める。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- `after_commit`は悪、と結論づけない
+- Outboxを万能解として扱わない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

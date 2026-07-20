@@ -1,0 +1,155 @@
+---
+title: "DartのcopyWithでnullを正しく扱うためのSentinel Pattern"
+description: "引数の既定値に一意なsentinelオブジェクトを使い、「未指定」「明示null」「非null値」の3状態を表現する。あるいは更新値を型で包む。"
+date: 2026-07-20
+tags:
+  - "Dart"
+  - "Copywith"
+  - "Null Safety"
+  - "Sentinel Pattern"
+  - "Immutability"
+category: "Flutter"
+level: 2
+articleType: reference
+draft: false
+thumbnail: "/images/thumbnails/dart-copywith-sentinel-pattern.png"
+popular: false
+---
+
+## 概要
+
+`copyWith({String? name})`では、引数未指定と`name: null`を区別できない。nullable属性を明示的にnullへ戻す更新ができず、APIの意味が曖昧になった。
+
+引数の既定値に一意なsentinelオブジェクトを使い、「未指定」「明示null」「非null値」の3状態を表現する。あるいは更新値を型で包む。
+
+## この記事で学べること
+
+- 通常のnullable引数で区別できない理由
+- private/static sentinelの定義
+- `identical(next, sentinel)`
+- ジェネリックhelperの型安全性
+- 明示nullを代入するケース
+- Freezed等のコード生成が提供する解決
+
+## 前提知識
+
+- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![DartのcopyWithでnullを正しく扱うためのSentinel Pattern](/images/thumbnails/dart-copywith-sentinel-pattern.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```dart
+const Object _sentinel = Object();
+
+class Profile {
+  const Profile({this.nickname});
+
+  final String? nickname;
+
+  Profile copyWith({Object? nickname = _sentinel}) {
+    return Profile(
+      nickname: identical(nickname, _sentinel) ? this.nickname : nickname as String?,
+    );
+  }
+}
+```
+
+## 本編
+
+### 発生した状況
+
+`copyWith({String? name})`では、引数未指定と`name: null`を区別できない。nullable属性を明示的にnullへ戻す更新ができず、APIの意味が曖昧になった。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、引数の既定値に一意なsentinelオブジェクトを使い、「未指定」「明示null」「非null値」の3状態を表現する。あるいは更新値を型で包む。 という観点で見る必要がありました。
+
+### 観測したこと
+
+- `static const _sentinel = Object()`または一意オブジェクト
+- `Object? name = _sentinel`を使うcopyWith
+- 未指定/null/値の3テスト
+- sealed `Update&lt;T&gt;`代案
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| Sentinel | 軽量／型が読みづらくcastが必要 |
+| Wrapper型 | 明示的・型安全／呼び出しが冗長 |
+| コード生成 | 利便性／生成規約への依存 |
+
+## 内部動作
+
+FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+
+- const sentinelの同一性が意図通りか利用方法を正確に書く
+- public APIで危険なcastを隠さない
+
+```text
+Widget lifecycle
+  -> state owner
+  -> async operation
+  -> network/storage boundary
+  -> UI update
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- const sentinelの同一性が意図通りか利用方法を正確に書く
+- public APIで危険なcastを隠さない
+
+## 再発防止テスト
+
+```dart
+void main() {
+  test('dart-copywith-sentinel-pattern', () async {
+    final subject = TestSubject();
+
+    expect(await subject.call(), isNotNull);
+  });
+}
+
+class TestSubject {
+  Future<Object> call() async => Object();
+}
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+nullableな更新APIでは、値の型だけでなく「操作の有無」も型またはsentinelで表現する。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- `null`を「変更なし」と固定してしまわない
+- 同値オブジェクトをsentinelとして比較しない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

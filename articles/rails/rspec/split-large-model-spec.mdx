@@ -1,0 +1,149 @@
+---
+title: "RSpecが巨大化したとき、ファイルを分ける基準"
+description: "Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。"
+date: 2026-07-20
+tags:
+  - "RSpec"
+  - "Test Organization"
+  - "Model Spec"
+  - "Maintainability"
+category: "Rails"
+level: 2
+articleType: reference
+draft: false
+thumbnail: "/images/thumbnails/split-large-model-spec.png"
+popular: false
+---
+
+## 概要
+
+1つのModel Specにvalidation、association、callback、scope、状態遷移、外部連携が積み上がり、検索・実行・レビューが難しくなった。単純に行数で分けても責務が見えない。
+
+Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。
+
+## この記事で学べること
+
+- 巨大化の症状：読み込みが遅い、fixtureが衝突、contextが深い
+- validations、associations、scopes、callbacks、state transitions等の分割候補
+- ファイル名と`describe`の対応
+- 共通fixtureを共有しすぎない
+- 外部API連携をモデルから分離する可能性
+- 1クラス複数Specファイルをテストランナーがどう扱うか
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![RSpecが巨大化したとき、ファイルを分ける基準](/images/thumbnails/split-large-model-spec.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class User < ApplicationRecord
+  validates :email, presence: true
+end
+
+# spec/models/user/validations_spec.rb
+RSpec.describe User, type: :model do
+  describe "validations" do
+    it "requires email" do
+      user = User.new(email: nil)
+
+      expect(user).not_to be_valid
+    end
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+1つのModel Specにvalidation、association、callback、scope、状態遷移、外部連携が積み上がり、検索・実行・レビューが難しくなった。単純に行数で分けても責務が見えない。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。 という観点で見る必要がありました。
+
+### 観測したこと
+
+- 推奨ディレクトリ例
+- `user/validations_spec.rb`等の構成
+- shared_contextを乱用した悪い例と、小さなhelperの例
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| 細分化 | 探しやすい／ファイル数と重複setupが増える |
+| 単一ファイル | 全体像／巨大化すると変更影響が読めない |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- ファイル分割は本体設計の問題を隠す場合がある
+- テストの実行順に依存させない
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- ファイル分割は本体設計の問題を隠す場合がある
+- テストの実行順に依存させない
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "split-large-model-spec" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+良い分割は、テストを速くするだけでなく、ドメインの責務境界を可視化する、とまとめる。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- 500行など固定行数を絶対基準にしない
+- private methodごとにSpecファイルを作らない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

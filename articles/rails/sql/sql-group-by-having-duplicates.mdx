@@ -1,0 +1,153 @@
+---
+title: "GROUP BYとHAVINGで重複データを検出する"
+description: "重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) > 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意制約まで設計する。"
+date: 2026-07-20
+tags:
+  - "SQL"
+  - "GROUP BY"
+  - "HAVING"
+  - "Duplicates"
+  - "Rails"
+category: "Rails"
+level: 2
+articleType: reference
+draft: false
+thumbnail: "/images/thumbnails/sql-group-by-having-duplicates.png"
+popular: false
+---
+
+## 概要
+
+メーカー名、発売日、車種IDなど、同じ値の組み合わせを持つレコードを調べる必要があった。Rubyで全件読み込むのではなく、DBの集約機能で候補を絞る。
+
+重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) &gt; 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意制約まで設計する。
+
+## この記事で学べること
+
+- 単一カラムの重複
+- 複合キーの重複
+- `WHERE`と`HAVING`の役割差
+- NULLを含む場合のグルーピング
+- 重複グループだけでなく実レコードを取るCTE/JOIN
+- どのレコードを残すかの決定
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![GROUP BYとHAVINGで重複データを検出する](/images/thumbnails/sql-group-by-having-duplicates.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```sql
+SELECT email, COUNT(*) AS count
+FROM users
+GROUP BY email
+HAVING COUNT(*) > 1
+ORDER BY count DESC;
+```
+
+```ruby
+class DuplicateEmailReport
+  def call
+    User.select("email, COUNT(*) AS count")
+      .group(:email)
+      .having("COUNT(*) > 1")
+      .order("count DESC")
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+メーカー名、発売日、車種IDなど、同じ値の組み合わせを持つレコードを調べる必要があった。Rubyで全件読み込むのではなく、DBの集約機能で候補を絞る。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) &gt; 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意... という観点で見る必要がありました。
+
+### 観測したこと
+
+- SQL: `GROUP BY name, released_on, car_model_id HAVING COUNT(*) &gt; 1`
+- Active Recordの`group(...).having(...)`
+- CTEで重複行を展開する例
+- unique index migrationと既存重複の失敗テスト
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| SQL集約 | 高速でDB向き／複雑な正規化ルールは前処理が必要 |
+| アプリ処理 | 柔軟／メモリと転送コスト |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- `COUNT(*)`と`COUNT(column)`はNULLの扱いが異なる
+- DBごとのNULL一意制約挙動を確認する
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- `COUNT(*)`と`COUNT(column)`はNULLの扱いが異なる
+- DBごとのNULL一意制約挙動を確認する
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "sql-group-by-having-duplicates" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+重複検出は掃除ではなく、データモデルが本来持つ一意性を見つけ直す作業だと締める。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- 検出SQLをそのまま削除SQLへ変えない
+- 重複の業務定義を決めずに一意制約を貼らない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

@@ -1,0 +1,158 @@
+---
+title: "RSpecのRequest SpecとController Specは何をテストしているのか"
+description: "Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。現代的なRails APIではRequest Specを中心にし、必要な局所..."
+date: 2026-07-20
+tags:
+  - "Rails"
+  - "RSpec"
+  - "Request Spec"
+  - "Controller Spec"
+category: "Rails"
+level: 2
+articleType: reference
+draft: false
+thumbnail: "/images/thumbnails/request-spec-vs-controller-spec.png"
+popular: false
+---
+
+## 概要
+
+APIの挙動をどのレイヤーで確認すべきか迷い、Request SpecとController Specが同じコントローラを二重にテストしているように見えた。実際には、通過する境界と保証する責務が異なる。
+
+Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。現代的なRails APIではRequest Specを中心にし、必要な局所テストだけを追加する。
+
+## この記事で学べること
+
+- Request Specが通る経路：routing、middleware、authentication、controller、serialization
+- Controller Specが省略・差し替えやすい境界
+- HTTPステータス、ヘッダ、JSON、DB状態の確認
+- モデルバリデーションを全ケース再試験する必要はない理由
+- 認証・認可・ルーティングの失敗はRequest Specで見る
+- Controller Specが有効な局所例
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![RSpecのRequest SpecとController Specは何をテストしているのか](/images/thumbnails/request-spec-vs-controller-spec.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class PostsController < ApplicationController
+  def show
+    render json: Post.find(params[:id])
+  end
+end
+
+# spec/requests/posts_spec.rb
+RSpec.describe "Posts", type: :request do
+  it "returns a post" do
+    get "/posts/1"
+
+    expect(response).to have_http_status(:ok)
+  end
+end
+
+# spec/controllers/posts_controller_spec.rb
+RSpec.describe PostsController, type: :controller do
+  it "renders show" do
+    get :show, params: { id: 1 }
+
+    expect(response).to render_template(:show)
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+APIの挙動をどのレイヤーで確認すべきか迷い、Request SpecとController Specが同じコントローラを二重にテストしているように見えた。実際には、通過する境界と保証する責務が異なる。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。... という観点で見る必要がありました。
+
+### 観測したこと
+
+- 同じAPIをRequest SpecとController Specで書いた比較例
+- Request Specで認証、ルーティング、JSONを確認
+- モデル単体テストとの責務分離を示すテスト一覧
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| Request Spec | 信頼性が高い／セットアップと実行コストがやや高い |
+| Controller Spec | 局所的で速い／実経路との差が生まれやすい |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- RSpec Railsの推奨やAPIは利用バージョンで確認する
+- テスト種別名より、実際に通る境界を理解する
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- RSpec Railsの推奨やAPIは利用バージョンで確認する
+- テスト種別名より、実際に通る境界を理解する
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "request-spec-vs-controller-spec" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+重複して見えるテストでも、異なる境界の契約を保証しているなら意味がある、とまとめる。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- Controller Specは完全に不要と断定しない
+- Request Specだけでモデルの全仕様を確認しようとしない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

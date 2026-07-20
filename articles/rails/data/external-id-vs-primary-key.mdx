@@ -1,0 +1,146 @@
+---
+title: "外部CSVのIDとDBの主キーを混同しない――外部識別子の設計"
+description: "DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_id`を明示的に持ち、変換境界を設計する。"
+date: 2026-07-20
+tags:
+  - "Rails"
+  - "Database Design"
+  - "External Id"
+  - "Primary Key"
+category: "Rails"
+level: 2
+articleType: internal
+draft: false
+thumbnail: "/images/thumbnails/external-id-vs-primary-key.png"
+popular: false
+---
+
+## 概要
+
+CSVのID列をそのままDBの`id`へ設定すれば簡単に見えるが、別システムの番号体系、再採番、複数データソース、内部参照との衝突を招く。
+
+DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_id`を明示的に持ち、変換境界を設計する。
+
+## この記事で学べること
+
+- 内部主キーと業務識別子の役割
+- 外部システムが複数ある場合の衝突
+- 番号の再利用・変更・欠損
+- `external_id`単独ではなく`source`との複合一意制約
+- 外部ID変更履歴や別名テーブルが必要なケース
+- APIレスポンスで内部IDを露出するか
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![外部CSVのIDとDBの主キーを混同しない――外部識別子の設計](/images/thumbnails/external-id-vs-primary-key.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class CreateCustomers < ActiveRecord::Migration[7.1]
+  def change
+    create_table :customers do |t|
+      t.string :external_customer_id, null: false
+      t.string :name, null: false
+      t.timestamps
+    end
+
+    add_index :customers, :external_customer_id, unique: true
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+CSVのID列をそのままDBの`id`へ設定すれば簡単に見えるが、別システムの番号体系、再採番、複数データソース、内部参照との衝突を招く。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_... という観点で見る必要がありました。
+
+### 観測したこと
+
+- migration: `source`, `external_id`, unique index
+- Importerで外部IDから内部レコードを解決する例
+- 同じexternal_idでもsourceが違えば別レコードになるテスト
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| 外部IDを直接PK | マッピングが不要／外部都合が内部設計へ侵入 |
+| 別カラムで保持 | 柔軟／解決処理と索引が必要 |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- surrogate keyとnatural keyは排他的な思想ではなく併用できる
+- 一意性はDB制約で保証する
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- surrogate keyとnatural keyは排他的な思想ではなく併用できる
+- 一意性はDB制約で保証する
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "external-id-vs-primary-key" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+識別子は値そのものより「どの境界で、誰が、その一意性を保証するか」が重要だと一般化する。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- 外部IDは絶対に変わらないと断定しない
+- UUIDならすべて解決すると書かない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

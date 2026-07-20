@@ -1,0 +1,146 @@
+---
+title: "RailsエンジニアがSQLを避けられない理由"
+description: "Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある。"
+date: 2026-07-20
+tags:
+  - "Rails"
+  - "SQL"
+  - "ActiveRecord"
+  - "Database"
+  - "Performance"
+category: "Rails"
+level: 2
+articleType: internal
+draft: false
+thumbnail: "/images/thumbnails/rails-engineer-needs-sql.png"
+popular: false
+---
+
+## 概要
+
+Active Recordだけで機能を実装できても、遅いクエリ、重複、ロック、集計、N+1を調べる段階ではSQLとDB実行計画が必要になった。
+
+Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある。
+
+## この記事で学べること
+
+- Active Recordが提供する生産性
+- 生成SQLをログで確認する
+- N+1と`includes`/`preload`/`eager_load`の違いをバージョンに合わせて説明
+- Indexが効く条件
+- `EXPLAIN`/`EXPLAIN ANALYZE`の読み方の入口
+- GROUP BY、CTE、Window Function
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![RailsエンジニアがSQLを避けられない理由](/images/thumbnails/rails-engineer-needs-sql.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class PublishedPostQuery
+  def call
+    User
+      .joins(:posts)
+      .where(posts: { published: true })
+      .select("users.id, COUNT(posts.id) AS posts_count")
+      .group("users.id")
+  end
+end
+```
+
+## 本編
+
+### 発生した状況
+
+Active Recordだけで機能を実装できても、遅いクエリ、重複、ロック、集計、N+1を調べる段階ではSQLとDB実行計画が必要になった。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある... という観点で見る必要がありました。
+
+### 観測したこと
+
+- 同じActive Recordクエリの生成SQL
+- N+1のログ比較
+- インデックス追加前後の実行計画例は架空値で断定せず、サンプルとして明示
+- CTEまたはWindow Functionを1例
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| Active Record中心 | 可読性・保守性／高度なSQLで限界 |
+| 生SQL | 表現力・性能制御／移植性と安全なbindが必要 |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- 性能はデータ量・分布・DB設定で変わる
+- `EXPLAIN ANALYZE`は実行を伴うことがあるため本番利用に注意
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- 性能はデータ量・分布・DB設定で変わる
+- `EXPLAIN ANALYZE`は実行を伴うことがあるため本番利用に注意
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "rails-engineer-needs-sql" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+抽象化を捨てるためではなく、抽象化のコストと限界を判断するためにSQLを学ぶ、とまとめる。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- SQLを知れば常に生SQLを書くべき、としない
+- インデックスを増やせば速くなると単純化しない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。

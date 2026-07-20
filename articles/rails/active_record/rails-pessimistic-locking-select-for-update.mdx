@@ -1,0 +1,155 @@
+---
+title: "Railsのlock!とwith_lockを、SQLのSELECT FOR UPDATEから理解する"
+description: "`lock!`と`with_lock`はDBトランザクション上の悲観的ロックを扱うAPIであり、プロセス内Mutexではない。守れるのは、対象DBとトランザクションが提供するロック範囲だけである。"
+date: 2026-07-20
+tags:
+  - "Rails"
+  - "SQL"
+  - "Pessimistic Locking"
+  - "Transactions"
+category: "Rails"
+level: 3
+articleType: internal
+draft: false
+thumbnail: "/images/thumbnails/rails-pessimistic-locking-select-for-update.png"
+popular: false
+---
+
+## 概要
+
+`with_lock`をRubyの排他制御のように捉えていたため、何をロックし、いつ解放され、別プロセスへどう効くのかが曖昧だった。SQLへ降りて考えることで、行ロックの範囲と限界が明確になった。
+
+`lock!`と`with_lock`はDBトランザクション上の悲観的ロックを扱うAPIであり、プロセス内Mutexではない。守れるのは、対象DBとトランザクションが提供するロック範囲だけである。
+
+## この記事で学べること
+
+- 悲観的ロックと楽観的ロックの違い
+- `lock!`と`with_lock`の呼び出し形
+- 生成される`SELECT ... FOR UPDATE`
+- ロック保持期間はトランザクション終了まで
+- 別プロセス・別Podからも同じDB行に効く理由
+- 対象行が存在しない場合に何を守れないか
+
+## 前提知識
+
+- Rails、Active Record、RSpec、SQLログの基本を読めること
+- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
+- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+
+## 図解
+
+![Railsのlock!とwith_lockを、SQLのSELECT FOR UPDATEから理解する](/images/thumbnails/rails-pessimistic-locking-select-for-update.png)
+
+```mermaid
+flowchart LR
+  A["症状を観測する"] --> B["誤解を切り分ける"]
+  B --> C["状態の所在を確認する"]
+  C --> D["境界を決め直す"]
+  D --> E["再発防止テストを残す"]
+```
+
+## 実装コード例
+
+```ruby
+class Account < ApplicationRecord
+  def withdraw!(amount)
+    with_lock do
+      raise "insufficient" if balance < amount
+
+      update!(balance: balance - amount)
+    end
+  end
+end
+```
+
+```sql
+SELECT *
+FROM accounts
+WHERE id = 42
+FOR UPDATE;
+```
+
+## 本編
+
+### 発生した状況
+
+`with_lock`をRubyの排他制御のように捉えていたため、何をロックし、いつ解放され、別プロセスへどう効くのかが曖昧だった。SQLへ降りて考えることで、行ロックの範囲と限界が明確になった。
+
+### 当初の理解・誤解
+
+当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`lock!`と`with_lock`はDBトランザクション上の悲観的ロックを扱うAPIであり、プロセス内Mutexではない。守れるのは、対象DBとトランザクシ... という観点で見る必要がありました。
+
+### 観測したこと
+
+- 2スレッド/2接続で同じ行を更新する最小再現
+- SQLログ
+- デッドロックを避けるためID順でロックする例
+- タイムアウトをテストする際は`sleep`依存を避け、同期プリミティブを使う
+
+### 修正案の比較
+
+| 方針 | 見るべき点 |
+| --- | --- |
+| 悲観的ロック | 競合を直列化しやすいが、待機・デッドロック・スループット低下 |
+| 楽観的ロック | 競合が少ない場合に効率的だが、リトライ設計が必要 |
+
+## 内部動作
+
+Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+
+- 行ロックはDB接続とトランザクションに紐づく
+- Rubyのスレッドロックとは別物
+- ロック句や挙動はPostgreSQL/MySQL等で差がある
+
+```text
+Ruby object
+  -> Active Record
+  -> SQL / transaction
+  -> database row
+  -> callback or job boundary
+```
+
+## 調査手順
+
+1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
+2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
+3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+
+- 行ロックはDB接続とトランザクションに紐づく
+- Rubyのスレッドロックとは別物
+- ロック句や挙動はPostgreSQL/MySQL等で差がある
+
+## 再発防止テスト
+
+```ruby
+RSpec.describe "rails-pessimistic-locking-select-for-update" do
+  it "境界条件を固定する" do
+    result = described_class.new.call
+
+    expect(result).to be_present
+  end
+end
+```
+
+## 一般化できる設計原則
+
+- API名が短いほど、裏側の実行モデルを確認する
+- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
+- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
+- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+
+## まとめ
+
+ロックAPIを選ぶ前に「どの資源を、どの接続が、いつまで守るか」をSQLレベルで説明できる状態を目標にする。
+
+
+この記事では、次のような短絡的な一般化は避けます。
+
+- ロックすればすべての競合が解決すると書かない
+- DB製品差を無視しない
+- 長時間トランザクションを例として推奨しない
+
+## 参考文献
+
+- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
+- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
