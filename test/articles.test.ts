@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it } from "node:test";
 import {
   estimateReadingTime,
@@ -87,6 +89,34 @@ describe("articles", () => {
     assert.ok(railsBook);
     assert.equal(railsBook!.slug, "rails-raw-sql");
     assert.equal(bookIndex.some((entry) => entry.url === "/books/database-internal"), true);
+  });
+
+  it("keeps the Codex 40-article specification package wired to published content", () => {
+    const manifestPath = path.join(process.cwd(), "codex_article_specs", "manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      articles: Array<{
+        id: string;
+        slug: string;
+        spec_path: string;
+      }>;
+    };
+    const articles = getAllArticles();
+
+    assert.equal(manifest.articles.length, 40);
+
+    for (const item of manifest.articles) {
+      const article = articles.find(
+        (candidate) => candidate.slug === item.slug || candidate.slug.endsWith(`/${item.slug}`),
+      );
+      const expectedThumbnail = `/images/thumbnails/${item.slug}.png`;
+      const thumbnailPath = path.join(process.cwd(), "public", expectedThumbnail.replace(/^\//, ""));
+      const specPath = path.join(process.cwd(), "codex_article_specs", item.spec_path);
+
+      assert.ok(article, `${item.id} ${item.slug} article is published`);
+      assert.equal(article!.thumbnail, expectedThumbnail, `${item.slug} thumbnail path`);
+      assert.equal(fs.existsSync(thumbnailPath), true, `${item.slug} thumbnail file exists`);
+      assert.equal(fs.existsSync(specPath), true, `${item.slug} individual spec file exists`);
+    }
   });
 
   it("estimates a minimum reading time", () => {

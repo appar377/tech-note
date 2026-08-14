@@ -1,0 +1,633 @@
+{
+  "count": 40,
+  "global_spec": "README.md",
+  "combined_spec": "ALL_ARTICLES_SPEC.md",
+  "codex_prompt": "CODEX_PROMPT.md",
+  "articles": [
+    {
+      "id": "01",
+      "title": "Railsのwith_lockでDirty Trackingが消え、after_commitが発火しなくなった理由",
+      "slug": "with-lock-dirty-tracking-after-commit",
+      "series": "Rails / 障害解析",
+      "tags": [
+        "rails",
+        "active-record",
+        "dirty-tracking",
+        "with-lock",
+        "after-commit"
+      ],
+      "spec_path": "articles/01_with-lock-dirty-tracking-after-commit.md",
+      "output_path": "articles/01_with-lock-dirty-tracking-after-commit.md",
+      "thumbnail": "/images/articles/with-lock-dirty-tracking-after-commit.png"
+    },
+    {
+      "id": "02",
+      "title": "Rails Dirty TrackingをDBの変更履歴だと思っていた――実際にはいつ消えるのか",
+      "slug": "active-record-dirty-tracking-lifecycle",
+      "series": "Rails / Active Record",
+      "tags": [
+        "rails",
+        "active-record",
+        "dirty-tracking",
+        "lifecycle"
+      ],
+      "spec_path": "articles/02_active-record-dirty-tracking-lifecycle.md",
+      "output_path": "articles/02_active-record-dirty-tracking-lifecycle.md",
+      "thumbnail": "/images/articles/active-record-dirty-tracking-lifecycle.png"
+    },
+    {
+      "id": "03",
+      "title": "Railsのlock!とwith_lockを、SQLのSELECT FOR UPDATEから理解する",
+      "slug": "rails-pessimistic-locking-select-for-update",
+      "series": "Rails / Database",
+      "tags": [
+        "rails",
+        "sql",
+        "pessimistic-locking",
+        "transactions"
+      ],
+      "spec_path": "articles/03_rails-pessimistic-locking-select-for-update.md",
+      "output_path": "articles/03_rails-pessimistic-locking-select-for-update.md",
+      "thumbnail": "/images/articles/rails-pessimistic-locking-select-for-update.png"
+    },
+    {
+      "id": "04",
+      "title": "Railsのafter_commitは便利だが、業務フローの中心に置くと壊れやすい",
+      "slug": "after-commit-business-workflow",
+      "series": "Rails / Architecture",
+      "tags": [
+        "rails",
+        "callbacks",
+        "after-commit",
+        "outbox-pattern"
+      ],
+      "spec_path": "articles/04_after-commit-business-workflow.md",
+      "output_path": "articles/04_after-commit-business-workflow.md",
+      "thumbnail": "/images/articles/after-commit-business-workflow.png"
+    },
+    {
+      "id": "05",
+      "title": "S3にはあるがDBにはない、DBにはあるがS3にはない――整合性修復処理の設計",
+      "slug": "s3-db-consistency-reconciliation",
+      "series": "Rails / Storage",
+      "tags": [
+        "rails",
+        "aws-s3",
+        "data-consistency",
+        "batch"
+      ],
+      "spec_path": "articles/05_s3-db-consistency-reconciliation.md",
+      "output_path": "articles/05_s3-db-consistency-reconciliation.md",
+      "thumbnail": "/images/articles/s3-db-consistency-reconciliation.png"
+    },
+    {
+      "id": "06",
+      "title": "DBトランザクションではS3をロールバックできない――外部ストレージを含む処理の設計",
+      "slug": "db-s3-transaction-boundary",
+      "series": "Rails / Architecture",
+      "tags": [
+        "rails",
+        "transactions",
+        "aws-s3",
+        "compensation",
+        "outbox"
+      ],
+      "spec_path": "articles/06_db-s3-transaction-boundary.md",
+      "output_path": "articles/06_db-s3-transaction-boundary.md",
+      "thumbnail": "/images/articles/db-s3-transaction-boundary.png"
+    },
+    {
+      "id": "07",
+      "title": "Railsで冪等なCSVインポーターを作る――重複防止、更新、論理削除からの復活",
+      "slug": "idempotent-csv-importer-rails",
+      "series": "Rails / Batch",
+      "tags": [
+        "rails",
+        "csv",
+        "idempotency",
+        "soft-delete",
+        "import"
+      ],
+      "spec_path": "articles/07_idempotent-csv-importer-rails.md",
+      "output_path": "articles/07_idempotent-csv-importer-rails.md",
+      "thumbnail": "/images/articles/idempotent-csv-importer-rails.png"
+    },
+    {
+      "id": "08",
+      "title": "外部CSVのIDとDBの主キーを混同しない――外部識別子の設計",
+      "slug": "external-id-vs-primary-key",
+      "series": "Rails / Data Modeling",
+      "tags": [
+        "rails",
+        "database-design",
+        "external-id",
+        "primary-key"
+      ],
+      "spec_path": "articles/08_external-id-vs-primary-key.md",
+      "output_path": "articles/08_external-id-vs-primary-key.md",
+      "thumbnail": "/images/articles/external-id-vs-primary-key.png"
+    },
+    {
+      "id": "09",
+      "title": "type_for_attribute(:price).castから理解するActive Recordの型変換",
+      "slug": "active-record-type-casting",
+      "series": "Rails / Active Record",
+      "tags": [
+        "rails",
+        "active-record",
+        "type-casting",
+        "active-model"
+      ],
+      "spec_path": "articles/09_active-record-type-casting.md",
+      "output_path": "articles/09_active-record-type-casting.md",
+      "thumbnail": "/images/articles/active-record-type-casting.png"
+    },
+    {
+      "id": "10",
+      "title": "Railsのquery_parameters.to_unsafe_hを安易に使ってはいけない理由",
+      "slug": "rails-to-unsafe-h-strong-parameters",
+      "series": "Rails / Security",
+      "tags": [
+        "rails",
+        "strong-parameters",
+        "security",
+        "to-unsafe-h"
+      ],
+      "spec_path": "articles/10_rails-to-unsafe-h-strong-parameters.md",
+      "output_path": "articles/10_rails-to-unsafe-h-strong-parameters.md",
+      "thumbnail": "/images/articles/rails-to-unsafe-h-strong-parameters.png"
+    },
+    {
+      "id": "11",
+      "title": "RSpecのRequest SpecとController Specは何をテストしているのか",
+      "slug": "request-spec-vs-controller-spec",
+      "series": "Rails / Testing",
+      "tags": [
+        "rails",
+        "rspec",
+        "request-spec",
+        "controller-spec"
+      ],
+      "spec_path": "articles/11_request-spec-vs-controller-spec.md",
+      "output_path": "articles/11_request-spec-vs-controller-spec.md",
+      "thumbnail": "/images/articles/request-spec-vs-controller-spec.png"
+    },
+    {
+      "id": "12",
+      "title": "単体テストで確認済みの処理をAPIテストでも確認すべきか",
+      "slug": "test-duplication-across-layers",
+      "series": "Rails / Testing",
+      "tags": [
+        "testing",
+        "test-pyramid",
+        "integration-test",
+        "rspec"
+      ],
+      "spec_path": "articles/12_test-duplication-across-layers.md",
+      "output_path": "articles/12_test-duplication-across-layers.md",
+      "thumbnail": "/images/articles/test-duplication-across-layers.png"
+    },
+    {
+      "id": "13",
+      "title": "RSpecのlet_it_beは高速化手段だが、データ汚染を起こしやすい",
+      "slug": "let-it-be-shared-state-pollution",
+      "series": "Rails / Testing",
+      "tags": [
+        "rspec",
+        "test-prof",
+        "let-it-be",
+        "test-isolation"
+      ],
+      "spec_path": "articles/13_let-it-be-shared-state-pollution.md",
+      "output_path": "articles/13_let-it-be-shared-state-pollution.md",
+      "thumbnail": "/images/articles/let-it-be-shared-state-pollution.png"
+    },
+    {
+      "id": "14",
+      "title": "RSpecが巨大化したとき、ファイルを分ける基準",
+      "slug": "split-large-model-spec",
+      "series": "Rails / Testing",
+      "tags": [
+        "rspec",
+        "test-organization",
+        "model-spec",
+        "maintainability"
+      ],
+      "spec_path": "articles/14_split-large-model-spec.md",
+      "output_path": "articles/14_split-large-model-spec.md",
+      "thumbnail": "/images/articles/split-large-model-spec.png"
+    },
+    {
+      "id": "15",
+      "title": "RSpecのStubとMockを用語ではなく目的から理解する",
+      "slug": "stub-mock-fake-by-purpose",
+      "series": "Rails / Testing",
+      "tags": [
+        "testing",
+        "stub",
+        "mock",
+        "fake",
+        "rspec"
+      ],
+      "spec_path": "articles/15_stub-mock-fake-by-purpose.md",
+      "output_path": "articles/15_stub-mock-fake-by-purpose.md",
+      "thumbnail": "/images/articles/stub-mock-fake-by-purpose.png"
+    },
+    {
+      "id": "16",
+      "title": "GROUP BYとHAVINGで重複データを検出する",
+      "slug": "sql-group-by-having-duplicates",
+      "series": "Rails / SQL",
+      "tags": [
+        "sql",
+        "group-by",
+        "having",
+        "duplicates",
+        "rails"
+      ],
+      "spec_path": "articles/16_sql-group-by-having-duplicates.md",
+      "output_path": "articles/16_sql-group-by-having-duplicates.md",
+      "thumbnail": "/images/articles/sql-group-by-having-duplicates.png"
+    },
+    {
+      "id": "17",
+      "title": "RailsエンジニアがSQLを避けられない理由",
+      "slug": "rails-engineer-needs-sql",
+      "series": "Rails / SQL",
+      "tags": [
+        "rails",
+        "sql",
+        "active-record",
+        "database",
+        "performance"
+      ],
+      "spec_path": "articles/17_rails-engineer-needs-sql.md",
+      "output_path": "articles/17_rails-engineer-needs-sql.md",
+      "thumbnail": "/images/articles/rails-engineer-needs-sql.png"
+    },
+    {
+      "id": "18",
+      "title": "highest_price_firstは「最高値1件」なのか「価格降順」なのか",
+      "slug": "active-record-scope-naming",
+      "series": "Rails / Code Review",
+      "tags": [
+        "rails",
+        "active-record",
+        "scope",
+        "naming"
+      ],
+      "spec_path": "articles/18_active-record-scope-naming.md",
+      "output_path": "articles/18_active-record-scope-naming.md",
+      "thumbnail": "/images/articles/active-record-scope-naming.png"
+    },
+    {
+      "id": "19",
+      "title": "Railsの関連付けを名前解決とオブジェクト同一性から理解する",
+      "slug": "class-name-and-inverse-of",
+      "series": "Rails / Active Record",
+      "tags": [
+        "rails",
+        "associations",
+        "class-name",
+        "inverse-of",
+        "identity"
+      ],
+      "spec_path": "articles/19_class-name-and-inverse-of.md",
+      "output_path": "articles/19_class-name-and-inverse-of.md",
+      "thumbnail": "/images/articles/class-name-and-inverse-of.png"
+    },
+    {
+      "id": "20",
+      "title": "DartのFutureとasyncとawaitを混同していた",
+      "slug": "dart-future-async-await",
+      "series": "Flutter / Dart",
+      "tags": [
+        "dart",
+        "flutter",
+        "future",
+        "async",
+        "await"
+      ],
+      "spec_path": "articles/20_dart-future-async-await.md",
+      "output_path": "articles/20_dart-future-async-await.md",
+      "thumbnail": "/images/articles/dart-future-async-await.png"
+    },
+    {
+      "id": "21",
+      "title": "Dartのfinalとconstは何を固定しているのか",
+      "slug": "dart-final-vs-const",
+      "series": "Flutter / Dart",
+      "tags": [
+        "dart",
+        "flutter",
+        "final",
+        "const",
+        "immutability"
+      ],
+      "spec_path": "articles/21_dart-final-vs-const.md",
+      "output_path": "articles/21_dart-final-vs-const.md",
+      "thumbnail": "/images/articles/dart-final-vs-const.png"
+    },
+    {
+      "id": "22",
+      "title": "DI・Dio・SecureStorageを一度に見て混乱したので役割を分解する",
+      "slug": "di-dio-secure-storage-roles",
+      "series": "Flutter / Architecture",
+      "tags": [
+        "flutter",
+        "dart",
+        "dependency-injection",
+        "dio",
+        "secure-storage"
+      ],
+      "spec_path": "articles/22_di-dio-secure-storage-roles.md",
+      "output_path": "articles/22_di-dio-secure-storage-roles.md",
+      "thumbnail": "/images/articles/di-dio-secure-storage-roles.png"
+    },
+    {
+      "id": "23",
+      "title": "Access Tokenはメモリ、Refresh TokenはSecure Storageに保存する理由",
+      "slug": "access-token-memory-refresh-token-secure-storage",
+      "series": "Flutter / Authentication",
+      "tags": [
+        "flutter",
+        "authentication",
+        "access-token",
+        "refresh-token",
+        "secure-storage"
+      ],
+      "spec_path": "articles/23_access-token-memory-refresh-token-secure-storage.md",
+      "output_path": "articles/23_access-token-memory-refresh-token-secure-storage.md",
+      "thumbnail": "/images/articles/access-token-memory-refresh-token-secure-storage.png"
+    },
+    {
+      "id": "24",
+      "title": "Flutterで複数の401が同時に返ったとき、Token Refreshを一度だけ実行する設計",
+      "slug": "single-flight-token-refresh-concurrent-401",
+      "series": "Flutter / Authentication",
+      "tags": [
+        "flutter",
+        "dio",
+        "authentication",
+        "concurrency",
+        "token-refresh"
+      ],
+      "spec_path": "articles/24_single-flight-token-refresh-concurrent-401.md",
+      "output_path": "articles/24_single-flight-token-refresh-concurrent-401.md",
+      "thumbnail": "/images/articles/single-flight-token-refresh-concurrent-401.png"
+    },
+    {
+      "id": "25",
+      "title": "DartのcopyWithでnullを正しく扱うためのSentinel Pattern",
+      "slug": "dart-copywith-sentinel-pattern",
+      "series": "Flutter / Dart",
+      "tags": [
+        "dart",
+        "copywith",
+        "null-safety",
+        "sentinel-pattern",
+        "immutability"
+      ],
+      "spec_path": "articles/25_dart-copywith-sentinel-pattern.md",
+      "output_path": "articles/25_dart-copywith-sentinel-pattern.md",
+      "thumbnail": "/images/articles/dart-copywith-sentinel-pattern.png"
+    },
+    {
+      "id": "26",
+      "title": "Dartの同一性と等価性――identical、==、hashCode、Equatable",
+      "slug": "dart-identity-equality-hashcode-equatable",
+      "series": "Flutter / Dart",
+      "tags": [
+        "dart",
+        "identity",
+        "equality",
+        "hashcode",
+        "equatable"
+      ],
+      "spec_path": "articles/26_dart-identity-equality-hashcode-equatable.md",
+      "output_path": "articles/26_dart-identity-equality-hashcode-equatable.md",
+      "thumbnail": "/images/articles/dart-identity-equality-hashcode-equatable.png"
+    },
+    {
+      "id": "27",
+      "title": "GETとPUTを文字列で分岐せず、Dartのsealed classで表現する",
+      "slug": "dart-sealed-class-exhaustive-switch-api",
+      "series": "Flutter / Dart",
+      "tags": [
+        "dart",
+        "sealed-class",
+        "pattern-matching",
+        "api-design"
+      ],
+      "spec_path": "articles/27_dart-sealed-class-exhaustive-switch-api.md",
+      "output_path": "articles/27_dart-sealed-class-exhaustive-switch-api.md",
+      "thumbnail": "/images/articles/dart-sealed-class-exhaustive-switch-api.png"
+    },
+    {
+      "id": "28",
+      "title": "IDの有無でPOSTとPUTを切り替えるsaveメソッドは良い設計か",
+      "slug": "repository-save-create-update-design",
+      "series": "Flutter / Architecture",
+      "tags": [
+        "flutter",
+        "repository",
+        "api-design",
+        "create",
+        "update"
+      ],
+      "spec_path": "articles/28_repository-save-create-update-design.md",
+      "output_path": "articles/28_repository-save-create-update-design.md",
+      "thumbnail": "/images/articles/repository-save-create-update-design.png"
+    },
+    {
+      "id": "29",
+      "title": "Flutterの画面を閉じてもHTTP通信は止まらない――DioのCancelToken",
+      "slug": "dio-cancel-token-lifecycle",
+      "series": "Flutter / Networking",
+      "tags": [
+        "flutter",
+        "dio",
+        "cancel-token",
+        "lifecycle",
+        "networking"
+      ],
+      "spec_path": "articles/29_dio-cancel-token-lifecycle.md",
+      "output_path": "articles/29_dio-cancel-token-lifecycle.md",
+      "thumbnail": "/images/articles/dio-cancel-token-lifecycle.png"
+    },
+    {
+      "id": "30",
+      "title": "GoRouterのrefreshListenableとRiverpodを接続するAdapter設計",
+      "slug": "gorouter-riverpod-refresh-adapter",
+      "series": "Flutter / Routing",
+      "tags": [
+        "flutter",
+        "gorouter",
+        "riverpod",
+        "adapter",
+        "routing"
+      ],
+      "spec_path": "articles/30_gorouter-riverpod-refresh-adapter.md",
+      "output_path": "articles/30_gorouter-riverpod-refresh-adapter.md",
+      "thumbnail": "/images/articles/gorouter-riverpod-refresh-adapter.png"
+    },
+    {
+      "id": "31",
+      "title": "Flutterのタブ切り替えで画面状態を保持するStatefulShellRoute",
+      "slug": "stateful-shell-route-tab-state",
+      "series": "Flutter / Routing",
+      "tags": [
+        "flutter",
+        "gorouter",
+        "stateful-shell-route",
+        "navigation",
+        "tabs"
+      ],
+      "spec_path": "articles/31_stateful-shell-route-tab-state.md",
+      "output_path": "articles/31_stateful-shell-route-tab-state.md",
+      "thumbnail": "/images/articles/stateful-shell-route-tab-state.png"
+    },
+    {
+      "id": "32",
+      "title": "providers.dartとproviders.g.dartはどうつながっているのか",
+      "slug": "riverpod-generated-provider-code",
+      "series": "Flutter / Riverpod",
+      "tags": [
+        "flutter",
+        "riverpod",
+        "code-generation",
+        "build-runner"
+      ],
+      "spec_path": "articles/32_riverpod-generated-provider-code.md",
+      "output_path": "articles/32_riverpod-generated-provider-code.md",
+      "thumbnail": "/images/articles/riverpod-generated-provider-code.png"
+    },
+    {
+      "id": "33",
+      "title": "Flutterの未捕捉エラーを一か所へ集約する",
+      "slug": "flutter-global-error-handling",
+      "series": "Flutter / Reliability",
+      "tags": [
+        "flutter",
+        "error-handling",
+        "fluttererror",
+        "runzonedguarded",
+        "observability"
+      ],
+      "spec_path": "articles/33_flutter-global-error-handling.md",
+      "output_path": "articles/33_flutter-global-error-handling.md",
+      "thumbnail": "/images/articles/flutter-global-error-handling.png"
+    },
+    {
+      "id": "34",
+      "title": "FlutterのFeature-first構成とDDDを混同していた",
+      "slug": "feature-first-vs-ddd",
+      "series": "Flutter / Architecture",
+      "tags": [
+        "flutter",
+        "feature-first",
+        "ddd",
+        "architecture",
+        "folder-structure"
+      ],
+      "spec_path": "articles/34_feature-first-vs-ddd.md",
+      "output_path": "articles/34_feature-first-vs-ddd.md",
+      "thumbnail": "/images/articles/feature-first-vs-ddd.png"
+    },
+    {
+      "id": "35",
+      "title": "Swiftのnonisolatedをactor isolationから理解する",
+      "slug": "swift-nonisolated-actor-isolation",
+      "series": "Swift / Concurrency",
+      "tags": [
+        "swift",
+        "concurrency",
+        "actor",
+        "nonisolated",
+        "swift-6"
+      ],
+      "spec_path": "articles/35_swift-nonisolated-actor-isolation.md",
+      "output_path": "articles/35_swift-nonisolated-actor-isolation.md",
+      "thumbnail": "/images/articles/swift-nonisolated-actor-isolation.png"
+    },
+    {
+      "id": "36",
+      "title": "SwiftUIのignoresSafeAreaを画面座標とSafe Areaから理解する",
+      "slug": "swiftui-ignores-safe-area",
+      "series": "SwiftUI",
+      "tags": [
+        "swiftui",
+        "safe-area",
+        "ignores-safe-area",
+        "layout"
+      ],
+      "spec_path": "articles/36_swiftui-ignores-safe-area.md",
+      "output_path": "articles/36_swiftui-ignores-safe-area.md",
+      "thumbnail": "/images/articles/swiftui-ignores-safe-area.png"
+    },
+    {
+      "id": "37",
+      "title": "FlutterエンジニアがSwiftUIを学ぶときに混同しやすい概念",
+      "slug": "flutter-engineer-learning-swiftui",
+      "series": "Flutter → SwiftUI",
+      "tags": [
+        "flutter",
+        "swiftui",
+        "comparison",
+        "state-management",
+        "navigation"
+      ],
+      "spec_path": "articles/37_flutter-engineer-learning-swiftui.md",
+      "output_path": "articles/37_flutter-engineer-learning-swiftui.md",
+      "thumbnail": "/images/articles/flutter-engineer-learning-swiftui.png"
+    },
+    {
+      "id": "38",
+      "title": "Rails、Dart、Swiftで異なる同一性と等価性",
+      "slug": "identity-equality-ruby-dart-swift",
+      "series": "Cross-stack",
+      "tags": [
+        "ruby",
+        "dart",
+        "swift",
+        "identity",
+        "equality"
+      ],
+      "spec_path": "articles/38_identity-equality-ruby-dart-swift.md",
+      "output_path": "articles/38_identity-equality-ruby-dart-swift.md",
+      "thumbnail": "/images/articles/identity-equality-ruby-dart-swift.png"
+    },
+    {
+      "id": "39",
+      "title": "with_lock、save、copyWith――短いメソッド名の裏にある複雑な動作",
+      "slug": "framework-api-abstraction-leaks",
+      "series": "Cross-stack",
+      "tags": [
+        "abstraction",
+        "frameworks",
+        "with-lock",
+        "save",
+        "copywith"
+      ],
+      "spec_path": "articles/39_framework-api-abstraction-leaks.md",
+      "output_path": "articles/39_framework-api-abstraction-leaks.md",
+      "thumbnail": "/images/articles/framework-api-abstraction-leaks.png"
+    },
+    {
+      "id": "40",
+      "title": "実務で必要だったのは、構文知識より実行モデルの理解だった",
+      "slug": "execution-model-over-syntax",
+      "series": "Cross-stack",
+      "tags": [
+        "engineering",
+        "execution-model",
+        "state",
+        "concurrency",
+        "transactions"
+      ],
+      "spec_path": "articles/40_execution-model-over-syntax.md",
+      "output_path": "articles/40_execution-model-over-syntax.md",
+      "thumbnail": "/images/articles/execution-model-over-syntax.png"
+    }
+  ]
+}
