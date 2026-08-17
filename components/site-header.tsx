@@ -5,18 +5,19 @@ import { SiteLogo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const navItems = [
-  { href: "/articles", label: "Articles" },
-  { href: "/books", label: "Books" },
-  { href: "/series", label: "Series" },
-  { href: "/notes", label: "Notes" },
-  { href: "/reading", label: "Reading" },
-  { href: "/profile", label: "Profile" },
+  { href: "/articles", label: "記事" },
+  { href: "/drafts", label: "ドラフト" },
+  { href: "/notes", label: "ノート" },
+  { href: "/books", label: "ブック" },
+  { href: "/series", label: "シリーズ" },
+  { href: "/reading", label: "読書メモ" },
+  { href: "/profile", label: "プロフィール" },
 ];
 
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-40 border-b backdrop-blur-xl" style={{ borderColor: "var(--tech-border)", background: "var(--tech-surface-strong)" }}>
-      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+    <header className="site-header-paper sticky top-0 z-40 border-b backdrop-blur-xl">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
         <div className="flex min-h-16 items-center gap-4">
           <SiteLogo />
           <nav className="hidden min-w-0 items-center gap-1 md:flex">
@@ -54,7 +55,7 @@ function HeaderLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className="shrink-0 rounded-md px-3 py-2 text-sm font-medium text-zinc-600 transition hover:bg-cyan-500/10 hover:text-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:text-zinc-400 dark:hover:bg-cyan-400/10 dark:hover:text-zinc-50"
+      className="header-link shrink-0 rounded-md px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
     >
       {children}
     </Link>

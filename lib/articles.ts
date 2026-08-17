@@ -5,7 +5,11 @@ import { z } from "zod";
 import type { ArticleLevel, ArticleType } from "./article-metadata";
 import { compareKnowledgeDomainSlugs, getKnowledgeDomain } from "./knowledge-domains";
 import { listMdxFiles, parseMdxSource } from "./mdx-source";
-import { getSeriesBookDefinition, type SeriesBookDefinition } from "./series-books";
+import {
+  SERIES_BOOKS,
+  getSeriesBookDefinition,
+  type SeriesBookDefinition,
+} from "./series-books";
 import { absoluteUrl } from "./site";
 import { normalizeSearchText, slugify, titleFromSlug } from "./slug";
 
@@ -200,39 +204,41 @@ export function getTags(): TaxonomyItem[] {
 }
 
 export function getSeries(): SeriesItem[] {
-  const groups = new Map<string, SeriesItem>();
+  const articles = getAllArticles();
 
-  for (const article of getAllArticles()) {
-    if (!article.series) {
-      continue;
+  return SERIES_BOOKS.map((definition) => {
+    const definedArticleSlugs = new Set(
+      definition.sections.flatMap((section) => section.articleSlugs),
+    );
+    const definitionArticles = articles.filter(
+      (article) =>
+        definedArticleSlugs.has(article.slug) || article.series?.slug === definition.slug,
+    );
+
+    if (definitionArticles.length === 0) {
+      return null;
     }
 
-    const current = groups.get(article.series.slug) ?? {
-      name: article.series.name,
-      slug: article.series.slug,
-      category: article.category,
-      categorySlug: article.categorySlug,
-      description: "",
-      subtitle: "",
-      goal: "",
-      audience: [],
-      prerequisites: [],
-      outcomes: [],
-      concept: "",
+    return buildSeriesItem({
+      name: definition.name,
+      slug: definition.slug,
+      category: definition.category,
+      categorySlug: definition.categorySlug,
+      description: definition.description,
+      subtitle: definition.subtitle,
+      goal: definition.goal,
+      audience: [...definition.audience],
+      prerequisites: [...definition.prerequisites],
+      outcomes: [...definition.outcomes],
+      concept: definition.concept,
       sections: [],
-      notes: [],
-      references: [],
-      count: 0,
-      articles: [],
-    };
-
-    current.count += 1;
-    current.articles.push(article);
-    groups.set(article.series.slug, current);
-  }
-
-  return Array.from(groups.values())
-    .map((series) => buildSeriesItem(series))
+      notes: [...definition.notes],
+      references: [...definition.references],
+      count: definitionArticles.length,
+      articles: definitionArticles,
+    });
+  })
+    .filter((series): series is SeriesItem => series !== null)
     .sort(
       (a, b) =>
         compareKnowledgeDomainSlugs(a.categorySlug, b.categorySlug) ||
@@ -256,18 +262,22 @@ export function getArticlesBySeries(seriesSlug: string) {
 }
 
 export function getSearchIndex(): SearchEntry[] {
-  return getAllArticles().map((article) => ({
-    title: article.title,
-    description: article.description,
-    url: article.url,
-    date: article.date,
-    tags: article.tags,
-    category: article.category,
-    level: article.level,
-    articleType: article.articleType,
-    series: article.series?.name,
-    content: normalizeSearchText(article.plainText),
-  }));
+  return getAllArticles().map((article) => {
+    const publicSeries = article.series ? getSeriesBookDefinition(article.series.slug) : undefined;
+
+    return {
+      title: article.title,
+      description: article.description,
+      url: article.url,
+      date: article.date,
+      tags: article.tags,
+      category: article.category,
+      level: article.level,
+      articleType: article.articleType,
+      series: publicSeries?.name,
+      content: normalizeSearchText(article.plainText),
+    };
+  });
 }
 
 export function paginateArticles(articles: Article[], page: number, perPage: number) {
@@ -409,7 +419,11 @@ function relatedScore(source: Article, candidate: Article) {
     score += 35;
   }
 
-  if (source.series?.slug && source.series.slug === candidate.series?.slug) {
+  if (
+    source.series?.slug &&
+    source.series.slug === candidate.series?.slug &&
+    getSeriesBookDefinition(source.series.slug)
+  ) {
     score += 50;
   }
 
@@ -460,10 +474,10 @@ function buildSeriesItem(series: SeriesItem): SeriesItem {
     description:
       definition?.description ??
       `${name}に関連する公開済み記事を、学習しやすい順番でまとめたシリーズです。`,
-    subtitle: definition?.subtitle ?? "公開済みの記事を、章立てとして順番に辿るシリーズ。",
+    subtitle: definition?.subtitle ?? "公開済みの記事を、共通テーマごとに順番に辿るシリーズ。",
     goal:
       definition?.goal ??
-      `${name}の主要な考え方を、記事を順番に読みながら説明できる状態を目指します。`,
+      `${name}というテーマの主要な考え方を、記事を順番に読みながら説明できる状態を目指します。`,
     audience: definition?.audience ?? [],
     prerequisites: definition?.prerequisites ?? [],
     outcomes: definition?.outcomes ?? [],
@@ -483,7 +497,7 @@ function buildSeriesSections(
   if (!definition) {
     return [
       {
-        title: "公開済みの章",
+        title: "公開済みの記事",
         description: `${seriesName}の公開済み記事です。`,
         articles,
       },
@@ -516,8 +530,8 @@ function buildSeriesSections(
   const remainingArticles = articles.filter((article) => !usedArticleSlugs.has(article.slug));
   if (remainingArticles.length > 0) {
     sections.push({
-      title: "補足章",
-      description: "シリーズ定義にまだ分類していない公開済み記事です。",
+      title: "補足記事",
+      description: "テーマ内で補足的に読む公開済み記事です。",
       articles: remainingArticles,
     });
   }
@@ -526,7 +540,7 @@ function buildSeriesSections(
     ? sections
     : [
         {
-          title: "公開済みの章",
+          title: "公開済みの記事",
           description: `${seriesName}の公開済み記事です。`,
           articles,
         },

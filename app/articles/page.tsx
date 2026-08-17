@@ -3,8 +3,8 @@ import { ArticleIndex } from "@/components/article-index";
 import { absoluteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Articles",
-  description: "Tech Noteの記事一覧。",
+  title: "記事",
+  description: "精査して公開したTech Noteの記事一覧。",
   alternates: {
     canonical: absoluteUrl("/articles"),
   },

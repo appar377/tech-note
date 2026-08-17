@@ -16,8 +16,8 @@ import {
   getArticleBySlug,
   getRelatedArticles,
 } from "@/lib/articles";
-import { getBookForSeries } from "@/lib/books";
 import { formatDate } from "@/lib/format";
+import { getSeriesBookDefinition } from "@/lib/series-books";
 import { absoluteUrl } from "@/lib/site";
 import { slugify } from "@/lib/slug";
 
@@ -92,9 +92,9 @@ export default async function ArticlePage({ params }: PageProps) {
   const adjacentArticles = getAdjacentArticles(article);
   const visibleTags = article.tags.slice(0, 4);
   const hiddenTagCount = Math.max(0, article.tags.length - visibleTags.length);
-  const book = article.series ? getBookForSeries(article.series.name) : undefined;
+  const publicSeries = article.series ? getSeriesBookDefinition(article.series.slug) : undefined;
   const crumbs = [
-    { label: "Home", href: "/" },
+    { label: "ホーム", href: "/" },
     { label: article.category, href: `/categories/${article.categorySlug}` },
     ...article.slugSegments.slice(0, -1).map((segment) => ({
       label: displaySegment(segment),
@@ -119,12 +119,12 @@ export default async function ArticlePage({ params }: PageProps) {
             <Folder aria-hidden size={15} />
             {article.category}
           </Link>
-          {article.series ? (
+          {publicSeries ? (
             <Link
-              href={book?.url ?? `/series/${article.series.slug}`}
+              href={`/series/${publicSeries.slug}`}
               className="max-w-full truncate rounded-lg bg-cyan-50 px-3 py-1.5 font-medium text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300"
             >
-              {book ? `Book: ${book.title}` : article.series.name}
+              {`シリーズ: ${publicSeries.name}`}
             </Link>
           ) : null}
         </div>
@@ -139,10 +139,10 @@ export default async function ArticlePage({ params }: PageProps) {
             <CalendarDays aria-hidden size={16} />
             {formatDate(article.date)}
           </span>
-          {article.updated ? <span>Updated {formatDate(article.updated)}</span> : null}
+          {article.updated ? <span>更新 {formatDate(article.updated)}</span> : null}
           <span className="inline-flex items-center gap-1.5">
             <Clock aria-hidden size={16} />
-            {article.readingTimeMinutes} min read
+            {article.readingTimeMinutes}分
           </span>
         </div>
         <div className="mt-6 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 sm:max-w-none">
@@ -189,7 +189,7 @@ export default async function ArticlePage({ params }: PageProps) {
           >
             <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
               <ArrowLeft aria-hidden size={15} />
-              Previous
+              前の記事
             </span>
             <span className="mt-2 block break-words font-semibold text-zinc-950 dark:text-zinc-50">
               {adjacentArticles.previous.title}
@@ -204,7 +204,7 @@ export default async function ArticlePage({ params }: PageProps) {
             href={adjacentArticles.next.url}
           >
             <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
-              Next
+              次の記事
               <ArrowRight aria-hidden size={15} />
             </span>
             <span className="mt-2 block break-words font-semibold text-zinc-950 dark:text-zinc-50">
@@ -216,7 +216,7 @@ export default async function ArticlePage({ params }: PageProps) {
 
       {relatedArticles.length > 0 ? (
         <section className="mt-12">
-          <h2 className="section-title">Related Articles</h2>
+          <h2 className="section-title">関連記事</h2>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             {relatedArticles.map((relatedArticle) => (
               <ArticleCard key={relatedArticle.slug} article={relatedArticle} />

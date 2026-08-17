@@ -51,7 +51,7 @@ describe("articles", () => {
     assert.match(related[0]?.slug ?? "", /^rails\/sql\//);
   });
 
-  it("builds series as book pages with published chapters", () => {
+  it("builds series as themed article groups", () => {
     const series = getSeries();
     const extensionSeries = series.find((item) => item.name === "世界の拡張子");
 
@@ -108,7 +108,7 @@ describe("articles", () => {
       const article = articles.find(
         (candidate) => candidate.slug === item.slug || candidate.slug.endsWith(`/${item.slug}`),
       );
-      const expectedThumbnail = `/images/thumbnails/${item.slug}.png`;
+      const expectedThumbnail = `/images/articles/${item.slug}.png`;
       const thumbnailPath = path.join(process.cwd(), "public", expectedThumbnail.replace(/^\//, ""));
       const specPath = path.join(process.cwd(), "codex_article_specs", item.spec_path);
 

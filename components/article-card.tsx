@@ -3,8 +3,8 @@ import { CalendarDays, Clock } from "lucide-react";
 import { ArticleThumbnail } from "@/components/article-thumbnail";
 import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import type { Article } from "@/lib/articles";
-import { getBookForSeries } from "@/lib/books";
 import { formatDate } from "@/lib/format";
+import { getSeriesBookDefinition } from "@/lib/series-books";
 import { slugify } from "@/lib/slug";
 
 export function ArticleCard({
@@ -14,7 +14,7 @@ export function ArticleCard({
   article: Article;
   compact?: boolean;
 }) {
-  const book = article.series ? getBookForSeries(article.series.name) : undefined;
+  const publicSeries = article.series ? getSeriesBookDefinition(article.series.slug) : undefined;
 
   return (
     <article className="tech-card group flex h-full min-w-0 max-w-full flex-col overflow-hidden rounded-lg border transition hover:-translate-y-0.5">
@@ -40,12 +40,12 @@ export function ArticleCard({
           >
             {article.category}
           </Link>
-          {article.series ? (
+          {publicSeries ? (
             <Link
-              href={book?.url ?? `/series/${article.series.slug}`}
+              href={`/series/${publicSeries.slug}`}
               className="min-w-0 truncate rounded-md bg-cyan-50 px-2 py-1 font-medium text-cyan-700 transition hover:bg-cyan-100 dark:bg-cyan-950/50 dark:text-cyan-300 dark:hover:bg-cyan-950"
             >
-              {book ? `Book: ${book.title}` : article.series.name}
+              シリーズ: {publicSeries.name}
             </Link>
           ) : null}
         </div>
@@ -75,7 +75,7 @@ export function ArticleCard({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Clock aria-hidden size={14} />
-            {article.readingTimeMinutes} min
+            {article.readingTimeMinutes}分
           </span>
         </div>
       </div>

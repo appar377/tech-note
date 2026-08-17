@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BookOpen, Check, Square } from "lucide-react";
+import { Check, Layers3, Square } from "lucide-react";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import { getArticlesBySeries, getSeries } from "@/lib/articles";
@@ -49,10 +49,10 @@ export default async function SeriesDetailPage({ params }: PageProps) {
     description: string;
     articles: Array<{
       article: (typeof articles)[number];
-      chapterNumber: number;
+      itemNumber: number;
     }>;
   }>>((builtSections, section) => {
-    const chapterOffset = builtSections.reduce(
+    const itemOffset = builtSections.reduce(
       (total, builtSection) => total + builtSection.articles.length,
       0,
     );
@@ -63,7 +63,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
         ...section,
         articles: section.articles.map((article, index) => ({
           article,
-          chapterNumber: chapterOffset + index + 1,
+          itemNumber: itemOffset + index + 1,
         })),
       },
     ];
@@ -75,11 +75,17 @@ export default async function SeriesDetailPage({ params }: PageProps) {
 
   return (
     <div className="page-shell">
-      <Breadcrumbs items={[{ label: "Home", href: "/" }, { label: "Series", href: "/series" }, { label: series.name }]} />
+      <Breadcrumbs
+        items={[
+          { label: "ホーム", href: "/" },
+          { label: "シリーズ", href: "/series" },
+          { label: series.name },
+        ]}
+      />
       <header className="mb-10 mt-8">
         <p className="tech-pill mb-3 gap-2 text-sm">
-          <BookOpen aria-hidden size={15} />
-          {series.category} Book Series
+          <Layers3 aria-hidden size={15} />
+          {series.category} / テーマ別シリーズ
         </p>
         <h1 className="page-heading">{series.name}</h1>
         <p className="mt-4 max-w-3xl break-words text-xl font-medium leading-8 text-zinc-800 dark:text-zinc-200">
@@ -87,19 +93,19 @@ export default async function SeriesDetailPage({ params }: PageProps) {
         </p>
         <p className="page-subtitle mt-4">{series.description}</p>
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <SeriesMetric label="Published chapters" value={`${series.count}`} />
-          <SeriesMetric label="Reading time" value={`${totalReadingTime} min`} />
-          <SeriesMetric label="Sections" value={`${series.sections.length}`} />
+          <SeriesMetric label="記事数" value={`${series.count}`} />
+          <SeriesMetric label="読了目安" value={`${totalReadingTime}分`} />
+          <SeriesMetric label="セクション" value={`${series.sections.length}`} />
         </div>
       </header>
       <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_320px]">
         <main className="min-w-0 space-y-12">
           <section>
             <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
-              Mastery Goal
+              テーマの目的
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              このシリーズでマスターすること
+              このテーマで整理すること
             </h2>
             <p className="mt-4 break-words text-base leading-8 text-zinc-600 dark:text-zinc-400">
               {series.goal}
@@ -126,7 +132,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
           {series.concept ? (
             <section>
               <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
-                Concept Map
+                全体像
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
                 全体像
@@ -139,10 +145,10 @@ export default async function SeriesDetailPage({ params }: PageProps) {
 
           <section>
             <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
-              Table of Contents
+              記事インデックス
             </p>
             <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
-              章立て
+              記事一覧
             </h2>
             <div className="mt-6 space-y-9">
               {sections.map((section) => (
@@ -154,7 +160,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                     {section.description}
                   </p>
                   <ol className="mt-4 space-y-3">
-                    {section.articles.map(({ article, chapterNumber: currentChapter }) => (
+                    {section.articles.map(({ article, itemNumber }) => (
                       <li
                         key={article.slug}
                         className="tech-card rounded-lg border p-5 transition hover:-translate-y-0.5"
@@ -166,7 +172,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                           <span className="flex items-center gap-3">
                             <Square aria-hidden size={18} className="text-zinc-400" />
                             <span className="grid h-12 w-12 place-items-center rounded-lg bg-cyan-500/10 font-mono text-sm font-semibold text-cyan-700 dark:text-cyan-300">
-                              {String(currentChapter).padStart(2, "0")}
+                              {String(itemNumber).padStart(2, "0")}
                             </span>
                           </span>
                           <span className="min-w-0">
@@ -185,7 +191,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
                               {article.description}
                             </span>
                             <span className="mt-3 block text-xs text-zinc-500 dark:text-zinc-500">
-                              {formatDate(article.date)} / {article.readingTimeMinutes} min
+                              {formatDate(article.date)} / {article.readingTimeMinutes}分
                             </span>
                           </span>
                         </Link>
@@ -200,7 +206,7 @@ export default async function SeriesDetailPage({ params }: PageProps) {
           {series.notes.length > 0 ? (
             <section>
               <p className="text-sm font-medium uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
-                Series Notes
+                シリーズ補足
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950 dark:text-zinc-50">
                 補足解説
