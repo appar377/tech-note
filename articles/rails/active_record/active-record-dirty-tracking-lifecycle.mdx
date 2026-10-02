@@ -1,6 +1,6 @@
 ---
-title: "Rails Dirty TrackingをDBの変更履歴だと思っていた――実際にはいつ消えるのか"
-description: "Dirty TrackingはDBの履歴ではなく、特定のActive Recordインスタンスが保存前後の差分を扱うためのライフサイクル依存APIである。保存前、保存直後、コミット後、reload後、別インスタンスで見える情報を分けて理..."
+title: "Rails Dirty Trackingの変更情報はいつ消えるのか"
+description: "保存前と直前の保存結果を分け、別find・reload・再保存・外側トランザクションでDirty Trackingの状態がどう変わるかを説明します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,142 +13,170 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/active-record-dirty-tracking-lifecycle.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+DBには更新後の値があるのに、`saved_change_to_name?`が`false`になるのはなぜでしょうか。このメソッドが見ているのは、そのActive Recordインスタンスの直前の保存結果です。同じ行を取り直しても、別のインスタンスへ変更情報は引き継がれません。
 
-DB上で値が変わった事実は残っているのに、`saved_change_to_attribute?`や`previous_changes`が取れなくなる場面に遭遇した。Dirty Trackingを監査ログのような永続的履歴だと誤解していたことが混乱の原因だった。
+Dirty Trackingを使うときは、保存予定の差分と直前の保存結果を分けて考えます。どちらも、過去の更新をDBから検索する履歴APIではありません。
 
-Dirty TrackingはDBの履歴ではなく、特定のActive Recordインスタンスが保存前後の差分を扱うためのライフサイクル依存APIである。保存前、保存直後、コミット後、reload後、別インスタンスで見える情報を分けて理解する必要がある。
-
-## この記事で学べること
-
-- 同じDB行でもインスタンスが違えば変更情報を共有しないことを示す
-- 保存前：`changes_to_save`、`will_save_change_to_attribute?`
-- 保存後：`saved_changes`、`saved_change_to_attribute?`、`attribute_before_last_save`
-- `previous_changes`の位置づけと利用バージョンでの挙動確認
-- コミット後に何が残るか、外側トランザクションがある場合の注意
-- `reload`、再検索、別プロセスで情報が失われる理由
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Rails Dirty TrackingをDBの変更履歴だと思っていた――実際にはいつ消えるのか](/images/articles/active-record-dirty-tracking-lifecycle.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+以下は説明用の例です。Ruby 3.4.4、Active Record 8.1.3、sqlite3 gem 2.9.5（SQLite 3.53.2）の環境で、保存前後・再検索・再読み込み・再保存・トランザクションの7例をRSpec 3.13.0で確認しています。`lifecycle_users`には`name`と`status`の文字列カラムを用意し、自動更新される日時カラムや独自コールバックは使いません。値は合成データです。書き込みを含むので、使い捨てのローカルDBで扱います。
 
 ```ruby
-class User < ApplicationRecord
-  def rename_and_report!(next_name)
-    self.name = next_name
-
-    before_save_change = will_save_change_to_name?
-    save!
-    after_save_change = saved_change_to_name?
-
-    reload
-
-    {
-      before_save_change: before_save_change,
-      after_save_change: after_save_change,
-      after_reload_change: saved_change_to_name?,
-    }
-  end
+class LifecycleUser < ActiveRecord::Base
+  self.table_name = "lifecycle_users"
 end
+
+user = LifecycleUser.create!(name: "Aki", status: "draft").reload
 ```
 
-## 本編
+作成直後には作成時の差分があります。ここでは`reload`して、差分のない読み込み直後の状態から始めます。
 
-### 発生した状況
+## 保存前と保存後では、別の差分を見る
 
-DB上で値が変わった事実は残っているのに、`saved_change_to_attribute?`や`previous_changes`が取れなくなる場面に遭遇した。Dirty Trackingを監査ログのような永続的履歴だと誤解していたことが混乱の原因だった。
+名前を変更して、保存の前後を比べます。コメントは各段階で確認する値です。
 
-### 当初の理解・誤解
+```ruby
+user.name = "Mio"
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Dirty TrackingはDBの履歴ではなく、特定のActive Recordインスタンスが保存前後の差分を扱うためのライフサイクル依存APIである。保存前... という観点で見る必要がありました。
+user.changes_to_save           # => {"name"=>["Aki", "Mio"]}
+user.will_save_change_to_name? # => true
+user.saved_change_to_name?     # => false
 
-### 観測したこと
+user.save!
 
-- 状態遷移ごとのRubyコンソール例
-- `User.find(user.id)`で取り直した別インスタンスとの比較
-- RSpecで保存前・保存後・reload後の値を検証
+user.changes_to_save           # => {}
+user.will_save_change_to_name? # => false
+user.saved_change_to_name      # => ["Aki", "Mio"]
+user.name_before_last_save     # => "Aki"
+```
 
-### 修正案の比較
+保存前には「これから何を保存するか」を見ます。保存後には、その差分が直前の保存結果へ移ります。Rails 8.1.3の実装では、更新や作成の後に`changes_applied`を呼び、二つの状態を切り替えています。[Active RecordのDirty実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb#L214-L224)
 
-| 方針 | 見るべき点 |
+問い合わせる内容とAPIを対応させると、次のようになります。
+
+| 知りたいこと | API |
 | --- | --- |
-| Dirty Tracking利用 | 実装が軽いが、ライフサイクルに強く依存する |
-| 履歴テーブル利用 | 永続性があるが、保存量と設計コストが増える |
+| 次の保存に渡す差分 | `changes_to_save` |
+| 直前の保存で変わった差分 | `saved_changes` |
+| 直前の保存で名前が変わったか | `saved_change_to_name?` |
+| 直前の保存より前の名前 | `name_before_last_save` |
 
-## 内部動作
+`saved_change_to_name?`の`from:`・`to:`条件やコールバックでの使い分けは、[保存前後のDirty Tracking API](/tech-note/articles/rails/active_record/dirty-tracking-saved-change/)で扱います。
 
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+## previous_changesは、過去の保存を全部返すのか
 
-- Dirty TrackingはActive Model/Active Recordの変更検知機構
-- 監査ログやDBトリガーの履歴とは役割が異なる
-- メソッド名と利用可能なタイミングはRailsバージョン差があるためリポジトリで確認する
+`previous_changes`も直前の保存に対応する差分です。Rails 8.1.3では、`saved_changes`と同じ`mutations_before_last_save`から変更内容を取得します。保存回数に応じて配列が増え続ける仕組みではありません。[Active Modelのprevious_changes](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Dirty.html#method-i-previous_changes)
 
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- Dirty TrackingはActive Model/Active Recordの変更検知機構
-- 監査ログやDBトリガーの履歴とは役割が異なる
-- メソッド名と利用可能なタイミングはRailsバージョン差があるためリポジトリで確認する
-
-## 再発防止テスト
+また、直前の保存結果がある状態で、次の変更を始めることもできます。先ほどの`Mio`への保存に続けて、まだ保存しない`Ren`を代入します。
 
 ```ruby
-RSpec.describe "active-record-dirty-tracking-lifecycle" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+user.name = "Ren"
 
-    expect(result).to be_present
-  end
+user.changes_to_save  # => {"name"=>["Mio", "Ren"]}
+user.saved_changes   # => {"name"=>["Aki", "Mio"]}
+user.previous_changes == user.saved_changes # => true
+```
+
+この時点では「MioからRenへ保存する予定」と「AkiからMioへ保存した結果」が同時にあります。`saved_changes`を見ても、未保存の`Ren`への変更は分かりません。
+
+内部の`changes_applied`は、保存前の変更管理オブジェクトを直前保存用へ移し、次の保存前状態をリセットします。この二つの領域があることが、上の結果に対応します。アプリから内部変数を直接操作する必要はありません。[Active Modelのchanges_applied](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Dirty.html#method-i-changes_applied)
+
+## 別のfindとreloadでは何が変わるのか
+
+ここまでの`user`には、保存済みの`Mio`と未保存の`Ren`への代入があります。同じ行を別の`find`で読み込むと、DBの値である`Mio`が返ります。
+
+```ruby
+other = LifecycleUser.find(user.id)
+
+other.equal?(user)     # => false
+other.name             # => "Mio"
+other.changes_to_save  # => {}
+other.saved_changes   # => {}
+user.saved_change_to_name # => ["Aki", "Mio"]
+```
+
+DB行のIDが同じでも、二つのRubyオブジェクトがDirty Trackingの状態を共有するわけではありません。別リクエストやジョブで改めて`find`しても、以前のインスタンスが保存した差分は取り戻せません。保存処理を引き継ぐ用途なら、行IDだけで十分か、変更内容自体を渡す必要があるかを決めます。
+
+`reload`は、現在のオブジェクトへDBの値を読み直します。未保存の`Ren`は失われ、値は`Mio`へ戻ります。[Active Recordのreload](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-reload)
+
+```ruby
+user.reload
+
+user.name             # => "Mio"
+user.changes_to_save  # => {}
+user.saved_changes   # => {}
+user.previous_changes # => {}
+```
+
+Dirtyモジュールの`reload`は、保存前と直前保存の両方の変更管理状態を空にします。更新できたことを確認しようとして先に`reload`すると、その後では直前の差分を判定できません。DBの値を確かめる操作と、保存時の差分を調べる操作の順序を分けます。[Rails 8.1.3のreload実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb#L57-L63)
+
+この境界は、次のようにRSpecへ残せます。`RSpec.describe LifecycleUser`の中へ置く例です。`clean_user`は冒頭と同じレコードを作成して`reload`するテスト用ヘルパーとします。
+
+```ruby
+it "reloads the stored value and clears pending and last-save changes" do
+  user = clean_user
+  user.update!(name: "Mio")
+  user.name = "Ren"
+
+  expect(user.reload).to equal(user)
+  expect(user.name).to eq("Mio")
+  expect(user.changes_to_save).to eq({})
+  expect(user.saved_changes).to eq({})
+  expect(user.previous_changes).to eq({})
+  expect(user.saved_change_to_name?).to be(false)
 end
 ```
 
-## 一般化できる設計原則
+## 値を変えずにもう一度保存したらどうなるか
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+別の説明用レコードで、変更のない`save!`を追加します。
 
-## まとめ
+```ruby
+user = LifecycleUser.create!(name: "Aki", status: "draft").reload
+user.update!(name: "Mio")
+user.saved_change_to_name? # => true
 
-「何が変わったか」だけでなく、「誰が、いつまで、その差分を覚えているか」を確認する習慣へ一般化する。
+user.save!
+user.saved_changes        # => {}
+user.saved_change_to_name? # => false
+```
 
+このモデルでは二度目に保存する変更がないため、直前保存の差分も空になります。`saved_changes`は「最後に値が変わった保存」を探して残すものではありません。追加の保存がある経路では、必要な差分をその保存より前に読む必要があります。
 
-この記事では、次のような短絡的な一般化は避けます。
+日時カラムやコールバックが値を書き換えるモデルでは、二度目の保存に別の差分が含まれることがあります。ここで固定しているのは、自動更新のないモデルでの挙動です。
 
-- `changed?`など古い/文脈依存APIを無条件に推奨しない
-- すべてのメソッドがafter_commitでも永続すると断定しない
+## 保存できたことと、コミットできたことは同じか
 
-## 参考文献
+外側にトランザクションがあると、`save!`の成功後もロールバックされる可能性があります。次の例では、ブロック内で名前の保存結果が見えてから、意図的にロールバックします。
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+```ruby
+user = LifecycleUser.create!(name: "Aki", status: "draft").reload
+saved_inside = nil
+
+LifecycleUser.transaction do
+  user.update!(name: "Mio")
+  saved_inside = user.saved_change_to_name
+  raise ActiveRecord::Rollback
+end
+
+saved_inside                      # => ["Aki", "Mio"]
+LifecycleUser.find(user.id).name   # => "Aki"
+user.name                         # => "Mio"
+user.reload.name                  # => "Aki"
+```
+
+`saved_inside`には保存時に取り出した値がありますが、DBの変更は取り消されています。オブジェクトの属性値も、自動ですべてトランザクション開始前へ戻るものではありません。DBの現在値が必要なら再読み込みします。[Railsのトランザクションとロールバック](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)
+
+反対に、コミットしただけで直前保存の差分が必ず消えるわけでもありません。追加の保存や`reload`、差分を消す処理がなければ、このモデルではトランザクション終了後にも直前の差分が残ります。コミット処理はDirty Trackingの状態を一律に消す処理ではありません。[Rails 8.1.3のcommitted!実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/transactions.rb#L379-L401)
+
+`after_commit`はコミット後に処理するためのタイミングです。「最後の保存の差分」と「トランザクション全体の差分」は別なので、`saved_changes`をそのまま全更新の一覧として扱うことはできません。
+
+## 後から変更を調べたいなら何を残すか
+
+Dirty Trackingは、その場で保存予定や保存結果を判断する用途に向いています。数日後に別のプロセスから「誰が何を変えたか」を調べるなら、履歴テーブルなどへ記録する設計が必要です。
+
+監査用の記録では、対象ID、変更内容、操作者、記録時刻を何のために残すかを決めます。確定した変更だけを記録したいなら、元の更新と履歴の整合性も設計対象です。`saved_changes`をローカル変数へコピーするだけでは、プロセス終了後の履歴にも、コミット成功の証明にもなりません。
+
+手元の不具合を切り分けるときは、差分を読んでいるインスタンスと、直前に通った`save`・`reload`・`find`の順序を確認します。その順序をテストへ残すと、後から追加した再保存や再読み込みで判定が変わることを捉えられます。

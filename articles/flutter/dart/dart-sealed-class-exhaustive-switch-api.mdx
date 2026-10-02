@@ -1,6 +1,6 @@
 ---
 title: "GETとPUTを文字列で分岐せず、Dartのsealed classで表現する"
-description: "各操作を異なるsubtypeとして表現し、sealed基底型に対する網羅的switchでdispatchする。不正状態を実行時チェックではなく型で表現不能にする。"
+description: "GETにはID、PUTにはIDと本文が必要な例から、Dartのsealed classと網羅的switchを使う。型で防げる組み合わせと、実行時に残る検証を区別する。"
 date: 2026-07-20
 tags:
   - "Dart"
@@ -13,141 +13,67 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/dart-sealed-class-exhaustive-switch-api.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
+`send(method: 'PUT', id: 'guide', text: null)`という呼び出しを受け取ったら、本文が足りないことを実行時に検査する必要があります。GETには不要で、PUTには必要な値を一つの引数群へまとめると、このような組み合わせを作れてしまいます。
 
-## 概要
+操作ごとに必要なデータが違うなら、別の型として表す方法があります。ここでは通信処理を外し、GETとPUTの入力を組み立てて分岐する部分に絞ります。Dart 3以降のsealed classとパターンを使い、Dart SDK 3.11.5で検証しています。
 
-Presigned URLへのGET/PUT処理を文字列やbooleanで切り替えると、必要データの違いと不正組み合わせを表現しやすい。
-
-各操作を異なるsubtypeとして表現し、sealed基底型に対する網羅的switchでdispatchする。不正状態を実行時チェックではなく型で表現不能にする。
-
-## この記事で学べること
-
-- 文字列method分岐の問題
-- enumで足りる場合と、各caseが別データを持つ場合
-- `sealed class S3Request&lt;T&gt;`
-- `GetRequest`と`PutRequest`
-- pattern matchingとexhaustiveness
-- private subtype/constructor
-
-## 前提知識
-
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![GETとPUTを文字列で分岐せず、Dartのsealed classで表現する](/images/articles/dart-sealed-class-exhaustive-switch-api.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+## 操作ごとの引数をコンストラクタで受け取る
 
 ```dart
-sealed class UserRequest {
-  const UserRequest();
+sealed class DocumentRequest {
+  const DocumentRequest();
 }
 
-class GetUser extends UserRequest {
-  const GetUser(this.id);
+final class GetDocument extends DocumentRequest {
+  const GetDocument(this.id);
   final String id;
 }
 
-class PutUser extends UserRequest {
-  const PutUser(this.id, this.body);
+final class PutDocument extends DocumentRequest {
+  const PutDocument(this.id, this.text);
   final String id;
-  final Map<String, Object?> body;
+  final String text;
 }
-```
 
-## 本編
+String describe(DocumentRequest request) => switch (request) {
+  GetDocument(:final id) => 'GET $id',
+  PutDocument(:final id, :final text) => 'PUT $id: $text',
+};
 
-### 発生した状況
-
-Presigned URLへのGET/PUT処理を文字列やbooleanで切り替えると、必要データの違いと不正組み合わせを表現しやすい。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、各操作を異なるsubtypeとして表現し、sealed基底型に対する網羅的switchでdispatchする。不正状態を実行時チェックではなく型で表現不能にする... という観点で見る必要がありました。
-
-### 観測したこと
-
-- Dart 3に合わせたsealed classコード
-- `switch (request)`でGET/PUTを処理
-- 不正method文字列が存在しないことを示すtest
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| sealed union | 型安全／型数が増える |
-| enum+data | 単純／case固有データの不整合を許しやすい |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- Dart/Flutterの実際の言語バージョンを確認
-- sealedは同一library内のsubtyping制約を含むため正確に説明
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- Dart/Flutterの実際の言語バージョンを確認
-- sealedは同一library内のsubtyping制約を含むため正確に説明
-
-## 再発防止テスト
-
-```dart
 void main() {
-  test('dart-sealed-class-exhaustive-switch-api', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
+  print(describe(const GetDocument('guide'))); // GET guide
+  print(describe(const PutDocument('guide', 'updated')));
+  // PUT guide: updated
 }
 ```
 
-## 一般化できる設計原則
+`GetDocument`には本文を渡す引数がなく、`PutDocument`にはnullではない本文が必須です。`'POT'`のような任意のmethod文字列を受け取る入口もなくなります。switch内のオブジェクトパターンは、該当する型のフィールドを取り出しています。[オブジェクトパターン](https://dart.dev/language/pattern-types#object)
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+この例の`describe`は説明用の文字列を返すだけです。HTTP通信、認証、署名付きURLの生成は行っていません。
 
-## まとめ
+## sealedが閉じる範囲はライブラリ単位
 
-分岐条件をデータとして持つより、許される操作を型として定義する。
+`sealed`な基底型を直接extends・implementsする型は、同じライブラリ内に限られます。そのため解析器は、基底型の直接のサブタイプを把握できます。sealed class自体は暗黙にabstractです。[sealedの制約](https://dart.dev/language/class-modifiers#sealed)
 
+ここでいうライブラリは、単純にフォルダと同じ意味ではありません。通常はDartファイルが一つのライブラリを構成し、`part`を使えば複数ファイルが同じライブラリに属します。基底型とケースを別ファイルへ分ける場合は、この境界を確認します。[ライブラリの説明](https://dart.dev/language/libraries)
 
-この記事では、次のような短絡的な一般化は避けます。
+また、sealedの直接のサブタイプが自動的にfinalになるわけではありません。この例では末端の二つを`final class`にして、外部ライブラリからさらにextends・implementsすることを制限しています。同じライブラリ内のコードまで禁止する指定ではありません。
 
-- 文字列分岐をすべてsealedへ置き換えるとしない
-- 存在しない構文を生成しない
+## ケースを追加すると、分岐の見落としを検出できる
 
-## 参考文献
+同じライブラリに`DeleteDocument`を追加し、上のswitchを変更しない場合、switch式が網羅的でなくなります。解析器は未対応のケースを報告します。[網羅性の検査](https://dart.dev/language/branches#exhaustiveness-checking)
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+これは「すべての操作に対応する場所」を見つける助けになります。ただし、最初から`_ => ...`で残りをすべて受け取れば、新しいケースもその分岐へ入り、追加時の見落としを検出しにくくなります。各操作を明示的に扱いたい場所では、安易なcatch-allを置かない方が目的に合います。
+
+検証では二つのケースの結果に加え、Deleteを追加した未対応のswitchと、外部ライブラリからsealed基底型を継承するコードが、解析エラーになることを確かめました。これらは意図的な失敗例なので、通常の実装へ混ぜません。
+
+## enumで足りる場合と、実行時に残る検査
+
+どの操作も同じデータを持ち、値の選択肢だけを限定したいならenumで十分なことがあります。sealedを使う理由は、今回のようにケースごとに必要なデータや処理が違うときに明確になります。
+
+型を分けても、空のID、不正な本文、認証期限切れ、通信失敗まで防げるわけではありません。これらは入力検証や通信層の責務として残ります。「不正状態をすべて表現不能にする」ではなく、この例では「PUTなのに本文が指定されていない組み合わせを作れなくする」と範囲を限定して捉えます。
+
+操作ごとに返り値の型まで変えたい場合は、ジェネリクスを含む別の設計が必要です。まずは入力の組み合わせを小さく整理し、必要になった段階で返り値の契約へ広げる方が、分岐の利点を確認しやすくなります。

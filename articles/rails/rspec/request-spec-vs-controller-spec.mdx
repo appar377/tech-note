@@ -1,6 +1,6 @@
 ---
-title: "RSpecのRequest SpecとController Specは何をテストしているのか"
-description: "Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。現代的なRails APIではRequest Specを中心にし、必要な局所..."
+title: "RSpecのrequest specとcontroller specはどこまで確かめるか"
+description: "URL・middleware・controllerの呼び出し方を比べ、同じJSONの期待値でも確認できる範囲が異なる理由を説明します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,146 +13,158 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/request-spec-vs-controller-spec.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+controller specで`show`が成功していても、利用者が呼ぶURLから到達できるとは限りません。request specはRailsアプリへURLとHTTPメソッドを渡し、controller specは対象のアクションを指定します。同じJSONを期待していても、途中で通る処理が異なります。
 
-APIの挙動をどのレイヤーで確認すべきか迷い、Request SpecとController Specが同じコントローラを二重にテストしているように見えた。実際には、通過する境界と保証する責務が異なる。
+新しいAPIの公開契約はrequest specで確認し、既存controller specが守っている局所的な振る舞いは、移し先を決めてから整理すると判断しやすくなります。Railsもfunctional testよりintegration testを勧めていますが、既存テストを一括で削除する根拠にはなりません。[Rails 8.1.3のTestCaseの説明](https://github.com/rails/rails/blob/v8.1.3/actionpack/lib/action_controller/test_case.rb)
 
-Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。現代的なRails APIではRequest Specを中心にし、必要な局所テストだけを追加する。
+## 同じgetでも、どこから呼び始めますか
 
-## この記事で学べること
+| 観点 | request spec | controller spec |
+| --- | --- | --- |
+| 主な指定 | `get "/layer_notes/7"` | `get :show, params: { id: 7 }` |
+| テストの入口 | Railsアプリとそのルート | 指定したcontrollerのアクション |
+| アプリのmiddleware | test環境に組み込まれたものを通る | アプリ全体のスタックは通らない |
+| controllerのfilter | 呼ばれる | 呼ばれる |
+| view template | 実際の描画を通せる | 標準では描画をstubする |
 
-- Request Specが通る経路：routing、middleware、authentication、controller、serialization
-- Controller Specが省略・差し替えやすい境界
-- HTTPステータス、ヘッダ、JSON、DB状態の確認
-- モデルバリデーションを全ケース再試験する必要はない理由
-- 認証・認可・ルーティングの失敗はRequest Specで見る
-- Controller Specが有効な局所例
+RSpec Railsのrequest specは`ActionDispatch::IntegrationTest`の機能を使い、`Rails.application`をアプリとして渡します。controller specは`ActionController::TestCase::Behavior`を使います。controller specもルート情報をURL生成などに利用するため、「ルートと全く無関係」とは言えません。ただし、公開URLを認識してアクションを選ぶところからの確認にはなりません。[request側の実装](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec/rails/example/request_example_group.rb)、[controller側の実装](https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec/rails/example/controller_example_group.rb)
 
-## 前提知識
+また、view templateのstubと`render json:`は別の話です。以下の例ではJSONそのものを読み取り、HTMLテンプレートが描画されたかを表す`render_template`は使いません。[RSpec Railsのcontroller spec](https://rspec.info/features/8-0/rspec-rails/controller-specs/)
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+## 通った経路を、応答headerで区別してみます
 
-## 図解
+説明用に、固定のノートを返すcontrollerと、通過時に応答headerを付けるmiddlewareを用意します。DBは使いません。
 
-![RSpecのRequest SpecとController Specは何をテストしているのか](/images/articles/request-spec-vs-controller-spec.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+`X-Example-Identity`は、リクエストがcontrollerへ届くことを示すための合成入力です。`alpha`は閲覧可能、`beta`は識別できても閲覧不可とします。クライアントが自由に名乗れる値なので、本物の認証として利用できません。パスワード、署名、セッション、トークンの検証はこの例の対象外です。
 
 ```ruby
-class PostsController < ApplicationController
+class RequestPathMarker
+  def initialize(app)
+    @app = app
+  end
+
+  def call(env)
+    status, headers, body = @app.call(env)
+    [status, headers.merge("x-example-middleware" => "present"), body]
+  end
+end
+
+class RequestLayersController < ActionController::Base
+  before_action :identify_example_reader
+
   def show
-    render json: Post.find(params[:id])
+    unless @reader == "alpha"
+      render json: { error: "forbidden" }, status: 403
+      return
+    end
+
+    unless params[:id] == "7"
+      render json: { error: "not_found" }, status: 404
+      return
+    end
+
+    render json: { id: 7, title: "Boundary notes" }
   end
-end
 
-# spec/requests/posts_spec.rb
-RSpec.describe "Posts", type: :request do
-  it "returns a post" do
-    get "/posts/1"
+  private
 
-    expect(response).to have_http_status(:ok)
-  end
-end
+  def identify_example_reader
+    @reader = request.headers["X-Example-Identity"]
+    return if %w[alpha beta].include?(@reader)
 
-# spec/controllers/posts_controller_spec.rb
-RSpec.describe PostsController, type: :controller do
-  it "renders show" do
-    get :show, params: { id: 1 }
-
-    expect(response).to render_template(:show)
+    render json: { error: "unauthorized" }, status: 401
   end
 end
 ```
 
-## 本編
+実行の前提はRuby 3.4.4、Rails 8.1.3、RSpec 3.13.0、RSpec Rails 8.0.4のtest環境です。専用アプリでは、起動前に`RequestPathMarker`を読み込んで`config.middleware.use RequestPathMarker`を設定し、`GET /layer_notes/:id`だけを`request_layers#show`へ割り当てます。test用のhostも許可します。
 
-### 発生した状況
+以下のルート失敗例では`config.action_dispatch.show_exceptions = :none`とし、例外をHTTPエラーページへ変換せず受け取ります。最初のRubyブロックはアプリが起動前に一度読み込む定義です。以降の2ブロックをspecへ保存し、RSpec Railsのhelperでこのアプリを読み込んでから実行します。この固定構成で通常7例を実行し、すべて成功しました。
 
-APIの挙動をどのレイヤーで確認すべきか迷い、Request SpecとController Specが同じコントローラを二重にテストしているように見えた。実際には、通過する境界と保証する責務が異なる。
+## URL・識別・権限はどこで確認しますか
 
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Request Specはルーティングやミドルウェアを含むHTTP境界からの振る舞いを確認し、Controller Specはコントローラ単体に近い観測を行う。... という観点で見る必要がありました。
-
-### 観測したこと
-
-- 同じAPIをRequest SpecとController Specで書いた比較例
-- Request Specで認証、ルーティング、JSONを確認
-- モデル単体テストとの責務分離を示すテスト一覧
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| Request Spec | 信頼性が高い／セットアップと実行コストがやや高い |
-| Controller Spec | 局所的で速い／実経路との差が生まれやすい |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- RSpec Railsの推奨やAPIは利用バージョンで確認する
-- テスト種別名より、実際に通る境界を理解する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- RSpec Railsの推奨やAPIは利用バージョンで確認する
-- テスト種別名より、実際に通る境界を理解する
-
-## 再発防止テスト
+request specでは、成功したことに加えて、JSONの内容、Content-Type、middlewareが付けたheaderを確認します。失敗側では、識別なしの401と、閲覧できない相手の403を分けます。
 
 ```ruby
-RSpec.describe "request-spec-vs-controller-spec" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+RSpec.describe "GET /layer_notes/:id", type: :request do
+  it "URLからmiddlewareとcontrollerを通ってJSONを返す" do
+    get "/layer_notes/7", headers: { "X-Example-Identity" => "alpha" }
 
-    expect(result).to be_present
+    expect(response).to have_http_status(200)
+    expect(response.media_type).to eq("application/json")
+    expect(response.headers["x-example-middleware"]).to eq("present")
+    expect(JSON.parse(response.body)).to eq("id" => 7, "title" => "Boundary notes")
+  end
+
+  it "説明用の識別headerがなければ401にする" do
+    get "/layer_notes/7"
+
+    expect(response).to have_http_status(401)
+    expect(JSON.parse(response.body)).to eq("error" => "unauthorized")
+  end
+
+  it "識別できても閲覧を許可していない相手には403を返す" do
+    get "/layer_notes/7", headers: { "X-Example-Identity" => "beta" }
+
+    expect(response).to have_http_status(403)
+    expect(JSON.parse(response.body)).to eq("error" => "forbidden")
+  end
+
+  it "登録していないURLはactionへ到達しない" do
+    expect do
+      get "/layer_note/7", headers: { "X-Example-Identity" => "alpha" }
+    end.to raise_error(ActionController::RoutingError)
+  end
+
+  it "GETだけを公開したURLへPOSTしてもactionへ到達しない" do
+    expect do
+      post "/layer_notes/7", headers: { "X-Example-Identity" => "alpha" }
+    end.to raise_error(ActionController::RoutingError)
   end
 end
 ```
 
-## 一般化できる設計原則
+`/layer_note/7`は単数形の誤ったURLです。このテストアプリには対応するルートがないため、`RoutingError`を期待します。正しいURLでも、公開していないPOSTでは同様に到達できません。これはエラー処理を無効にしたtest環境での期待値であり、本番の404ページやJSON形式を検証した結果ではありません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+request specは、test環境に組み込んだ経路を確認します。実際の認証を保証したい場合は、利用中の認証機構へ入力を渡す必要があります。`current_user`などをstubすれば、その手前の認証処理を確かめたことにはなりません。RSpecの公式説明も、request specでstubを入れるかはテストを書く側の選択としています。[RSpec Railsのrequest spec](https://rspec.info/features/8-0/rspec-rails/request-specs/request-spec/)
 
-## まとめ
+## controller specが成功したら、何が分かりますか
 
-重複して見えるテストでも、異なる境界の契約を保証しているなら意味がある、とまとめる。
+次は同じcontrollerに対して、アクション名で`show`を呼ぶ2例です。
 
+```ruby
+RSpec.describe RequestLayersController, type: :controller do
+  it "showを直接呼ぶと同じJSONを返すがmiddlewareは通らない" do
+    request.headers["X-Example-Identity"] = "alpha"
 
-この記事では、次のような短絡的な一般化は避けます。
+    get :show, params: { id: 7 }
 
-- Controller Specは完全に不要と断定しない
-- Request Specだけでモデルの全仕様を確認しようとしない
+    expect(response).to have_http_status(200)
+    expect(JSON.parse(response.body)).to eq("id" => 7, "title" => "Boundary notes")
+    expect(response.headers["x-example-middleware"]).to be_nil
+  end
 
-## 参考文献
+  it "controller内のfilterは直接呼び出しても動く" do
+    get :show, params: { id: 7 }
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+    expect(response).to have_http_status(401)
+    expect(JSON.parse(response.body)).to eq("error" => "unauthorized")
+  end
+end
+```
+
+最初の例は同じJSONを返しますが、middlewareのheaderは付きません。2つ目ではcontrollerの`before_action`が動き、401になります。「controller specでは認証もfilterも動かない」という区別は不正確です。認証がmiddlewareにあるのか、controller内にあるのか、さらにstubしているのかで、確認範囲が変わります。
+
+このcontroller specには、クライアントが`/layer_notes/7`と`/layer_note/7`のどちらを送ったかという入力がありません。URLの綴りや許可したHTTPメソッドまで守るには、上のrequest specのように入口から確かめる必要があります。Railsのfunctional testは、組み立てたrequestをcontrollerへdispatchする実装です。[RailsのTestCase実装](https://github.com/rails/rails/blob/v8.1.3/actionpack/lib/action_controller/test_case.rb)
+
+## 既存テストを移すとき、どこまで重ねますか
+
+APIの移行なら、まず公開URL、代表的な成功応答、未認証・権限不足、入力エラーをrequest specへ置きます。作成や更新では、ステータスだけでなく、保存された値や失敗時に行が増えないことも確認対象です。モデルの全入力条件をHTTP経由で複製する必要があるかは、[単体テストとAPIテストの重複をどう判断するか](/tech-note/articles/rails/rspec/test-duplication-across-layers)で扱います。
+
+既存controller specに、共通基底controllerの例外処理やfilterの条件など、局所的な回帰を狙った例があるなら、何を検知しているかを書き出します。request specや小さいオブジェクトのテストへ移した結果、その失敗を検知できるようになってから、同じ役割の例を整理します。テスト種別だけで速度を決めつけず、実際のsetupと処理を測って判断します。
+
+画面の操作やJavaScriptの動作は別の範囲です。request specのintegration sessionはRack経由でアプリを呼び、ブラウザでの描画や操作を再現しません。必要な画面フローにはsystem specを使い、JavaScriptを扱う場合は対応するブラウザdriverを選びます。[Railsのintegration session](https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Integration/Session.html#method-i-process)、[RSpec Railsのsystem spec](https://rspec.info/features/8-0/rspec-rails/system-specs/system-specs/)

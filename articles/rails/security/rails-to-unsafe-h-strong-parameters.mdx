@@ -1,6 +1,6 @@
 ---
-title: "Railsのquery_parameters.to_unsafe_hを安易に使ってはいけない理由"
-description: "`to_unsafe_h`はデータを危険に変換するのではなく、Strong Parametersが保持していた「許可済みかどうか」という安全境界を捨てるAPIである。必要なキーを明示してから変換する。"
+title: "Railsのto_unsafe_hとpermitは何を保証するか"
+description: "許可するキー、値の検証、参照できるレコードを分けて検索を組み立てます。query_parametersとparamsの型の違い、ネストした入力、ローカルのリクエストテストも確認します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,136 +13,186 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/rails-to-unsafe-h-strong-parameters.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+検索条件をHashへ変換するとき、`to_unsafe_h`を`permit(...).to_h`へ置き換えれば、必要な対策は済むでしょうか。`permit`で選べるのは受け付けるキーと値の形です。ページ番号として妥当か、その利用者が見てよいレコードかは、別に判断します。
 
-検索条件をHashへ変換するため`to_unsafe_h`を使うコードを見た。GETパラメータだから安全に見えるが、許可していないキーをすべて通常Hashへ落とすため、後段でMass Assignmentや動的条件へ流すと境界が崩れる。
+まず、変換する前のオブジェクトを確認します。Rails 8.1.3では、`request.query_parameters`はHash系の値で、`to_unsafe_h`を持ちません。コントローラの`params`が`ActionController::Parameters`です。以下はRuby 3.4.4、Action Pack・Active Record 8.1.3、PostgreSQL 17.10で確かめる説明用の例です。
 
-`to_unsafe_h`はデータを危険に変換するのではなく、Strong Parametersが保持していた「許可済みかどうか」という安全境界を捨てるAPIである。必要なキーを明示してから変換する。
+## query_parametersとparamsを区別する
 
-## この記事で学べること
-
-- `ActionController::Parameters`が持つpermitted状態
-- `permit`、`to_h`、`to_unsafe_h`の違い
-- GET/POSTというHTTPメソッドと信頼性は別問題
-- 検索条件・Ransack・ソート条件で起きる想定外キー
-- Mass Assignmentに流れた場合
-- ネストしたパラメータと配列
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Railsのquery_parameters.to_unsafe_hを安易に使ってはいけない理由](/images/articles/rails-to-unsafe-h-strong-parameters.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+GETのクエリ文字列を読み取るだけなら、次の型になります。`query_parameters`は[`ActionDispatch::Request#GET`](https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Request.html#method-i-GET)の別名です。
 
 ```ruby
-class UsersController < ApplicationController
-  def create
-    user = User.create!(user_params)
-    render json: { id: user.id }
-  end
+request = ActionDispatch::Request.new(Rack::MockRequest.env_for('/?q=sample'))
+request.query_parameters.class.name # => "ActiveSupport::HashWithIndifferentAccess"
+request.query_parameters.respond_to?(:to_unsafe_h) # => false
 
-  private
-
-  def user_params
-    params.require(:user).permit(:name, :email, :age)
-  end
-end
+input = ActionController::Parameters.new(request.query_parameters)
+input.permitted? # => false
 ```
 
-## 本編
+最後の行では、比較のため明示的にParametersへ包んでいます。コントローラの`params`にはクエリだけでなく、ルーティングやリクエストボディ由来の値も含まれます。GETかPOSTかという区別で入力を信頼せず、受け付ける項目を処理ごとに選びます。[Railsのパラメータの説明](https://guides.rubyonrails.org/action_controller_overview.html#parameters)
 
-### 発生した状況
+## to_unsafe_hは、許可済みの印を付ける操作ではない
 
-検索条件をHashへ変換するため`to_unsafe_h`を使うコードを見た。GETパラメータだから安全に見えるが、許可していないキーをすべて通常Hashへ落とすため、後段でMass Assignmentや動的条件へ流すと境界が崩れる。
+ParametersをActive Recordの属性一括代入へ渡す場合、許可状態が検査されます。次の`SearchItem`は、後の検索例で使うモデルです。専用のテストDBに`search_items`を作り、`account_id:bigint`、`name:string`、`status:string`をすべて`NOT NULL`で用意します。
 
-### 当初の理解・誤解
+```ruby
+class SearchItem < ActiveRecord::Base
+end
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`to_unsafe_h`はデータを危険に変換するのではなく、Strong Parametersが保持していた「許可済みかどうか」という安全境界を捨てるAPIで... という観点で見る必要がありました。
+input = ActionController::Parameters.new(name: 'Sample', account_id: 2)
 
-### 観測したこと
+begin
+  SearchItem.new(input)
+rescue ActiveModel::ForbiddenAttributesError => error
+  error.class.name # => "ActiveModel::ForbiddenAttributesError"
+end
 
-- 危険な例: `Model.where(params.to_unsafe_h)`
-- 安全な例: `params.permit(:q, :status, :page).to_h`
-- Query Objectでソート列をallowlistする例
-- 不許可キーが無視/拒否されるRequest Spec
+allowed = input.permit(:name)
+allowed.to_h # => {"name" => "Sample"}
+allowed.permitted? # => true
+input.permitted? # => false
 
-### 修正案の比較
+SearchItem.new(input.to_unsafe_h).account_id # => 2
+input.permitted? # => false
+```
 
-| 方針 | 見るべき点 |
+`permit`は指定したキーを取り出した別のParametersを返します。`to_h`は未許可のParametersなら例外になります。一方、`to_unsafe_h`は許可リストで絞らずHashへ変換します。元の`input`を許可済みにするのではなく、変換後のHashに許可状態の検査がなくなる点に注意します。[ParametersのAPIと変換処理](https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html)
+
+この例の`new`はDBへ保存していません。示しているのは、入力側にあった`account_id`が属性へ渡ることです。どの属性が変更可能かは、その処理の用途から決めます。
+
+## 検索ではキー・値・レコードの範囲を分ける
+
+`permit(:page)`は、文字列`"2x"`を整数2へ変換しません。また、`account_id`というキーを許可しても、そのアカウントを閲覧する権限が得られるわけではありません。
+
+| 判断すること | この例で置く場所 |
 | --- | --- |
-| `permit` | 境界が明確／許可項目の保守が必要 |
-| Query Object | 型と制約を集約／クラスが増える |
+| どのレコードを検索してよいか | 認証済みアカウントから作るRelation |
+| どのキーを受け付けるか | `permit(:status, :sort, :page)` |
+| 値が使える形・範囲か | 文字列、状態の候補、ページ番号の検証 |
+| どの列で並べるか | 固定した名前とorder Hashの対応表 |
 
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- Strong Parametersは認可全体を代替しない
-- `permit`したから業務上アクセス可能とは限らない
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- Strong Parametersは認可全体を代替しない
-- `permit`したから業務上アクセス可能とは限らない
-
-## 再発防止テスト
+次のQuery Objectは、検索対象のRelationを外から受け取ります。状態は`active`か`draft`、ページは1〜1,000に限定します。1ページ2件は、小さい合成データで結果を確認するための設定です。
 
 ```ruby
-RSpec.describe "rails-to-unsafe-h-strong-parameters" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+class CatalogQuery
+  class InvalidInput < StandardError; end
+  SORTS = {
+    'name_asc' => { name: :asc, id: :asc },
+    'name_desc' => { name: :desc, id: :desc }
+  }.freeze
+  PAGE_SIZE = 2
 
-    expect(result).to be_present
+  def initialize(scope:)
+    @scope = scope
+  end
+
+  def call(params)
+    %w[status sort page].each do |key|
+      if params.key?(key) && !params[key].is_a?(String)
+        raise InvalidInput, 'search values must be strings'
+      end
+    end
+    options = params.permit(:status, :sort, :page).to_h
+    status = options.fetch('status', 'active')
+    sort = options.fetch('sort', 'name_asc')
+    page_text = options.fetch('page', '1')
+    raise InvalidInput, 'invalid status' unless %w[active draft].include?(status)
+    raise InvalidInput, 'invalid sort' unless SORTS.key?(sort)
+    unless /\A[1-9][0-9]{0,3}\z/.match?(page_text) && page_text.to_i <= 1000
+      raise InvalidInput, 'invalid page'
+    end
+
+    @scope.where(status: status).reorder(SORTS.fetch(sort))
+      .limit(PAGE_SIZE).offset((page_text.to_i - 1) * PAGE_SIZE)
   end
 end
 ```
 
-## 一般化できる設計原則
+値が配列やHashで来たときは、`permit`に落とされて初期値へ戻る前に拒否します。この検索の入力は文字列に限定する方針です。JSON APIなどで数値も受け付けるなら、受け付ける型と変換を別に設計します。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+並び順はユーザーの文字列をSQLへ埋め込まず、定義したHashから選びます。`reorder`は既存の並び順を置き換えます。`id`も指定することで、同名の行の順番を決めています。[Railsのorder・reorder](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-reorder)
 
-## まとめ
+ここで`where(status: status)`のようなHash条件と、SQL文字列の直接補間は区別します。`where(params.to_unsafe_h)`を一律に「SQLインジェクション」と呼ぶのは不正確です。Hashの値はRailsが扱いますが、想定しない検索キーや対象範囲を渡す問題は残ります。[RailsのSQLインジェクション対策](https://guides.rubyonrails.org/security.html#sql-injection)
 
-入力値の安全性ではなく、「どの時点で信頼境界を解除したか」をコード上で追えることが重要だと締める。
+Ransackのような検索ライブラリを使う場合も、そのライブラリの許可属性・関連の設定が別に必要です。この例ではRansackを導入しておらず、その設定やSQL生成は検証対象に含めません。
 
+## 不許可のキーと不正な値をリクエストで確かめる
 
-この記事では、次のような短絡的な一般化は避けます。
+次は、ネットワークを使わずRack経由で呼ぶテスト用コントローラです。`fixture.account_id`はテスト側が置く認証済みアカウントの代わりで、クエリ文字列から取得しません。実アプリでは認証済みユーザーやポリシーから同じ役割のRelationを作ります。
 
-- `to_unsafe_h`自体を脆弱性と断定しない
-- GETは副作用がないから入力検証不要、と書かない
+```ruby
+class ParameterReviewController < ActionController::API
+  def index
+    # The fixture adapter supplies an authenticated account ID, never a query value.
+    scope = SearchItem.where(account_id: request.env.fetch('fixture.account_id'))
+    items = CatalogQuery.new(scope: scope).call(params)
+    render json: items.pluck(:name)
+  rescue CatalogQuery::InvalidInput
+    render json: { error: 'invalid search' }, status: :bad_request
+  end
+end
 
-## 参考文献
+PARAMETER_REVIEW_ROUTES = ActionDispatch::Routing::RouteSet.new
+PARAMETER_REVIEW_ROUTES.draw do
+  get '/search', to: 'parameter_review#index'
+end
+```
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+次の例は、上のクラスとルート、RSpecを読み込んだテストDBで実行します。
+
+```ruby
+RSpec.describe 'account-scoped search' do
+  before do
+    SearchItem.delete_all
+    SearchItem.create!(account_id: 1, name: 'Visible', status: 'active')
+    SearchItem.create!(account_id: 2, name: 'Other account', status: 'active')
+  end
+
+  it '別アカウントの指定を検索範囲に採用しない' do
+    response = Rack::MockRequest.new(PARAMETER_REVIEW_ROUTES)
+      .get('/search?account_id=2', 'fixture.account_id' => 1)
+    expect(response.status).to eq(200)
+    expect(JSON.parse(response.body)).to eq(['Visible'])
+  end
+
+  it '不正なページを400として返す' do
+    response = Rack::MockRequest.new(PARAMETER_REVIEW_ROUTES)
+      .get('/search?page=2x', 'fixture.account_id' => 1)
+    expect(response.status).to eq(400)
+    expect(JSON.parse(response.body)).to eq('error' => 'invalid search')
+  end
+end
+```
+
+この例では未知のキーは検索に使わず、既知のキーの不正な値は400にします。`permit`自体が常に400を返すわけではありません。`action_on_unpermitted_parameters`を`:raise`にする設定もありますが、全体設定をリクエスト途中で変更するのは避けます。設定差で例外が起こるプロジェクトでは、その応答方針も合わせて確認します。[Parametersの設定](https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html)
+
+認証機構そのものや実サービスのポリシーは、このローカルテストの対象外です。確認しているのは、信頼できる範囲を受け取った後にクエリ入力で範囲を広げないことです。
+
+## ネストした入力とログには、別の指定が必要
+
+Rails 8.1.3の`expect`なら、ルートの必須項目と許可する形を一緒に指定できます。次は`profile`の中の名前と、文字列などの許可されたスカラーの配列を受け付ける例です。配列の要素が業務上使えるラベルかどうかまでは、この宣言では決まりません。
+
+```ruby
+profile = ActionController::Parameters.new(
+  profile: { name: 'Sample', labels: ['ruby'], admin: true }
+)
+profile.expect(profile: [:name, { labels: [] }]).to_h
+# => {"name" => "Sample", "labels" => ["ruby"]}
+```
+
+`profile`に文字列を渡すなど形が違えば、この指定では`ActionController::ParameterMissing`になります。古いRailsで`require(...).permit(...)`を使う場合も、利用バージョンのAPIと不正な形の入力を確認します。[expectの形の検査](https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html#method-i-expect)
+
+最後に、入力の許可とログの伏せ字は別です。次はログ用のフィルタだけを確認する例です。
+
+```ruby
+filter = ActiveSupport::ParameterFilter.new([:token])
+filter.filter('q' => 'sample', 'token' => 'fixture-only')
+# => {"q" => "sample", "token" => "[FILTERED]"}
+```
+
+実アプリでは`config.filter_parameters`に伏せる項目を指定します。独自に`params.to_unsafe_h.inspect`をログへ出す処理にまで、フィルタが自動適用されるとは限りません。検索語にも個人情報が入り得るため、必要な項目だけ記録します。[Railsのパラメータのログフィルタ](https://guides.rubyonrails.org/action_controller_advanced_topics.html#parameters-filtering)

@@ -1,8 +1,8 @@
 ---
-title: INSERT SELECTで検索結果をまとめて投入する
-description: Railsから生SQLを書く前提で、INSERT SELECTの用途、注意点、ActiveRecordでの実行例を整理する。
+title: "INSERT SELECTでコピーする前に入力と重複を確認する"
+description: "検索結果を投入先へ対応させ、NOT NULL違反、再実行、JOINによる重複、ON CONFLICTで保持される値を小さなSQL例で確認します。"
 date: 2026-06-20
-updated: 2026-06-25
+updated: 2026-10-02
 tags:
   - SQL
   - Rails
@@ -14,134 +14,113 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-insert-select.png
 popular: true
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`INSERT ... SELECT`は、検索結果の各行をそのまま投入先へ渡します。コピー対象の件数だけでなく、入力にNULLや重複キーがあるか、同じ処理を再実行したらどうするかを先に決める必要があります。
 
-`INSERT SELECT` は、検索結果をそのまま別テーブルへ投入したいときに使うSQLです。
+以下はPostgreSQL 17.10で結果を確認した説明用SQLです。元記事で扱っていたMySQLとの差は末尾で分けます。
 
-RailsのMigrationやバッチ処理で大量データを移行するとき、Rubyで1件ずつループするよりもDB内部でまとめて処理できるため、実務で重要になります。
+## SELECTの結果は、どの列へ入りますか
 
-## この記事で学べること
+投入先の列リストと`SELECT`の値は、左から順番に対応します。別名が同じかどうかではなく、列の位置が対応を決めます。省略した列にはdefaultまたはNULLが入るため、意図する列を明記します。[PostgreSQL 17のINSERT](https://www.postgresql.org/docs/17/sql-insert.html)
 
-- `INSERT SELECT` の基本形
-- RubyループではなくSQLで一括投入する理由
-- Railsから `execute` で生SQLを実行する方法
-- データ移行時に確認すべきポイント
-
-## 前提知識
-
-- Rails Migrationの基本を知っている
-- `INSERT` と `SELECT` の基本構文を知っている
-- ActiveRecordでレコード作成をしたことがある
-
-## 図解
-
-```mermaid
-flowchart LR
-  A[users] --> B[SELECT]
-  B --> C[INSERT SELECT]
-  C --> D[archived_users]
-```
-
-## 実装コード例
-
-```ruby
-class ArchiveDeletedUsers < ActiveRecord::Migration[8.0]
-  def up
-    execute(<<~SQL)
-      INSERT INTO archived_users (user_id, email, archived_at)
-      SELECT id, email, NOW()
-      FROM users
-      WHERE deleted_at IS NOT NULL
-    SQL
-  end
-end
-```
-
-## 内部動作
-
-```text
-Migration
-↓
-execute
-↓
-DBへSQL送信
-↓
-SELECT結果をDB内部で生成
-↓
-生成結果をINSERT先テーブルへ投入
-```
-
-## 本編
-
-## INSERT SELECTの使いどころ
-
-`INSERT SELECT` は、検索結果をそのまま別テーブルへ投入したいときに使うSQLです。アプリケーション側で一度配列に展開せず、データベース内で処理を完結できます。
-
-> [!TIP]
-> 大量データを扱う場合は、RubyのループよりもSQL側でまとめて処理した方が速く、メモリ使用量も安定します。
-
-## 基本形
-
-```sql title="insert_select.sql"
-INSERT INTO archived_users (user_id, email, archived_at)
-SELECT id, email, NOW()
-FROM users
-WHERE deleted_at IS NOT NULL;
-```
-
-| 句 | 役割 |
-| --- | --- |
-| `INSERT INTO` | 投入先のテーブルとカラム |
-| `SELECT` | 投入する値を作る検索 |
-| `WHERE` | 対象行の絞り込み |
-
-## ActiveRecordから実行する
-
-```ruby title="archive_users.rb"
-sql = <<~SQL.squish
-  INSERT INTO archived_users (user_id, email, archived_at)
-  SELECT id, email, NOW()
-  FROM users
-  WHERE deleted_at IS NOT NULL
-SQL
-
-ActiveRecord::Base.connection.execute(sql)
-```
-
-## 処理の流れ
-
-```mermaid
-flowchart LR
-  A[usersを検索] --> B[条件に合う行を抽出]
-  B --> C[archived_usersへINSERT]
-  C --> D[アーカイブ完了]
-```
-
-## チェックポイント
-
-- [x] 投入先カラムとSELECTの列数を一致させる
-- [x] 重複キーが起きる条件を確認する
-- [ ] 本番実行前に件数を確認する
-
-<Accordion title="実行前に確認するSELECT">
+退会済みの利用者を別テーブルへコピーする、小さな例を使います。日付とメールアドレスは合成値です。以下のブロックは同じ接続で掲載順に実行でき、最後に`ROLLBACK`します。一時テーブル以外は変更しません。
 
 ```sql
-SELECT COUNT(*)
-FROM users
-WHERE deleted_at IS NOT NULL;
+BEGIN;
+SET LOCAL TIME ZONE 'UTC';
+CREATE TEMP TABLE is_source (
+  id integer PRIMARY KEY,
+  email text,
+  retired_at timestamptz
+) ON COMMIT DROP;
+CREATE TEMP TABLE is_archive (
+  user_id integer PRIMARY KEY,
+  email text NOT NULL,
+  archived_at timestamptz NOT NULL
+) ON COMMIT DROP;
+INSERT INTO is_source (id, email, retired_at) VALUES
+  (1, 'alpha@example.test', '2026-10-01 00:00:00+00'),
+  (2, 'beta@example.test', NULL),
+  (3, 'gamma@example.test', '2026-10-01 00:00:00+00'),
+  (4, NULL, '2026-10-01 00:00:00+00');
 ```
 
-</Accordion>
+まず、投入前の`SELECT`を見ます。
 
-## まとめ
+```sql
+SELECT id, email
+FROM is_source
+WHERE retired_at IS NOT NULL
+ORDER BY id;
+```
 
-`INSERT SELECT` は、DB内部でSELECT結果をそのままINSERTできるため、データ移行やバックフィルで強力です。
+| id | email | この例での扱い |
+| --- | --- | --- |
+| 1 | alpha@example.test | コピー候補 |
+| 3 | gamma@example.test | コピー候補 |
+| 4 | NULL | 投入先のNOT NULLを満たさない |
 
-Railsでは `execute` を使うことで、ActiveRecordだけでは書きづらい一括処理を明示できます。
+`id=2`は退会日時がないため対象外です。このまま3行を投入すると、`id=4`が`NOT NULL`違反になります。この例では「emailがある退会済み行だけをコピーする」と決めます。実際の移行では、除外した行を補完するのか、別途保留するのかも決めておきます。
 
-## 参考文献
+## 条件を絞れば、一度のコピーはどう書けますか
 
-- [Ruby on Rails Guides: Active Record Migrations](https://guides.rubyonrails.org/active_record_migrations.html)
-- [MySQL Reference Manual: INSERT ... SELECT Statement](https://dev.mysql.com/doc/refman/8.4/en/insert-select.html)
+`archived_at`には再現用の固定時刻を指定しています。実行時刻を使う場合も、投入時刻と元データの時刻を混同しないように列の役割を決めます。
+
+```sql
+INSERT INTO is_archive (user_id, email, archived_at)
+SELECT id, email, TIMESTAMPTZ '2026-10-02 00:00:00+00'
+FROM is_source
+WHERE retired_at IS NOT NULL AND email IS NOT NULL;
+
+SELECT user_id, email, archived_at::date AS archived_on
+FROM is_archive
+ORDER BY user_id;
+```
+
+期待する結果は`user_id=1, 3`の2行です。Rubyで全行を配列やモデルへ展開しなくても、DBが`SELECT`の結果を`INSERT`へ渡します。ただし、処理時間やロックへの影響まで小さいと決まるわけではありません。ここでは性能を測定していません。
+
+PostgreSQLでは文もトランザクションの中で実行されます。制約違反になった文の一部だけが、通常の成功結果として残るわけではありません。検証fixtureではNULLを除外しない投入を別の例外処理内で試し、`23502`と投入先0行を期待値にしています。[PostgreSQLのトランザクション](https://www.postgresql.org/docs/17/tutorial-transactions.html)
+
+## 再実行と、入力側の重複は別の問題ですか
+
+上の投入をもう一度そのまま行うと、すでにある`user_id=1, 3`が主キーと衝突します。期待するエラーは一意性違反の`23505`です。`SELECT`側が重複していなくても、投入先に行があるため失敗します。
+
+別の原因もあります。元の利用者1人に複数のラベルをJOINすると、`SELECT`が同じ利用者を複数行返すことがあります。空の投入先でも、一度の文の中で同じ主キーを入れようとして衝突します。fixtureでは利用者3に2つのラベルを付け、このケースを再現するようにしています。
+
+`DISTINCT`を付ければ常に解消できるとは限りません。どの列の組を同一とするかによって結果が変わります。入力の重複キーを調べる方法は[GROUP BYとHAVINGによる重複検出](/tech-note/articles/rails/sql/sql-group-by-having-duplicates)、候補から1行を選ぶ方法は[ROW_NUMBERの並び順](/tech-note/articles/rails/sql/row-number)で扱います。
+
+すでにコピーした行を保持し、新しい行だけ追加する方針なら、PostgreSQLでは`ON CONFLICT (user_id) DO NOTHING`を指定できます。次の例は元データのemailを変えてから再投入します。
+
+```sql
+UPDATE is_source SET email = 'alpha-new@example.test' WHERE id = 1;
+INSERT INTO is_source (id, email, retired_at)
+VALUES (5, 'epsilon@example.test', '2026-10-01 00:00:00+00');
+
+INSERT INTO is_archive (user_id, email, archived_at)
+SELECT id, email, TIMESTAMPTZ '2026-10-02 00:00:00+00'
+FROM is_source
+WHERE retired_at IS NOT NULL AND email IS NOT NULL
+ON CONFLICT (user_id) DO NOTHING;
+
+SELECT user_id, email, archived_at::date AS archived_on
+FROM is_archive
+ORDER BY user_id;
+```
+
+期待する投入先は、元の`alpha@example.test`、`gamma@example.test`、追加した`epsilon@example.test`の3行です。`DO NOTHING`は競合する行を更新しないため、`alpha-new@example.test`への変更は反映されません。「再実行で増やさない」と「元データへ同期する」は別の方針です。[PostgreSQLのON CONFLICT](https://www.postgresql.org/docs/17/sql-insert.html#SQL-ON-CONFLICT)
+
+また、`DO NOTHING`は指定した一意性の競合への処理で、NOT NULLなどの制約違反を何でも無視する指定ではありません。入力側に同じキーで異なる値がある場合も、先に採用規則を決める必要があります。
+
+```sql
+ROLLBACK;
+```
+
+## Railsから呼ぶ前と、DBを変えるときに何を確認しますか
+
+RailsではSQL文字列を`ActiveRecord::Base.connection.execute(sql)`などでDBへ渡せます。これは各行を`create!`する経路ではないので、モデルのvalidationやcallbackを前提にした移行にはできません。必要な条件をSQLへ含め、DB側の制約も確認します。外部入力をSQLへ直接埋め込む例ではなく、ここでは固定の列名・合成値だけを使っています。[Rails 8.1.3のDatabaseStatements](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-execute)
+
+事前の`SELECT COUNT(*)`は対象の見積もりになりますが、その後の投入時に同じ行集合が見える保証にはなりません。PostgreSQLの既定のRead Committedでは、同じtransactionでも別の文は新しいsnapshotを使うことがあります。更新が並行する移行では、読み取る範囲と再実行方法も決めます。[PostgreSQLの分離レベル](https://www.postgresql.org/docs/17/transaction-iso.html)
+
+MySQL 8.4にも基本形の`INSERT ... SELECT`はありますが、競合時の構文は同じではありません。`ON DUPLICATE KEY UPDATE`は既存行を更新する指定で、ここで使った`DO NOTHING`の代わりに無条件で付けるものではありません。`INSERT IGNORE`も、入力値の変換エラーなどを警告へ変える場合があるため、重複だけを無視する前提で置き換えないでください。MySQLではstorage engineとSQL modeも含めた別の確認が必要です。この稿のSQL fixtureはMySQLで実行していません。[MySQLのINSERT SELECT](https://dev.mysql.com/doc/refman/8.4/en/insert-select.html)、[ON DUPLICATE KEY UPDATE](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)、[INSERTのIGNORE](https://dev.mysql.com/doc/refman/8.4/en/insert.html)

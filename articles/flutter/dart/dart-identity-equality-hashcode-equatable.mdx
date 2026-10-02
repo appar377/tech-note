@@ -1,6 +1,6 @@
 ---
 title: "Dartの同一性と等価性――identical、==、hashCode、Equatable"
-description: "`identical`は同一オブジェクト参照、`==`は型が定義する値等価性、`hashCode`はハッシュコレクションとの契約である。Equatableは値等価性の実装補助であり、不変性や深いコレクション比較を自動的に万能化するもので..."
+description: "identical、==、hashCodeが答える問いを分ける。値として等しいオブジェクトをSetで扱う例と、Equatableのprops・可変なコレクションの注意点を確認する。"
 date: 2026-07-20
 tags:
   - "Dart"
@@ -14,142 +14,71 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/dart-identity-equality-hashcode-equatable.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
+同じフィールド値を持つ二つのインスタンスが、`==`で等しくなるとは限りません。`Object`から継承した既定の比較は同一性に基づくためです。値としての等しさが必要なら、どのフィールドで判断するかを型の側で定義します。[Object.operator ==](https://api.dart.dev/dart-core/Object/operator_equals.html)
 
-## 概要
+| 確かめること | 使うもの |
+| --- | --- |
+| 同一のオブジェクトか | `identical(a, b)` |
+| この型が定義する意味で等しいか | `a == b` |
+| ハッシュコレクションで候補を探すための値 | `a.hashCode` |
 
-同じフィールド値を持つ2インスタンスが`==`でfalseになり、Equatableを入れれば解決すると思った。ところがmutableな値やListを含むと、Set/Mapの挙動まで影響する。
+## 同じ色を値として比較する
 
-`identical`は同一オブジェクト参照、`==`は型が定義する値等価性、`hashCode`はハッシュコレクションとの契約である。Equatableは値等価性の実装補助であり、不変性や深いコレクション比較を自動的に万能化するものではない。
-
-## この記事で学べること
-
-- デフォルトObjectの`==`
-- `identical`との違い
-- `operator ==`と`hashCode`の契約
-- 等価ならhashCodeも同じにする必要
-- HashSet/Map keyでmutable objectを使う危険
-- Equatableの`props`
-
-## 前提知識
-
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Dartの同一性と等価性――identical、==、hashCode、Equatable](/images/articles/dart-identity-equality-hashcode-equatable.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+色名と濃さの組み合わせが同じなら等しい、という小さな型を作ります。ここでの`final class`は外部ライブラリでの継承を制限しますが、フィールドの不変性とは別の指定です。
 
 ```dart
-class Money {
-  const Money(this.amount, this.currency);
-
-  final int amount;
-  final String currency;
+final class Swatch {
+  Swatch(this.name, this.shade);
+  final String name;
+  final int shade;
 
   @override
   bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Money && amount == other.amount && currency == other.currency;
+      other is Swatch && name == other.name && shade == other.shade;
 
   @override
-  int get hashCode => Object.hash(amount, currency);
+  int get hashCode => Object.hash(name, shade);
 }
-```
 
-## 本編
-
-### 発生した状況
-
-同じフィールド値を持つ2インスタンスが`==`でfalseになり、Equatableを入れれば解決すると思った。ところがmutableな値やListを含むと、Set/Mapの挙動まで影響する。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`identical`は同一オブジェクト参照、`==`は型が定義する値等価性、`hashCode`はハッシュコレクションとの契約である。Equatableは値等... という観点で見る必要がありました。
-
-### 観測したこと
-
-- 同値2インスタンスの例
-- hashCode不整合でSet検索が壊れる悪い例
-- Equatable Value Object
-- mutable fieldを変更した後のHashSet test
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| Equatable | boilerplate削減／props漏れ、mutable値の危険 |
-| 手書き | 明示的／実装量とミス |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- `identical`と`==`の結果はconst canonicalization等で変わり得る
-- 等価性はドメイン定義で決める
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- `identical`と`==`の結果はconst canonicalization等で変わり得る
-- 等価性はドメイン定義で決める
-
-## 再発防止テスト
-
-```dart
 void main() {
-  test('dart-identity-equality-hashcode-equatable', () async {
-    final subject = TestSubject();
+  final first = Swatch('teal', 500);
+  final second = Swatch('teal', 500);
+  final different = Swatch('teal', 600);
 
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
+  print(identical(first, second)); // false
+  print(first == second); // true
+  print(first.hashCode == second.hashCode); // true
+  print({first, second, different}.length); // 2
 }
 ```
 
-## 一般化できる設計原則
+このコンストラクタはconstではないため、二つの呼び出しは別のインスタンスを作ります。一方、`==`は両方のフィールドを比較するのでtrueです。Setは等しい二つを重複として扱い、濃さの違う一つと合わせて要素数は2になります。Dart SDK 3.11.5で、この結果と新しい同値インスタンスによる`contains`を確認しています。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+なお、同じ定数をconstとして生成すると`identical`もtrueになる場合があります。「フィールド値が同じなら常に別インスタンス」とも言えません。[identicalのAPI](https://api.dart.dev/dart-core/identical.html)
 
-## まとめ
+## hashCodeだけでは等しいと判断できない
 
-等価性は便利メソッドではなく、コレクション・状態比較・UI更新へ影響するドメイン契約である。
+守る必要があるのは、`a == b`がtrueなら両者の`hashCode`も同じ、という方向です。異なる値でもハッシュ値は衝突します。ハッシュ値の一致だけで等しさを判定したり、永続的なIDにしたりしないようにします。実行をまたいで同じ数値になる保証もありません。[hashCodeの契約](https://api.dart.dev/dart-core/Object/hashCode.html)
 
+たとえば、比較には`name`と`shade`を使い、ハッシュには無関係なインスタンス固有値を使うと、この契約を破ります。たまたま検索できた結果があっても、正しい実装の根拠にはなりません。
 
-この記事では、次のような短絡的な一般化は避けます。
+もう一つの問題は、Setへ入れたあとで比較に使うフィールドを変えることです。格納時と検索時でハッシュが変わると、期待した要素を見つけられなくなる可能性があります。壊れ方の具体的な結果を保証するのではなく、格納中の等価性とハッシュを変えない設計にします。[HashSetの注意事項](https://api.dart.dev/dart-collection/HashSet-class.html)
 
-- Equatableを付ければimmutableになると書かない
-- hashCodeの具体値が実行間で固定と仮定しない
+## Listの比較と、Listを持つモデルの比較は分ける
 
-## 参考文献
+通常のListの`==`は、要素を一つずつ比較しません。そのため`<int>[1] == <int>[1]`はfalseです。ただし、二つとも同じconst Listなら、定数の共有によって同一になる場合があります。[List.operator ==](https://api.dart.dev/dart-core/List/operator_equals.html)
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+モデルがListを持つなら、「順序も含めて一致」「順序を無視」「特定の要素のIDだけ一致」のどれを求めるのかを先に決めます。`final List`でも要素の追加や削除ができることには注意が必要です。比較方式を決めることと、あとから値を変更させないことは別の作業です。
+
+## Equatableではpropsが比較の範囲になる
+
+Equatableは、`props`に列挙した値を使って`==`と`hashCode`の実装を補助します。色の例なら`props`へ`name`と`shade`を含めます。`shade`を省けば、濃さを変えても比較に反映されません。[Equatableの公式README](https://pub.dev/packages/equatable)
+
+同READMEは不変なオブジェクトでの利用を前提としています。Equatableを継承しても、外部から渡したListやその要素を自動的に変更不能にするわけではありません。コレクションを含む比較の詳細は採用バージョンの実装とテストで確認してください。List自身の`==`が同一性比較だからといって、Equatableの`props`内でも必ず同じ扱いになる、と推論しないことが大切です。
+
+この記事ではEquatableのパッケージを実行していません。手書きの値型をDart標準ライブラリで検証し、Equatableについては公式のAPI説明を確認した範囲を記載しています。導入時には、実際のモデルについて同値・異なる値・コレクションの内容変更をテストする必要があります。
+
+単純な値の組み合わせならrecord、生成コードをすでに使うモデルならその等価性実装も候補になります。どの手段でも、先に「何が同じなら同じ値なのか」を決めることが出発点です。

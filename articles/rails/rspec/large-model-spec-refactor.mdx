@@ -1,6 +1,6 @@
 ---
-title: "Railsのmodel specが巨大化したときの整理方針：削るべきか、分けるべきか、責務を切り出すべきか"
-description: 巨大化したRailsのmodel specを、削る・分ける・責務を切り出す観点から整理する。
+title: "長いmodel specを、責務と条件が読める形に整理する"
+description: "入力の検証と業務条件を分け、同じ6つの契約を保ったままRSpecのdescribe・context・letを整理します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,510 +14,174 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-large-model-spec-refactor.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+model specを開いても、どの入力が必要で、何を確かめているのか分からない。そうなったら、まず例を「入力の検証」「更新可否」「保存後の通知」のような責務ごとに並べ直します。その中で、結果を変える条件を`context`に置きます。ファイルを増やす前に、一つの例を読んで前提と期待が追える形を作るためです。
 
-Railsアプリケーションが大きくなると、1つのmodel specが非常に大きくなることがあります。
+ここでは、説明用の会員モデルを使い、モデル本体を変えずに同じ6つの契約を並べ替えます。対象はRuby 3.4.4、Active Model 8.1.3、RSpec 3.13.0（core 3.13.6 / expectations 3.13.5 / mocks 3.13.8）です。この固定構成で、掲載コードの整理前6例・整理後6例を実行し、すべて成功しました。
 
-例えば、1つのモデルに対して次のようなテストがすべて入っているケースです。
+## 何を残し、何をまとめるのでしょうか
 
-```text
-- association
-- validation
-- scope
-- callback
-- instance method
-- 表示用Hash生成
-- 通知処理
-- ActiveJobのenqueue
-- CSV生成
-- 外部ストレージ連携
-- 外部API連携
-```
+最初に、各例について「入力・操作・期待する結果」を書き出します。見た目が似た例でも、境界が違えば残します。今回の対応は次のとおりです。
 
-このようなspecを見ると、次の疑問が出てきます。
+| 確認する責務 | 入力・条件 | 残す期待 |
+| --- | --- | --- |
+| 入力の検証 | active、1席 | 有効である |
+| 入力の検証 | active、0席 | 席数のエラーになる |
+| 入力の検証 | unknown、1席 | 状態のエラーになる |
+| 更新可否 | active | 更新対象になる |
+| 更新可否 | paused | 更新対象にならない |
+| 更新可否 | cancelled | 更新対象にならない |
 
-```text
-モデルのテストだから長くても仕方ないのか
-削減するべきなのか
-ファイルを分けるべきなのか
-そもそもモデルの責務が大きすぎるのか
-```
+pausedとcancelledは同じ結果でも、別の状態です。将来一方だけ扱いが変わる可能性があるため、ここでは別の例にします。反対に、入力・操作・期待が完全に同じなら、重複している理由を確認して一つにできます。「どちらもfalseだから」という理由だけで削ると、条件が一つ消えます。
 
-この記事では、巨大化したmodel specをどう整理するかを考えます。
+検証対象は次のモデルです。`ActiveModel::Model`で属性の初期化と検証を利用するため、DBは必要ありません。[Active Model 8.1.3の定義](https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/model.rb)と[検証API](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Validations.html)に沿った例です。
 
-## この記事で学べること
+```ruby file=lib/model_spec_refactor.rb
+require "active_model"
 
-- model specが巨大化する理由
-- model specに残すべきテスト
-- service/job/builder/serializerへ分ける判断基準
-- 削るテストと残すテストの見極め
+module ModelSpecRefactor
+  class Membership
+    include ActiveModel::Model
 
-## 前提知識
+    attr_accessor :status, :seats
 
-- Railsのmodel specを書いたことがある
-- specファイルが長くなって困った経験がある
-- service objectやjobへの責務分割に関心がある
+    validates :status, inclusion: { in: %w[active paused cancelled] }
+    validates :seats, numericality: { only_integer: true, greater_than: 0 }
 
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class NotificationService
-  def initialize(user)
-    @user = user
-  end
-
-  def call
-    UserMailer.notification(@user).deliver_later
-  end
-end
-
-RSpec.describe NotificationService do
-  it "通知メールをenqueueする" do
-    user = create(:user)
-
-    expect { described_class.new(user).call }
-      .to have_enqueued_mail(UserMailer, :notification)
-  end
-end
-```
-
-## 本編
-
-### 長いこと自体は必ずしも悪ではない
-
-まず、specが長いこと自体は必ずしも悪ではありません。
-
-業務上重要なモデルであれば、validation、scope、callback、状態遷移など、確認すべき仕様が多くなるのは自然です。
-
-問題は、単に行数が多いことではなく、**責務が混在していること**です。
-
-判断基準は次の通りです。
-
-```text
-長いだけなら許容できる。
-責務が混ざって長いなら分けるべき。
-```
-
-### model specに残すべきもの
-
-model specに残すべきものは、モデルの責務に近いものです。
-
-```text
-- association
-- validation
-- nested attributes
-- enumや状態判定
-- scope
-- model callbackの結果
-- DB保存に関わる業務ルール
-- モデル自身のインスタンスメソッド
-```
-
-例えば、次のようなテストはmodel specに置いてよいです。
-
-```ruby
-RSpec.describe User, type: :model do
-  describe "validations" do
-    it "emailが必須である" do
-      user = build(:user, email: nil)
-
-      expect(user).to be_invalid
-      expect(user.errors[:email]).to be_present
-    end
-  end
-
-  describe "#active?" do
-    it "退会していなければtrueを返す" do
-      user = build(:user, deleted_at: nil)
-
-      expect(user).to be_active
+    def renewal_allowed?
+      status == "active"
     end
   end
 end
 ```
 
-### model specから分けた方がよいもの
+`renewal_allowed?`は状態だけを判定します。入力を検証する`valid?`も、課金・保存・通知も呼びません。実際の更新処理全体をこの戻り値だけで許可する実装例ではありません。
 
-一方で、次のようなものはmodel specから切り出した方がよい場合があります。
+## 同じ期待を、責務と条件の順に並べます
 
-```text
-- メール送信の詳細
-- push通知の詳細
-- 外部APIリクエストの詳細
-- CSV生成の詳細
-- 外部ストレージへのアップロード詳細
-- 複雑な表示用Hashの組み立て
-- PDF生成
-- 画像処理
-```
+整理前のspecでは、入力エラーと更新可否が交互に現れます。小さいうちは追えますが、条件を追加すると、同じ責務の例が離れていきます。次を`spec/model_spec_refactor_spec.rb`に保存します。
 
-これらは、モデルそのものというより、service、job、serializer、presenter、builderなどの責務に近いです。
+```ruby file=spec/model_spec_refactor_spec.rb
+require "rspec"
+require_relative "../lib/model_spec_refactor"
 
-### 通知処理はserviceへ切り出す
+RSpec.describe ModelSpecRefactor::Membership, "整理前" do
+  it "既知の状態と 1 席を受け付ける" do
+    membership = described_class.new(status: "active", seats: 1)
+    expect(membership).to be_valid
+  end
 
-例えば、モデルのcallbackで通知を送っている場合を考えます。
+  it "active は更新対象になる" do
+    membership = described_class.new(status: "active", seats: 1)
+    expect(membership.renewal_allowed?).to be(true)
+  end
 
-```ruby
-class Order < ApplicationRecord
-  after_commit :notify_completed, if: :completed?
+  it "0 席を受け付けない" do
+    membership = described_class.new(status: "active", seats: 0)
+    expect(membership).not_to be_valid
+    expect(membership.errors.of_kind?(:seats, :greater_than)).to be(true)
+  end
 
-  private
+  it "paused は更新対象にならない" do
+    membership = described_class.new(status: "paused", seats: 1)
+    expect(membership.renewal_allowed?).to be(false)
+  end
 
-  def notify_completed
-    NotificationService.new(self).call
+  it "未知の状態を受け付けない" do
+    membership = described_class.new(status: "unknown", seats: 1)
+    expect(membership).not_to be_valid
+    expect(membership.errors.of_kind?(:status, :inclusion)).to be(true)
+  end
+
+  it "cancelled は更新対象にならない" do
+    membership = described_class.new(status: "cancelled", seats: 1)
+    expect(membership.renewal_allowed?).to be(false)
   end
 end
 ```
 
-model specでは、通知の細かい中身まで見る必要はありません。
+整理後は`describe`で責務を分け、その内側の`context`で入力の差を示します。比較用として、同じファイルの末尾に次を追加します。実際の整理では、確認が済んだら整理前のgroupを取り除きます。
 
-model specでは、次の程度で十分です。
+```ruby file=spec/model_spec_refactor_spec.rb
+RSpec.describe ModelSpecRefactor::Membership, "整理後" do
+  subject(:membership) { described_class.new(status: status, seats: seats) }
 
-```ruby
-RSpec.describe Order, type: :model do
-  describe "completion notification" do
-    it "完了時に通知サービスを呼ぶ" do
-      order = create(:order, status: "pending")
+  let(:status) { "active" }
+  let(:seats) { 1 }
 
-      allow(NotificationService)
-        .to receive(:new)
-        .and_return(instance_double(NotificationService, call: true))
+  describe "入力の検証" do
+    it "既知の状態と 1 席を受け付ける" do
+      expect(membership).to be_valid
+    end
 
-      order.update!(status: "completed")
+    context "0 席の場合" do
+      let(:seats) { 0 }
 
-      expect(NotificationService).to have_received(:new).with(order)
+      it "席数のエラーを返す" do
+        expect(membership).not_to be_valid
+        expect(membership.errors.of_kind?(:seats, :greater_than)).to be(true)
+      end
+    end
+
+    context "状態が未知の場合" do
+      let(:status) { "unknown" }
+
+      it "状態のエラーを返す" do
+        expect(membership).not_to be_valid
+        expect(membership.errors.of_kind?(:status, :inclusion)).to be(true)
+      end
+    end
+  end
+
+  describe "#renewal_allowed?" do
+    it "active は更新対象になる" do
+      expect(membership.renewal_allowed?).to be(true)
+    end
+
+    context "paused の場合" do
+      let(:status) { "paused" }
+
+      it "更新対象にならない" do
+        expect(membership.renewal_allowed?).to be(false)
+      end
+    end
+
+    context "cancelled の場合" do
+      let(:status) { "cancelled" }
+
+      it "更新対象にならない" do
+        expect(membership.renewal_allowed?).to be(false)
+      end
     end
   end
 end
 ```
 
-通知対象者の選定や送信内容は、`NotificationService` のspecで確認します。
+`membership`の作り方は一つですが、席数や状態を変える場所は、その条件のすぐ近くにあります。エラーの例は無効になることに加えて、どの属性の検証に失敗するかも確認しています。別の属性が偶然無効だったために通る例を避けるためです。
 
-```text
-spec/services/notification_service_spec.rb
+実行用のRSpecとActive Modelが入った環境で、保存したファイルを指定します。
+
+```sh
+bundle exec rspec spec/model_spec_refactor_spec.rb --format documentation
 ```
 
-### Job enqueueとJobの中身を分ける
+この比較用ファイルには、整理前6例・整理後6例の計12例があります。12例はすべて成功しました。ただし、示した6つの契約を保ったことの確認であり、モデルの全入力を網羅したことにはなりません。
 
-モデルの変更をきっかけにジョブをenqueueする場合もあります。
+## 共通の準備は、どこまで上に置くと読めるでしょうか
 
-```ruby
-class Order < ApplicationRecord
-  after_commit :enqueue_export_job, if: :export_required?
+`let`は、そのexampleで初めて参照されたときに評価され、同じexample内で値を保持します。別のexampleとは保持した値を共有しません。今回の`subject`もexampleごとにモデルを作るため、ある例で追加されたエラーを次の例の前提にしません。[RSpecのletの仕様](https://rspec.info/features/3-13/rspec-core/helper-methods/let/)
 
-  private
+ただし、`let`のブロックが外で作った同じオブジェクトを返していれば、そのオブジェクトまで自動で複製されるわけではありません。また、親に準備を集めるほど、子の例から見えない前提が増えます。入力エラーの検証に不要な関連レコードや外部送信のstubは、その検証の共通準備には置きません。
 
-  def enqueue_export_job
-    ExportOrderJob.perform_later(id)
-  end
-end
-```
+今回の例では二つの入力だけなので、親に置いても追えます。子の`context`が何段も上の`let`を上書きしないと読めなくなったら、そのgroupの中でモデルを直接作る方が明快なこともあります。準備の行数を減らすこと自体を目的にしません。
 
-model specでは、ジョブがenqueueされたことだけ確認します。
+## specの整理で済む問題と、本体を見直す問題は違います
 
-```ruby
-RSpec.describe Order, type: :model do
-  it "条件を満たすとExportOrderJobをenqueueする" do
-    order = create(:order, status: "draft")
+入力の検証にメール送信のstubが必要になったり、一覧を作るテストに請求や通知の準備まで必要になったりする場合は、テストの配置だけでは前提を減らせません。モデルがどの処理を呼び出しているかを追い、計算、永続化、外部送信をそれぞれどこで確かめるか決めます。
 
-    expect {
-      order.update!(status: "confirmed")
-    }.to have_enqueued_job(ExportOrderJob).with(order.id)
-  end
-end
-```
+外部送信を別のオブジェクトに移す場合は、呼び出し元から引数が渡ることと、移した先の処理の検証が必要です。既存の結合テストを消してconstructorへの期待だけに置き換えると、実行される処理を確かめる範囲が狭まります。DBや外部サービスとの境界は[本物とテストダブルの使い分け](/tech-note/articles/rails/rspec/real-vs-mock-boundary/)で扱います。
 
-一方で、ジョブの中身はjob specで確認します。
-
-```ruby
-RSpec.describe ExportOrderJob, type: :job do
-  it "注文データをエクスポートする" do
-    order = create(:order)
-
-    described_class.perform_now(order.id)
-
-    expect(...)
-  end
-end
-```
-
-このように分けることで、model specが肥大化しにくくなります。
-
-### CSV生成はbuilderへ切り出す
-
-CSV生成ロジックがmodel specに入っている場合は、builderクラスへ切り出すと整理しやすくなります。
-
-```ruby
-class OrderCsvBuilder
-  def initialize(order)
-    @order = order
-  end
-
-  def build
-    CSV.generate do |csv|
-      csv << ["注文ID", "合計金額"]
-      csv << [order.id, order.total_price]
-    end
-  end
-
-  private
-
-  attr_reader :order
-end
-```
-
-specも専用に分けます。
-
-```ruby
-RSpec.describe OrderCsvBuilder do
-  describe "#build" do
-    it "注文情報をCSVとして出力する" do
-      order = create(:order, total_price: 1000)
-
-      csv = described_class.new(order).build
-
-      expect(csv).to include(order.id.to_s)
-      expect(csv).to include("1000")
-    end
-  end
-end
-```
-
-CSVの何列目に何が入るか、という詳細はmodel specではなくbuilder specで見る方が自然です。
-
-### 表示用Hashはserializerやpresenterへ切り出す
-
-モデルに次のようなメソッドが増えていくことがあります。
-
-```ruby
-def summary
-  {
-    id: id,
-    name: name,
-    status: status,
-    created_at: created_at.strftime("%Y/%m/%d")
-  }
-end
-```
-
-簡単なものなら問題ありませんが、項目が増えてくるとmodelが表示ロジックを持ちすぎます。
-
-その場合は、serializerやpresenterへ切り出すとよいです。
-
-```ruby
-class UserSummarySerializer
-  def initialize(user)
-    @user = user
-  end
-
-  def as_json
-    {
-      id: user.id,
-      name: user.name,
-      status: user.status,
-      created_at: user.created_at.strftime("%Y/%m/%d")
-    }
-  end
-
-  private
-
-  attr_reader :user
-end
-```
-
-specも分離できます。
-
-```ruby
-RSpec.describe UserSummarySerializer do
-  describe "#as_json" do
-    it "ユーザー概要をHashで返す" do
-      user = create(:user, name: "Taro")
-
-      result = described_class.new(user).as_json
-
-      expect(result).to include(
-        id: user.id,
-        name: "Taro"
-      )
-    end
-  end
-end
-```
-
-### ファイル分割の例
-
-1つのmodel specにすべてを書く必要はありません。
-
-例えば、`Order` モデルなら次のように分けられます。
-
-```text
-spec/models/order_spec.rb
-spec/models/order/validations_spec.rb
-spec/models/order/scopes_spec.rb
-spec/models/order/status_spec.rb
-spec/models/order/callbacks_spec.rb
-spec/models/order/notifications_spec.rb
-spec/models/order/job_enqueue_spec.rb
-```
-
-さらに責務を切り出した場合は、次のようになります。
-
-```text
-spec/services/order_notification_service_spec.rb
-spec/jobs/export_order_job_spec.rb
-spec/services/order_csv_builder_spec.rb
-spec/serializers/user_summary_serializer_spec.rb
-```
-
-RSpecでは、1モデルにつき1specファイルにしなければならないという決まりはありません。
-
-読みやすさと責務に応じて分割して問題ありません。
-
-### 削るべきテストと残すべきテスト
-
-巨大なspecを整理するとき、単純に削ればよいわけではありません。
-
-削ってよい可能性があるのは、次のようなテストです。
-
-```text
-- 実装詳細だけを確認している
-- 重要度の低いprivate methodを直接テストしている
-- 同じようなケースを過剰に重複して確認している
-- フレームワークの挙動そのものを細かく確認している
-```
-
-一方で、次のようなテストは残すべきです。
-
-```text
-- 業務上重要な状態遷移
-- 保存条件
-- 通知やジョブの発火条件
-- 重要scope
-- callbackの結果
-- 外部連携の起点
-```
-
-特に、過去に不具合が起きた箇所は残した方がよいです。
-
-### まずはファイル分割から始める
-
-巨大なspecを整理するとき、いきなり実装を大きく変更するのは危険です。
-
-まずはファイル分割から始めるのが安全です。
-
-```text
-1. validationを分ける
-2. scopeを分ける
-3. callbackを分ける
-4. 通知系を分ける
-5. job enqueue系を分ける
-```
-
-ファイルを分けるだけでも、読みやすさはかなり改善します。
-
-その後、必要に応じてservice、job、serializer、builderへ実装を切り出します。
-
-### 最終的な整理方針
-
-巨大なmodel specを整理するときは、次の順番がおすすめです。
-
-```text
-1. specの責務を分類する
-2. ファイルを分ける
-3. modelに残すべきテストを判断する
-4. 通知・CSV・外部連携などをservice/jobへ切り出す
-5. 表示用Hashをserializer/presenterへ切り出す
-6. 重複している単純テストを共通化・テーブル駆動化する
-```
-
-目的はテストを減らすことではありません。
-テストの置き場所を正しくすることです。
-
-### メリット・デメリット
-
-#### 分割するメリット
-
-```text
-- specの見通しがよくなる
-- 変更時の影響範囲が分かりやすくなる
-- modelの責務が整理される
-- service/job/serializer単位でテストしやすくなる
-```
-
-#### 分割するデメリット
-
-```text
-- ファイル数は増える
-- 最初の整理に時間がかかる
-- 共通setupの置き場所を考える必要がある
-```
-
-ただし、長期的には分割した方が保守しやすくなることが多いです。
-
-## 図解
-
-![Railsのmodel specが巨大化したときの整理方針：削るべきか、分けるべきか、責務を切り出すべきか](/images/articles/rails-rspec-large-model-spec-refactor.png)
-
-```mermaid
-flowchart LR
-  A[巨大なmodel spec] --> B[model spec]
-  A --> C[service spec]
-  A --> D[job spec]
-  A --> E[builder spec]
-  A --> F[serializer spec]
-  B --> G[validation / association / scope]
-  C --> H[業務フロー]
-  D --> I[非同期処理]
-```
-
-## 内部動作
-
-model specが巨大化する原因は、modelの責務だけでなく、通知、CSV生成、job enqueue、表示用Hash生成などが同じファイルに集まることです。まずはファイルを分け、次に責務として切り出せる処理をservice、job、builder、serializerへ移します。削る判断より先に、何を保証しているテストなのかを分類することが重要です。
-
-## まとめ
-
-model specが巨大化したとき、単に「モデルのテストだから仕方ない」と考えるのは危険です。
-
-大事なのは、長さそのものではなく、責務が混在していないかです。
-
-```text
-長いだけなら許容できる。
-責務が混ざって長いなら分けるべき。
-```
-
-model specに残すべきものは、モデルの責務に近いテストです。
-
-```text
-- validation
-- association
-- scope
-- 状態判定
-- callbackの結果
-- DB保存に関わる業務ルール
-```
-
-一方で、次のようなものは切り出しを検討します。
-
-```text
-- 通知
-- Jobの中身
-- CSV生成
-- 外部ストレージ連携
-- 外部API連携
-- 表示用Hash生成
-```
-
-巨大なspecを整理する目的は、テストを減らすことではありません。
-テストが何を保証しているのかを明確にし、変更に強い構造にすることです。
-
-タグ候補は、共通で `Ruby`, `Rails`, `RSpec`, `テスト`, `自動テスト` あたりが使いやすいです。
-記事9だけは `設計`, `リファクタリング`, `ActiveJob` も追加候補になります。
-
-## 参考文献
-
-- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
-- [RSpec Mocks](https://rspec.info/features/3-13/rspec-mocks/)
+責務と条件が整理できていても、一つのファイルでは探しづらい場合は[model specを複数ファイルに分ける手順](/tech-note/articles/rails/rspec/split-large-model-spec/)へ進めます。分割後も同じ大きな準備が残るなら、まず、その準備を必要にしている依存関係を見直します。

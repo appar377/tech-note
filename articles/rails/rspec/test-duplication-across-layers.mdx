@@ -1,6 +1,6 @@
 ---
-title: "単体テストで確認済みの処理をAPIテストでも確認すべきか"
-description: "同じ条件を複数レイヤーで検証すること自体が問題ではない。実装詳細を同じ形で繰り返すのではなく、各レイヤーの契約に必要な代表ケースを重ねる。"
+title: "単体テストで確認済みの条件をAPIテストにも書くべきか"
+description: "メール必須条件を例に、モデルの細かな入力判定とAPIの応答・保存結果を分け、必要な重複とstubで失う確認を考えます。"
 date: 2026-07-20
 tags:
   - "Testing"
@@ -13,140 +13,187 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/test-duplication-across-layers.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+モデルで「メールアドレスは必須」と確認していても、APIが空の入力を422へ変換し、保存しないことまでは分かりません。逆に、そのHTTP応答だけを確認しても、`nil`や空白、長さの境界をすべて確かめたことにはなりません。
 
-Model Specで確認した条件をRequest Specでも書くと、重複して無駄に見える。一方で、API経由で本当にそのルールが適用されるかは単体テストだけでは保証できない。
+同じ空文字を使う2つのテストを残すかは、入力の重なりだけでは決められません。モデルには値を受け入れる条件を、request specには外から見える応答と保存結果を担当させると、重ねる理由がはっきりします。
 
-同じ条件を複数レイヤーで検証すること自体が問題ではない。実装詳細を同じ形で繰り返すのではなく、各レイヤーの契約に必要な代表ケースを重ねる。
+## 必須条件とHTTP応答は、どこでつながりますか
 
-## この記事で学べること
-
-- 重複テストと冗長テストの違い
-- テストピラミッドを絶対ルールではなくコストモデルとして説明
-- 単体テストは分岐を細かく、統合テストは代表フローを確認
-- バリデーション失敗が正しいHTTPレスポンスになるか
-- 認証・認可・シリアライズ・トランザクションとの結合
-- 重要業務フローで意図的に重ねるケース
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![単体テストで確認済みの処理をAPIテストでも確認すべきか](/images/articles/test-duplication-across-layers.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+説明用の登録APIを用意します。モデルの条件は「空でないこと」と「最大80文字」の2つです。メールの構文、ドメイン、実際の到達性を検証する例ではありません。controllerは失敗した保存のerror typeをJSONへ変換します。
 
 ```ruby
-class ProfileController < ApplicationController
-  def show
-    render json: current_user.slice(:id, :name)
-  end
+class LayerSignup < ActiveRecord::Base
+  self.table_name = "layer_signups"
+
+  validates :email, presence: true, length: { maximum: 80 }
 end
 
-RSpec.describe "GET /api/profile", type: :request do
-  it "returns the authenticated user's profile" do
-    user = create(:user)
-    sign_in user
+class LayerSignupsController < ActionController::Base
+  before_action :identify_example_writer
 
-    get "/api/profile"
+  def create
+    signup = LayerSignup.new(params.require(:signup).permit(:email))
 
-    expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body)).to include("id" => user.id)
+    if signup.save
+      render json: { id: signup.id, email: signup.email }, status: 201
+    else
+      codes = signup.errors.details.transform_values do |details|
+        details.map { |detail| detail.fetch(:error).to_s }
+      end
+      render json: { errors: codes }, status: 422
+    end
+  end
+
+  private
+
+  def identify_example_writer
+    return if request.headers["X-Example-Identity"] == "alpha"
+
+    render json: { error: "unauthorized" }, status: 401
   end
 end
 ```
 
-## 本編
+`presence`は`blank?`で判定し、`nil`、空文字、空白だけの文字列を必須違反にします。`maximum: 80`は80文字を許可し、超えた値を拒否する条件です。[Railsのpresence・length validation](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Validations/HelperMethods.html)
 
-### 発生した状況
+通常の`save`はvalidationが失敗すると`false`を返すので、controllerは失敗側へ進みます。`errors.details`からは属性ごとのerror typeを取り出せます。この例では`blank`を公開用の文字列へ変換していますが、実APIで内部のerror typeをそのまま公開契約にするかは別に決める必要があります。[Active Recordのvalidation](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Validations.html#method-i-save)、[Active Modelのerrors.details](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Errors.html#method-i-details)
 
-Model Specで確認した条件をRequest Specでも書くと、重複して無駄に見える。一方で、API経由で本当にそのルールが適用されるかは単体テストだけでは保証できない。
+前提はRuby 3.4.4、Rails 8.1.3、RSpec 3.13.0、RSpec Rails 8.0.4です。専用テストDBに`layer_signups`テーブルを用意し、主キー`id`と`email:string, null: false`を持たせます。`POST /layer_signups`は`layer_signups#create`へ割り当て、test環境のRailsアプリとRSpec Railsのhelperを読み込んでから実行します。
 
-### 当初の理解・誤解
+`X-Example-Identity`は説明用の固定値判定で、本物の認証ではありません。このheaderだけで利用者を認証する設計はできません。例はCSRF保護を組み込んでおらず、認証機構やCSRFの正しさを保証しません。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、同じ条件を複数レイヤーで検証すること自体が問題ではない。実装詳細を同じ形で繰り返すのではなく、各レイヤーの契約に必要な代表ケースを重ねる。 という観点で見る必要がありました。
+最初のRubyブロックはアプリが一度読み込むモデルとcontrollerの定義です。以降のmodel specとrequest specは、そのアプリをhelperで読み込むspecファイルへ保存します。同じモデル定義を再評価するとvalidationが重複するため、定義はspec内に重ねません。各DBテストは専用テーブルを初期化します。この固定構成で通常8例を実行し、すべて成功しました。別枠の意図的な失敗1例も、後述する422と201の食い違いを確認しています。
 
-### 観測したこと
+## 細かい入力条件は、どこで一覧にしますか
 
-- 同じ`email required`条件をModel SpecとRequest Specで異なる観点から検証
-- 過剰に同じ実装メソッドをmockする悪い例
-- 代表ケースだけを統合テストに残す例
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 重複を減らす | 保守量と実行時間を削減／境界の欠陥を見逃す可能性 |
-| 重要経路を重ねる | 回帰検知力／変更時の修正箇所が増える |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- テスト数ではなく、失敗時に何を検知できるかで評価する
-- 高速な単体テストと実経路テストの双方に価値がある
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- テスト数ではなく、失敗時に何を検知できるかで評価する
-- 高速な単体テストと実経路テストの双方に価値がある
-
-## 再発防止テスト
+モデルでは、HTTPステータスを使わずに必須違反と長さ違反を区別します。
 
 ```ruby
-RSpec.describe "test-duplication-across-layers" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+RSpec.describe LayerSignup, type: :model do
+  before { described_class.delete_all }
 
-    expect(result).to be_present
+  [nil, "", "   "].each do |email|
+    it "#{email.inspect}を必須違反として扱う" do
+      signup = described_class.new(email: email)
+
+      expect(signup).not_to be_valid
+      expect(signup.errors.details.fetch(:email)).to include(error: :blank)
+    end
+  end
+
+  it "上限の80文字を受け入れる" do
+    signup = described_class.new(email: "a" * 67 + "@example.test")
+
+    expect(signup).to be_valid
+  end
+
+  it "81文字を長さ違反として扱う" do
+    signup = described_class.new(email: "a" * 68 + "@example.test")
+
+    expect(signup).not_to be_valid
+    expect(signup.errors.details.fetch(:email)).to include(error: :too_long, count: 80)
   end
 end
 ```
 
-## 一般化できる設計原則
+`be_valid`でvalidationを実行し、`errors.details`で拒否した理由を見ます。ここにはルーティングやJSONの項目名を持ち込みません。「81文字を許す実装へ変わった」という回帰は、モデルの境界例で検知できます。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+この例では文字列型の属性を使っています。整数などの入力をどう型変換するか、Unicodeの長さをどの単位で数えるかまで網羅する仕様ではありません。実際の入力仕様に必要なら、条件を追加して別の観測点を用意します。
 
-## まとめ
+## API側では、何を重ねれば十分ですか
 
-「同じ入力を使っているか」ではなく「同じ失敗原因を同じ観測で重ねていないか」で判断する。
+空文字を代表の失敗入力にします。ここでの問いは「空文字が無効か」だけではなく、「リクエストを受け取ったアプリが、保存せず、422と決めたJSONを返すか」です。
 
+```ruby
+RSpec.describe "POST /layer_signups", type: :request do
+  before { LayerSignup.delete_all }
 
-この記事では、次のような短絡的な一般化は避けます。
+  let(:headers) { { "X-Example-Identity" => "alpha" } }
 
-- テストピラミッドの比率を固定値として示さない
-- すべてのケースをE2Eへコピーしない
+  it "空のemailを422と公開用error codeへ変換し行を増やさない" do
+    expect do
+      post "/layer_signups", params: { signup: { email: "" } }, headers: headers, as: :json
+    end.not_to change(LayerSignup, :count)
 
-## 参考文献
+    expect(response).to have_http_status(422)
+    expect(response.media_type).to eq("application/json")
+    expect(JSON.parse(response.body)).to eq("errors" => { "email" => ["blank"] })
+  end
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+  it "受け取ったemailを保存して201と保存値を返す" do
+    expect do
+      post "/layer_signups", params: { signup: { email: "reader@example.test" } }, headers: headers, as: :json
+    end.to change(LayerSignup, :count).by(1)
+
+    signup = LayerSignup.order(:id).last
+    expect(signup.email).to eq("reader@example.test")
+    expect(response).to have_http_status(201)
+    expect(JSON.parse(response.body)).to eq("id" => signup.id, "email" => signup.email)
+  end
+
+  it "識別headerなしでは有効な入力でも保存しない" do
+    expect do
+      post "/layer_signups", params: { signup: { email: "reader@example.test" } }, as: :json
+    end.not_to change(LayerSignup, :count)
+
+    expect(response).to have_http_status(401)
+    expect(JSON.parse(response.body)).to eq("error" => "unauthorized")
+  end
+end
+```
+
+空文字を使う点はモデルの例と同じです。ただし、controllerが`save`の失敗を無視して201を返したり、入力の項目名を取り違えたりすれば、request specの期待値は崩れます。正常系では、件数だけでなく実際に保存したemailと、応答のid・emailを照合しています。
+
+さらに、入力が有効でも識別headerがなければ401になり、行が増えないことを別に確認します。本物の認証・認可を持つアプリなら、ログイン状態、権限、対象レコードの所有者など、モデル単体に届く前の条件を実際の仕組みで確かめます。request specが通す経路は[request specとcontroller specの違い](/tech-note/articles/rails/rspec/request-spec-vs-controller-spec)で扱います。
+
+`as: :json`は入力をJSONとして符号化して対応するheaderを設定する指定です。単にRubyのHashをcontrollerへ直接渡す場合とは、入力の変換も含めた確認範囲が異なります。[Railsのintegration request API](https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Integration/Session.html#method-i-process)
+
+## 保存結果をstubしたら、どの確認が消えますか
+
+次の例では、`LayerSignup.new`が実モデルの代わりにdoubleを返し、`save`は必ず成功したことにします。空のemailを送っても本物のvalidationは実行されないため、422という本来の契約を確認すると失敗する想定です。通常のテストから外し、`LAYER_CONTRACT_EXPECT_FAILURE=1`を明示したときだけ有効にします。
+
+```ruby expected-failure
+if ENV["LAYER_CONTRACT_EXPECT_FAILURE"] == "1"
+  RSpec.describe "保存成功のstubで必須検証を切り離した例", type: :request do
+    before { LayerSignup.delete_all }
+
+    it "空のemailを拒否するという本来の契約を確認できない" do
+      signup = instance_double(LayerSignup, save: true, id: 123, email: "")
+      allow(LayerSignup).to receive(:new).and_return(signup)
+
+      post "/layer_signups", params: { signup: { email: "" } },
+        headers: { "X-Example-Identity" => "alpha" }, as: :json
+
+      expect(response).to have_http_status(422) # 期待する失敗: stubにより実際は201
+    end
+  end
+end
+```
+
+期待する失敗は「422を期待したが201だった」です。読み込みエラーやDB接続エラーは、この再現に成功したことにはなりません。このテストの期待値を201へ変えれば、固定した成功分岐に合うだけで、emailの必須条件を確認できません。
+
+`instance_double`は、存在するメソッドや引数の形とstubが合うかを検証します。返り値の`true`が実際の入力条件に照らして正しいかまでは保証しません。[RSpecのverifying double](https://rspec.info/features/3-13/rspec-mocks/verifying-doubles/instance-doubles/)
+
+controllerの失敗応答だけを局所的に調べたい場合など、stubで切り分ける目的はあります。その場合は、実モデルとつながったrequest specを別に残すかを判断します。内部メソッドを一つずつmockし、実装の呼び出し順だけを期待すると、外から見える振る舞いを保ったリファクタリングにも追従が必要になりがちです。
+
+## どのテストを減らし、どれを残しますか
+
+この例での分担は次のようになります。テストピラミッドは比率を決める規則としてではなく、どの欠陥をどの範囲の準備と実行で見つけるかを考える目安として使います。
+
+| 変化・失敗 | 主に残す場所 | 観測するもの |
+| --- | --- | --- |
+| 必須条件や最大長が変わる | model spec | 有効性、error type、境界値 |
+| 入力の受け取り方や失敗応答が壊れる | request spec | 422、JSON、行が増えないこと |
+| 正常に受け取った値を別の値として保存する | request spec | DBの保存値と201の応答 |
+| 未認証や権限不足でも処理できる | 実認証を通すrequest spec | 拒否応答、副作用がないこと |
+| 画面の送信操作からAPIへつながらない | 必要なsystem spec | 利用者の操作と画面結果 |
+
+削除候補を見るときは、各例について「どの変更で落ちるか」「外から意味のある結果を観測しているか」「同じ欠陥を別の例が拾えるか」を確認します。重要な購入や権限変更などでは、下位の細条件と上位の代表フローを意図して重ねる判断もあります。
+
+この登録例は単一行の保存です。複数モデルをまとめて更新する機能なら、途中の失敗で一部だけ残らないかも機能境界のテストへ加えます。外部送信までDBと一緒に戻るとは限らないため、その場合は[DBと外部ストレージの境界](/tech-note/articles/rails/data/db-s3-transaction-boundary)を分けて設計します。
+
+実行時間の改善量や適切なテスト数は、ここでは測定していません。まず削除前後で検知できる失敗を比べ、setupや実行時間に問題がある場合に計測して絞り込みます。

@@ -1,6 +1,6 @@
 ---
-title: ROW_NUMBERでグループ内の順位を付ける
-description: Window FunctionのROW_NUMBERを使い、ユーザーごとの最新レコードを取り出す方法を整理する。
+title: "ROW_NUMBERで最新1件を選ぶときの同時刻とNULLの扱い"
+description: "PARTITION BYとORDER BYの役割を分け、同時刻の決め方、NULLの候補、外側の絞り込み、RANKとの違いを確認します。"
 date: 2026-06-21
 tags:
   - SQL
@@ -13,120 +13,137 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-row-number.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+「利用者ごとの最新ログインを1件」にするには、時刻が同じ行をどう選ぶか、時刻がNULLの行を候補に残すかまで決めます。`ROW_NUMBER()`は連番を付けますが、業務上の「最新」の定義まで補ってはくれません。
 
-`ROW_NUMBER()` は、グループ内で順位を付けるWindow Functionです。
+以下は合成データによる例です。PostgreSQL 17.10で、本文のSQLと同時刻・NULL・絞り込み位置を含む7ケースの結果を確認しています。
 
-Railsのバッチや集計SQLでは、「ユーザーごとの最新レコードを1件だけ取る」のような処理でよく使います。
+## 同じ時刻の2行に、どちらを1番にしますか
 
-## この記事で学べること
+説明用のログイン履歴を作ります。利用者1の`id=11, 12`は同時刻、利用者3は時刻がすべてNULLです。本文のSQLは同じ接続で掲載順に実行し、最後に`ROLLBACK`できます。
 
-- `ROW_NUMBER()` の基本
-- `PARTITION BY` と `ORDER BY` の役割
-- 各グループから最新1件を取り出すSQL
-- RailsからWindow Functionを使う考え方
-
-## 前提知識
-
-- `SELECT` と `ORDER BY` の基本を知っている
-- RailsからSQLを実行したことがある
-- 同じユーザーに複数レコードが紐づくテーブルを扱ったことがある
-
-## 図解
-
-```mermaid
-flowchart TD
-  A[login_events] --> B[PARTITION BY user_id]
-  B --> C[ORDER BY logged_in_at DESC]
-  C --> D[ROW_NUMBER]
-  D --> E[rn = 1]
+```sql
+BEGIN;
+SET LOCAL TIME ZONE 'UTC';
+CREATE TEMP TABLE rn_logins (
+  id integer PRIMARY KEY,
+  user_id integer NOT NULL,
+  logged_in_at timestamptz
+) ON COMMIT DROP;
+INSERT INTO rn_logins (id, user_id, logged_in_at) VALUES
+  (10, 1, '2026-10-02 10:00:00+00'),
+  (11, 1, '2026-10-02 11:00:00+00'),
+  (12, 1, '2026-10-02 11:00:00+00'),
+  (13, 1, NULL),
+  (20, 2, '2026-10-02 09:00:00+00'),
+  (21, 2, NULL),
+  (30, 3, NULL),
+  (31, 3, NULL);
 ```
 
-## 実装コード例
+この例では、時刻が新しい行を優先し、同時刻なら大きいidを採用します。idは主キーなので、この列まで比較すると候補間の順序が決まります。ただし「大きいidなら実際の発生時刻も遅い」と主張しているわけではなく、同時刻を解決するための説明用の規則です。
 
-```ruby
-ranked_sql = <<~SQL
-  SELECT
-    login_events.*,
+```sql
+SELECT id, user_id,
+  ROW_NUMBER() OVER (
+    PARTITION BY user_id
+    ORDER BY logged_in_at DESC NULLS LAST, id DESC
+  ) AS row_num
+FROM rn_logins
+ORDER BY user_id, row_num;
+```
+
+期待する番号は次のとおりです。
+
+| user_id | idの順序 | row_num |
+| --- | --- | --- |
+| 1 | 12, 11, 10, 13 | 1, 2, 3, 4 |
+| 2 | 20, 21 | 1, 2 |
+| 3 | 31, 30 | 1, 2 |
+
+`PARTITION BY`は番号を振り直す単位、window内の`ORDER BY`はその中での並び方を指定します。時刻だけで並べると同時刻のどちらに1番が付くかを固定できません。安定した1件を必要とするなら、最後まで順序を決められる列を追加します。[PostgreSQLのwindow function入門](https://www.postgresql.org/docs/17/tutorial-window.html)
+
+一番外側の`ORDER BY user_id, row_num`は、結果を表示する順序です。window内の順序とは役割が異なり、結果全体の順序を保証したいなら外側にも指定します。[PostgreSQLのORDER BY](https://www.postgresql.org/docs/17/queries-order.html)
+
+## 最新1件を残す条件は、どこに書きますか
+
+window functionは`WHERE`で絞った行集合を対象に計算します。同じSELECTの`WHERE row_num = 1`に出力aliasを置いて、その計算結果を絞ることはできません。CTEまたは副問い合わせで一段分けます。[PostgreSQLのwindow functionの評価位置](https://www.postgresql.org/docs/17/tutorial-window.html)
+
+```sql
+WITH ranked AS (
+  SELECT id, user_id, logged_in_at,
     ROW_NUMBER() OVER (
       PARTITION BY user_id
-      ORDER BY logged_in_at DESC
+      ORDER BY logged_in_at DESC NULLS LAST, id DESC
     ) AS row_num
-  FROM login_events
-SQL
-```
-
-## 内部動作
-
-```text
-FROM login_events
-↓
-user_idごとにpartitionを作る
-↓
-partition内をlogged_in_at DESCで並べる
-↓
-各行に連番を付ける
-↓
-row_num = 1だけを残す
-```
-
-## 本編
-
-## ROW_NUMBERとは
-
-`ROW_NUMBER()` は、指定した並び順に従って行番号を振るWindow Functionです。グループごとの最新行を1件だけ取りたいときに便利です。
-
-> [!NOTE]
-> `ROW_NUMBER()` は同順位を作りません。同じ値が並んでも必ず連番になります。
-
-## 最新ログインを1件だけ取得する
-
-```sql title="latest_login.sql"
-WITH ranked_logins AS (
-  SELECT
-    user_id,
-    logged_in_at,
-    ROW_NUMBER() OVER (
-      PARTITION BY user_id
-      ORDER BY logged_in_at DESC
-    ) AS row_num
-  FROM login_events
+  FROM rn_logins
 )
-SELECT user_id, logged_in_at
-FROM ranked_logins
-WHERE row_num = 1;
+SELECT user_id, id
+FROM ranked
+WHERE row_num = 1
+ORDER BY user_id;
 ```
 
-## PARTITION BYとORDER BY
+この例の期待値は`(user_id, id) = (1, 12), (2, 20), (3, 31)`です。`WHERE row_num <= 2`にすれば、各利用者から最大2行を残せます。結果全体を2行に切る`LIMIT 2`とは異なります。
 
-$$
-\text{row\_num} = f(partition, order)
-$$
+条件をwindow計算より前へ置くと、候補自体が変わります。「最新行を取ってから条件を確認する」のか、「条件を満たす履歴だけから最新を取る」のかを、先に決めます。
 
-- `PARTITION BY user_id`: ユーザーごとに番号を振り直す
-- `ORDER BY logged_in_at DESC`: 新しいログインから順に並べる
+## NULLの日時を、最新候補に残しますか
 
-## Railsで使う場合
+PostgreSQLの`DESC`は、指定がなければNULLを先に並べます。この例で`NULLS LAST`を外すと、利用者1は`id=13`、利用者2は`id=21`が1番になります。NULLを日時の新旧と同じ意味で扱わないため、末尾へ置く指定を明示しています。[PostgreSQLのNULLの並び順](https://www.postgresql.org/docs/17/queries-order.html)
 
-```ruby title="latest_login_query.rb"
-LoginEvent
-  .select("user_id, logged_in_at")
-  .from("(#{ranked_sql}) ranked_logins")
-  .where(row_num: 1)
+ただし`NULLS LAST`は行を除外する指定ではありません。すべてNULLの利用者3では、idの規則に従って31が残ります。「日時不明なら結果に含めない」が要件なら、候補を作る内側で除外します。
+
+```sql
+WITH ranked AS (
+  SELECT id, user_id, logged_in_at,
+    ROW_NUMBER() OVER (
+      PARTITION BY user_id
+      ORDER BY logged_in_at DESC NULLS LAST, id DESC
+    ) AS row_num
+  FROM rn_logins
+  WHERE logged_in_at IS NOT NULL
+)
+SELECT user_id, id
+FROM ranked
+WHERE row_num = 1
+ORDER BY user_id;
 ```
 
-> [!WARNING]
-> ActiveRecordのクエリメソッドだけで無理に表現すると読みづらくなる場合があります。複雑なWindow FunctionはSQLとして管理する方が安全です。
+こちらの期待値は`(1, 12), (2, 20)`だけです。日時が分からない利用者に対して、存在しない最新日時を補う処理はしていません。
 
-## まとめ
+MySQL 8.4では、NULLは昇順で先、降順で後に並ぶため、PostgreSQLの既定と異なります。両方でwindow functionを使えても、NULLを含む並びはそのまま移植して同じ結果になるとは限りません。MySQL向けの構文と並び順は別に確認します。この稿ではMySQLの実行検証はしていません。[MySQLのwindow ORDER BY](https://dev.mysql.com/doc/refman/8.4/en/window-functions-usage.html)
 
-`ROW_NUMBER()` は、グループ内の順位付けをSQL側で表現できるWindow Functionです。
+## 同率の最新行をすべて残したい場合はどうしますか
 
-Railsで最新レコード抽出や重複排除を行う場合、Rubyで後処理する前にSQLで集合処理できないかを検討するとよいです。
+`ROW_NUMBER`は行ごとに番号を付けます。同じ時刻を同順位にしたい場合は、`RANK`や`DENSE_RANK`で何を同値とみなすかを指定します。下では、行番号にだけidを追加し、順位は日時だけで比較します。
 
-## 参考文献
+```sql
+SELECT id,
+  ROW_NUMBER() OVER (ORDER BY logged_in_at DESC NULLS LAST, id DESC) AS row_num,
+  RANK() OVER (ORDER BY logged_in_at DESC NULLS LAST) AS rank_num,
+  DENSE_RANK() OVER (ORDER BY logged_in_at DESC NULLS LAST) AS dense_rank_num
+FROM rn_logins
+WHERE user_id = 1
+ORDER BY row_num;
+```
 
-- [PostgreSQL Documentation: Window Functions](https://www.postgresql.org/docs/current/functions-window.html)
-- [MySQL Reference Manual: Window Function Descriptions](https://dev.mysql.com/doc/refman/8.4/en/window-function-descriptions.html)
+| id | row_num | rank_num | dense_rank_num |
+| --- | --- | --- | --- |
+| 12 | 1 | 1 | 1 |
+| 11 | 2 | 1 | 1 |
+| 10 | 3 | 3 | 2 |
+| 13 | 4 | 4 | 3 |
+
+同時刻の`id=11, 12`はいずれも`rank_num=1`です。`RANK`は次を3位、`DENSE_RANK`は2位にします。順位用のORDER BYにも一意なidを足すと同率ではなくなるので、1行に決める条件と同率を認める条件を混同しないようにします。[PostgreSQLの順位関数](https://www.postgresql.org/docs/17/functions-window.html)
+
+```sql
+ROLLBACK;
+```
+
+このクエリは最新候補を取り出すもので、元の履歴は削除しません。重複データの整理へ使う場合も、まず[重複キーの定義](/tech-note/articles/rails/sql/sql-group-by-having-duplicates)を確かめます。保持すべき関連や履歴を確認せず、`row_num > 1`をそのまま削除条件にする例にはしていません。
+
+Railsからは、このCTEをSQLとして実行して結果を受け取れます。任意の検索条件を足す場合も、window計算の前後のどちらへ入るかを確認します。ここで検証対象にしているのはSQLの結果で、Active Recordへの組み込みや実データでの実行計画・性能は別途確認が必要です。

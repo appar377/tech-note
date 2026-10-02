@@ -1,6 +1,6 @@
 ---
 title: "highest_price_firstは「最高値1件」なのか「価格降順」なのか"
-description: "Relation全体を返すScopeは、集合と順序を表す名前にする。単一レコードを返すメソッドとは命名とAPIを分け、呼び出し側が戻り値を予測できるようにする。"
+description: "並べた集合と先頭の1件を返すAPIを分ける。Relationの合成、同額時の順序、orderとreorder、scopeがnilを返した場合まで、実行例で命名の契約を確かめる。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,130 +13,111 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/active-record-scope-naming.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`highest_price_first` という名前は、「価格の高い順に並んだ集合」とも「最高価格の商品1件」とも読めます。名前だけを直す前に、呼び出し元が絞り込みや件数指定を続けられるのか、すでに1件を取り出しているのかを分けます。
 
-`scope :highest_price_first, -&gt; { order(price: :desc, created_at: :desc, id: :desc) }`を読んだとき、1件を返すのか全件を並べるのか迷った。実装は正しくても、名前が戻り値の契約を曖昧にしていた。
+並べ替えはRelationを返すscopeにし、1件を取り出す処理はmodelまたは `nil` を返すメソッドにすると、戻り値を予測しやすくなります。特定の英語名を正解にするのではなく、この二つの契約を一つの名前へ混ぜないことが目的です。
 
-Relation全体を返すScopeは、集合と順序を表す名前にする。単一レコードを返すメソッドとは命名とAPIを分け、呼び出し側が戻り値を予測できるようにする。
+以下は説明用の商品モデルです。Ruby 3.4.4、Active Record 8.1.3、PostgreSQL 17.10で確認しました。`scoped_products` の `name:string`、`price:integer`、`active:boolean`、`created_at:datetime` はすべてNULL不可とします。価格は単位を統一した整数で、小数や通貨の変換は扱いません。
 
-## この記事で学べること
-
-- `highest`と`first`が単一値を連想させる理由
-- ScopeはRelationを返す契約
-- `expensive_first`、`order_by_price_desc`等の候補
-- 単一レコードなら`highest_priced`等のメソッド
-- 同額時のtie-breaker
-- scope chainingと再利用性
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![highest_price_firstは「最高値1件」なのか「価格降順」なのか](/images/articles/active-record-scope-naming.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+## 集合と1件を、別のAPIにする
 
 ```ruby
-class Product < ApplicationRecord
-  scope :price_desc, -> { order(price: :desc) }
+class ScopedProduct < ActiveRecord::Base
+  scope :active, -> { where(active: true) }
+  scope :price_desc, -> { order(price: :desc, created_at: :desc, id: :desc) }
   scope :highest_price_first, -> { price_desc }
 
-  def self.highest_price
+  def self.highest_priced
     price_desc.first
   end
 end
 ```
 
-## 本編
+`price_desc` は並び順を追加するscopeです。旧名の `highest_price_first` は呼び出し元を移行する間の互換用として残しました。`highest_priced` は、そのRelationから1件を取り出します。
 
-### 発生した状況
+| 呼び出し | この実装の戻り値 | 対象がない場合 |
+| --- | --- | --- |
+| `ScopedProduct.price_desc` | Relation | 空のRelation |
+| `ScopedProduct.price_desc.limit(1)` | 最大1件のRelation | 空のRelation |
+| `ScopedProduct.highest_priced` | ScopedProduct | `nil` |
 
-`scope :highest_price_first, -&gt; { order(price: :desc, created_at: :desc, id: :desc) }`を読んだとき、1件を返すのか全件を並べるのか迷った。実装は正しくても、名前が戻り値の契約を曖昧にしていた。
+[scopeの公式API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Named/ClassMethods.html#method-i-scope)は、他のscopeと組み合わせられるRelationを返す意図のメソッドと説明しています。`limit(1)` は型を1件のmodelへ変えません。`first` は結果を取り出す操作です。
 
-### 当初の理解・誤解
+`expensive_first` を集合の順序として使う規約も成立します。`first` という単語を一律に禁止する必要はありません。短い名前を選ぶ場合も、1件を返す名前との対応を揃えます。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Relation全体を返すScopeは、集合と順序を表す名前にする。単一レコードを返すメソッドとは命名とAPIを分け、呼び出し側が戻り値を予測できるようにする。 という観点で見る必要がありました。
+## 同じ価格の商品を、何で並べるか
 
-### 観測したこと
-
-- 曖昧なscopeと改善後を比較
-- Relationであること、順序、同額時順序をRSpecで確認
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 具体的命名 | 長くなる／誤解が減る |
-| 短い命名 | 書きやすい／文脈依存 |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- 命名に唯一の正解はないが、戻り値と副作用を予測できることが重要
-- Scopeに`first`を含めても必ず誤りではないが、チーム規約を明示する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- 命名に唯一の正解はないが、戻り値と副作用を予測できることが重要
-- Scopeに`first`を含めても必ず誤りではないが、チーム規約を明示する
-
-## 再発防止テスト
+説明用に同額・同時刻の行を含むデータを作ります。
 
 ```ruby
-RSpec.describe "active-record-scope-naming" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+a = ScopedProduct.create!(name: 'A', price: 10, active: true, created_at: Time.utc(2026, 1, 1))
+b = ScopedProduct.create!(name: 'B', price: 30, active: true, created_at: Time.utc(2026, 1, 1))
+c = ScopedProduct.create!(name: 'C', price: 30, active: true, created_at: Time.utc(2026, 1, 2))
+d = ScopedProduct.create!(name: 'D', price: 30, active: true, created_at: Time.utc(2026, 1, 2))
+ScopedProduct.create!(name: 'E', price: 99, active: false, created_at: Time.utc(2026, 1, 2))
 
-    expect(result).to be_present
-  end
-end
+ScopedProduct.active.price_desc.pluck(:name) # => ['D', 'C', 'B', 'A']
 ```
 
-## 一般化できる設計原則
+価格が同じなら作成日時を降順にし、それも同じなら一意な `id` の降順にします。ここではDをCの後に作ったため、DのIDが大きくなります。IDが常に実世界の発生順を表すという意味ではありません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+[PostgreSQLのORDER BY](https://www.postgresql.org/docs/17/queries-order.html)では、先の式が同値の場合に次の式を使います。`price` だけで並べたときの同額行の順序へ依存しないようにします。この例はNULLを許さない前提です。NULLを許す設計では、NULLを先頭と末尾のどちらへ置くかも決めます。
 
-## まとめ
+一意なtie-breakerは、同じデータ集合の順序を決めるためのものです。ページをめくる間の追加・削除によって集合が変わる問題まで解決するわけではありません。
 
-名前はコメントではなく呼び出し側との契約であり、型と件数まで予測できる語彙を選ぶ。
+## 絞り込みと件数指定を続けられるか確認する
 
+```ruby
+relation = ScopedProduct.active.price_desc
+relation.is_a?(ActiveRecord::Relation) # => true
+!!relation.loaded? # => false
+relation.limit(2).pluck(:name) # => ['D', 'C']
+ScopedProduct.active.highest_priced.name # => 'D'
+ScopedProduct.where(name: 'missing').highest_priced # => nil
+```
 
-この記事では、次のような短絡的な一般化は避けます。
+Relationを作った時点では、まだ行を読み込んでいません。この例では `pluck` や `first` で結果を取り出します。[Relationの遅延読込と検索の説明](https://guides.rubyonrails.org/active_record_querying.html#understanding-the-method-chaining)にも対応する使い方が示されています。
 
-- 特定の名前だけを絶対正解としない
-- SQL順序に一意性がなければ結果が安定すると断定しない
+命名を変えた後のテストは、名前が呼べることだけでなく、Relationを返すこと、同額時の順序、空集合、絞り込みとの合成を対象にします。旧名を残す間は次の比較もできます。
 
-## 参考文献
+```ruby
+ScopedProduct.highest_price_first.ids == ScopedProduct.price_desc.ids # => true
+```
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+旧名の利用箇所を検索し、関連経由の呼び出しや公開APIも確認してから取り除きます。この別名は移行用であり、同じ責務の名前を恒久的に増やすためのものではありません。
+
+## orderは、既存の並び順を消さない
+
+```ruby
+by_name = ScopedProduct.active.order(name: :asc)
+by_name.price_desc.pluck(:name) # => ['A', 'B', 'C', 'D']
+by_name.reorder(price: :desc, created_at: :desc, id: :desc).pluck(:name)
+# => ['D', 'C', 'B', 'A']
+```
+
+`order` は既存の順序へ追加するため、最初の名前順が優先されます。`reorder` は既存の順序を置き換えます。[QueryMethodsのreorder](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-reorder)がこの違いを説明しています。
+
+scope内で `order` と `reorder` のどちらを使うかは、そのscopeが呼び出し元の順序を尊重するか、置き換えるかという契約です。「常に価格を最優先にする」と説明しながら `order` を追加するだけにしないよう、名前と呼び出し方の両方を確認します。
+
+## scopeの中でfirstすると、空のときの戻り値が変わる
+
+最後は避けたい例です。戻り値の違いを調べるため、同じテーブルへ別モデルを割り当てます。
+
+```ruby
+class BrokenScopeProduct < ActiveRecord::Base
+  self.table_name = 'scoped_products'
+  scope :one_product, -> { order(price: :desc, id: :desc).first }
+end
+
+BrokenScopeProduct.one_product.is_a?(BrokenScopeProduct) # => true
+BrokenScopeProduct.none.one_product.is_a?(ActiveRecord::Relation) # => true
+BrokenScopeProduct.none.one_product.to_a # => []
+```
+
+この版のscopeは、blockが `nil` や `false` を返すとRelationへフォールバックします。対象があればmodel、なければ空のRelationという不揃いな戻り値になります。scope宣言だけで戻り値の型が強制される、と解釈してはいけません。[公式APIのnil/false時の仕様](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Named/ClassMethods.html#method-i-scope)と実行結果が根拠です。
+
+1件を返したい処理は `highest_priced` のような通常のクラスメソッドに置けば、空のときに `nil` を返す契約を保てます。ここでは戻り値・順序・合成・互換名・orderの追加・nil時の挙動を8例で確認しました。命名による開発速度やDB性能の改善は測定していません。

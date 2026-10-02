@@ -1,6 +1,6 @@
 ---
-title: Gitコマンド switch と checkout の違い
-description: git switch と git checkout の違い、使い分け、内部的に起きていることを整理する。
+title: git switchとcheckoutを、ブランチ切り替えとファイル復元で使い分ける
+description: 未コミットの変更が残る場合と切り替えを拒否される場合、restoreとcheckoutがindexへ与える違いを小さな例で確かめます。
 date: 2026-06-23
 tags:
   - Git
@@ -11,274 +11,175 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/git-switch-checkout.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+ブランチを切り替えるなら`git switch`、ファイルの内容を戻すなら`git restore`と分けると、操作の対象が読み取りやすくなります。`git checkout`も使えますが、引数によってブランチ切り替えにもファイル復元にもなるため、コマンド名だけでは判断できません。
 
-`git switch` と `git checkout` はどちらもブランチ切り替えで見かけるコマンドですが、責務の広さが違います。
+ただし、`switch`なら未コミットの変更を必ず残せる、`restore`なら最後のコミットへ戻る、と覚えるのも不正確です。切り替えが拒否される条件と、復元元・復元先を分けて確認します。
 
-この記事では、単なる使い分けだけでなく、HEAD、index、working treeがどう切り替わるのかまで整理します。
+## どの操作をしたいのか
 
-## この記事で学べること
-
-- `git switch` と `git checkout` の違い
-- `git restore` が分離された理由
-- ブランチ切り替え時にHEAD、index、working treeで何が起きるか
-- 普段の作業でどのコマンドを選ぶべきか
-
-## 前提知識
-
-- Gitのブランチを使ったことがある
-- `main`、`feature` のようなブランチ名を見たことがある
-- 未コミットの変更がworking treeに残ることを知っている
-
-## 図解
-
-```mermaid
-flowchart LR
-  A[git checkout] --> B[branch switch]
-  A --> C[file restore]
-  A --> D[detach HEAD]
-  B --> E[git switch]
-  C --> F[git restore]
-```
-
-## Gitコマンド例
-
-```bash
-git switch develop
-git switch -c feature/login
-git restore app/models/user.rb
-git checkout main -- app/models/user.rb
-```
-
-## 内部動作
-
-```text
-git switch develop
-↓
-HEADの参照先をdevelopへ変更
-↓
-indexをdevelopのtreeに合わせる
-↓
-working treeをdevelopの内容に更新
-```
-
-## 本編
-
-## git switch と git checkout は何が違うのか
-
-## 結論
-
-普通にブランチを切り替えるだけなら、基本的には `git switch` を使えば問題ありません。
-
-`git checkout` は、もともとブランチの切り替えだけでなく、特定コミットへの移動やファイルの復元など、複数の役割を持っているコマンドです。
-
-一方で、`git switch` はブランチ操作に特化したコマンドです。
-
-そのため、現在は以下のように使い分けると分かりやすいです。
-
-```bash title="git commands"
-# ブランチを切り替える
-git switch <branch>
-
-# ファイルを復元する
-git restore <file>
-
-# 古い書き方・多機能コマンド
-git checkout <branch>
-```
-
-つまり、`git switch` は `git checkout` のブランチ切り替え機能を、より分かりやすく切り出したコマンドだと考えると理解しやすいです。
-
-## なぜ git switch が作られたのか
-
-`git checkout` は Git の初期から存在している古いコマンドです。
-
-一般的にはブランチを切り替えるコマンドとして知られていますが、実際にはそれ以外の用途にも使えます。
-
-例えば、以下のようにブランチを切り替えることができます。
-
-```bash
-git checkout feature/login
-```
-
-一方で、以下のようにファイルを過去の状態に戻すこともできます。
-
-```bash
-git checkout main -- app/models/user.rb
-```
-
-同じ `checkout` というコマンドなのに、以下のような複数の責務を持っています。
-
-- ブランチを切り替える
-- ファイルを復元する
-- 特定のコミットに移動する
-
-そのため、初心者にとっては「この checkout は何をしているのか」が分かりにくくなりやすいです。
-
-そこで Git 2.23 で、`git switch` と `git restore` が導入されました。
-
-役割をざっくり分けると、以下のようになります。
-
-| コマンド | 主な役割 |
-| --- | --- |
-| `git switch` | ブランチを切り替える |
-| `git restore` | ファイルを復元する |
-| `git checkout` | ブランチ切り替え・ファイル復元などを行う従来の多機能コマンド |
-
-## checkout と switch の比較
-
-| 機能 | checkout | switch |
+| 目的 | 操作例 | 注目する点 |
 | --- | --- | --- |
-| 既存ブランチに切り替える | `git checkout <branch>` | `git switch <branch>` |
-| 新しいブランチを作成して切り替える | `git checkout -b <new-branch>` | `git switch -c <new-branch>` |
-| 特定のコミットからブランチを作成して切り替える | `git checkout -b <new-branch> <commit>` | `git switch -c <new-branch> <commit>` |
-| 直前のブランチに戻る | `git checkout -` | `git switch -` |
-| detached HEAD 状態で特定コミットに移動する | `git checkout <commit>` | `git switch --detach <commit>` |
-| ファイルを特定のバージョンに戻す | `git checkout <commit> -- <file>` | できない |
-| ファイルの変更を取り消す | `git checkout -- <file>` | できない |
-| リモートブランチを元にローカルブランチを作る | `git checkout -b <branch> --track origin/<branch>` | `git switch -c <branch> --track origin/<branch>` |
+| 既存ブランチへ移る | `git switch topic` | HEADが参照するブランチを変えます |
+| 現在地から新しいブランチを作る | `git switch -c topic` | ブランチ名を作って切り替えます |
+| ブランチを動かさずコミットを見る | `git switch --detach HEAD` | HEADがコミットを直接指します |
+| ステージしていない編集を戻す | `git restore -- note.txt` | 通常はindexの内容を作業ファイルへ戻します |
+| ステージを外す | `git restore --staged -- note.txt` | 通常はHEADの内容をindexへ戻します |
 
-この表を見ると分かるように、ブランチ操作に関しては `checkout` と `switch` の多くは対応しています。
+`switch`と`restore`はGit 2.23で登場したコマンドです。従来の`checkout topic`はブランチ切り替え、`checkout topic -- note.txt`はファイル復元に当たります。[git-switch](https://git-scm.com/docs/git-switch/2.30.0)、[git-checkout](https://git-scm.com/docs/git-checkout)にそれぞれの形式が説明されています。
 
-ただし、`switch` はファイル復元には使えません。
+ここで、HEADは現在地を示す参照、indexは次のコミットへ入れる内容、working treeは実際に編集するファイルです。ブランチ切り替えではこれらが関係しますが、未コミットの変更があるときにindexとworking treeを無条件で切り替え先へ上書きするわけではありません。
 
-ファイルを戻したい場合は、`git restore` を使います。
+## 未コミットの編集があると、切り替えられないのか
 
-## git checkout とは
+以下は説明用のファイルだけを扱う再現例です。Git 2.46.0とmacOSの `/bin/bash` で実行し、記載した状態を確認しました。再現コードはGit 2.34以上を前提にしますが、その全バージョンで動作を確認したものではありません。
 
-`git checkout` は、Git の初期から存在している多機能なコマンドです。
+この記事の`bash`ブロックを上から順に一つの`example.sh`へ保存し、`/bin/bash example.sh`で実行する構成です。端末へ断片だけ貼り付けたり、`source`で読み込んだりしないでください。最初に環境を分け、新しい一時ディレクトリ内にリポジトリを作ります。既存のGit設定を変更せず、このリポジトリにだけ説明用の名前・メールアドレスと署名無効を設定します。remoteは作らず、通信もしません。
 
-主な用途は以下です。
+`expect_status`は終了コードが期待どおりか調べる関数です。`test`が失敗するとスクリプトはそこで止まります。出力の`REPO`が再現用リポジトリの場所です。
 
-- ブランチを切り替える
-- 新しいブランチを作って切り替える
-- 特定のコミットに移動する
-- ファイルを過去の状態に戻す
+```bash file=setup.sh
+set -eu
 
-例えば、ブランチを切り替える場合は以下のように使います。
+# Save all blocks as one file and run it with /bin/bash, not by sourcing it.
+if [ "${1:-}" != "--isolated" ]; then
+  exec env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true \
+    /bin/bash "$0" --isolated
+fi
 
-```bash
-git checkout develop
+demo_root=$(mktemp -d "${TMPDIR%/}/git-note.XXXXXX")
+mkdir "$demo_root/repo" "$demo_root/empty-template" "$demo_root/empty-hooks"
+cd "$demo_root/repo"
+git --version
+git init -q -b main --template="$demo_root/empty-template"
+git config --local user.name 'Git Example'
+git config --local user.email 'git-example@example.invalid'
+git config --local commit.gpgSign false
+git config --local tag.gpgSign false
+git config --local core.hooksPath "$demo_root/empty-hooks"
+git config --local core.autocrlf false
+git config --local gc.auto 0
+git config --local maintenance.auto false
+git config --local rerere.enabled false
+printf 'REPO %s\n' "$demo_root/repo"
+
+expect_status() {
+  expected_status=$1
+  shift
+  if "$@"; then actual_status=0; else actual_status=$?; fi
+  if [ "$actual_status" -ne "$expected_status" ]; then
+    printf 'Expected status %s, got %s\n' "$expected_status" "$actual_status" >&2
+    exit 1
+  fi
+}
 ```
 
-新しいブランチを作成して切り替える場合は、以下です。
+まず、`main`と`topic`で`note.txt`の内容だけを変えます。両ブランチで同じ`shared.txt`への編集は持ち越せます。一方、`main`で編集した`note.txt`は切り替え先にも別の内容があるため、この例では切り替えが拒否されます。
 
-```bash
-git checkout -b feature/login
+```bash file=switch-checkout/01-branches.sh
+printf 'base\n' > note.txt
+printf 'shared\n' > shared.txt
+git add note.txt shared.txt
+git commit -qm 'Base'
+git switch -c topic
+printf 'topic\n' > note.txt
+git commit -qam 'Change note on topic'
+git switch main
+
+printf 'local draft\n' > shared.txt
+git switch topic
+test "$(git branch --show-current)" = topic
+test "$(cat shared.txt)" = 'local draft'
+test "$(git show :shared.txt)" = shared
+git checkout main
+test "$(git branch --show-current)" = main
+test "$(cat shared.txt)" = 'local draft'
+printf 'CHECK unrelated_edit=preserved_by_switch_and_checkout\n'
+
+# Discard only the explanation's dummy edit before the next case.
+git restore -- shared.txt
+printf 'local note\n' > note.txt
+expect_status 1 git switch topic
+test "$(git branch --show-current)" = main
+test "$(cat note.txt)" = 'local note'
+test "$(git show :note.txt)" = base
+printf 'CHECK overlapping_edit=refused_and_preserved\n'
+git restore -- note.txt
 ```
 
-また、ファイルを特定のブランチやコミットの状態に戻すこともできます。
+前半の期待値は、切り替え後も作業ファイルに`local draft`が残り、indexの内容は`shared`のままであることです。`switch`だけでなく、ブランチ切り替えとしての`checkout`も確認しています。
 
-```bash
-git checkout main -- app/models/user.rb
+後半は、`git switch topic`が終了コード1で止まり、現在のブランチが`main`、作業ファイルが`local note`のままであることを調べます。「未コミットだからすべて拒否」でも「切り替え先へ編集が必ず引き継がれる」でもありません。通常の切り替えではローカルの変更を失う操作を拒否する、と[公式の説明](https://git-scm.com/docs/git-switch/2.30.0#_description)から判断できます。
+
+実作業で拒否されたら、`git status`、`git diff`、`git diff --cached`で変更先を確認し、コミットするか一時退避するかを選びます。`--discard-changes`は編集を捨てる指定なので、切り替えエラーを消すためだけに付けないようにします。例中の`restore`は説明用の編集を意図的に捨てる操作です。
+
+## restoreは何をどこへ戻すのか
+
+`note.txt`のHEADを`base`、indexを`staged`、working treeを`unstaged`にして、復元先を見ます。[git-restore](https://git-scm.com/docs/git-restore/2.30.0)では、指定を省いた場合の復元元はindex、`--staged`を付けた場合はHEADと定義されています。
+
+```bash file=switch-checkout/02-restore.sh
+printf 'staged\n' > note.txt
+git add note.txt
+printf 'unstaged\n' > note.txt
+git restore -- note.txt
+test "$(cat note.txt)" = staged
+test "$(git show :note.txt)" = staged
+test "$(git show HEAD:note.txt)" = base
+printf 'CHECK restore_default=index_to_worktree\n'
+
+git restore --staged -- note.txt
+test "$(git show :note.txt)" = base
+test "$(cat note.txt)" = staged
+printf 'CHECK restore_staged=head_to_index_only\n'
+
+git restore --source=topic -- note.txt
+test "$(cat note.txt)" = topic
+test "$(git show :note.txt)" = base
+printf 'CHECK restore_source=worktree_only\n'
+
+git checkout topic -- note.txt
+test "$(cat note.txt)" = topic
+test "$(git show :note.txt)" = topic
+test "$(git branch --show-current)" = main
+printf 'CHECK checkout_path=index_and_worktree_branch_unchanged\n'
+
+git restore --source=HEAD --staged --worktree -- note.txt
+test -z "$(git status --porcelain)"
 ```
 
-このように `checkout` は便利ですが、複数の責務を持っているため、何をしているのかがコマンド名だけでは分かりにくいという問題があります。
+この例で確認する状態は次のとおりです。すべての行でHEADは`main`を参照し続けます。
 
-## git switch とは
+| 実行した操作 | indexのnote.txt | working treeのnote.txt |
+| --- | --- | --- |
+| `git restore -- note.txt` | staged | staged |
+| `git restore --staged -- note.txt` | base | staged |
+| `git restore --source=topic -- note.txt` | base | topic |
+| `git checkout topic -- note.txt` | topic | topic |
 
-`git switch` は、Git 2.23 で導入されたブランチ操作用のコマンドです。
+特に最後の2つは同じではありません。`checkout topic -- note.txt`は指定した内容をindexにも入れます。これに対応させるなら、復元元にそのファイルが存在するこの例では`git restore --source=topic --staged --worktree -- note.txt`です。[checkoutのパス指定](https://git-scm.com/docs/git-checkout#_description)を読む際は、ブランチを移動したと思い込まず、ステージの変化も確認します。
 
-主な用途は以下です。
+なお、復元元にないファイルの扱いまで両者が常に同じとは限りません。`restore`は復元元に合わせて追跡ファイルを削除する一方、`checkout`のパス復元は既定でoverlay動作です。上の対応は、双方に存在する`note.txt`に限定しています。
 
-- 既存ブランチに切り替える
-- 新しいブランチを作成して切り替える
-- 特定のコミットからブランチを作成する
-- detached HEAD 状態で特定コミットに移動する
+## detached HEADでの確認をブランチに残すには
 
-例えば、既存ブランチに切り替える場合は以下です。
+ブランチを進めずにあるコミットを確認したい場合は、`--detach`を使います。HEADがブランチ名を経由せずコミットを指す状態です。そこでの作業を残すなら、別の場所へ移る前にブランチ名を付けられます。[detached HEADの説明](https://git-scm.com/docs/git-checkout#_detached_head)を参照してください。
 
-```bash
-git switch develop
+```bash file=switch-checkout/03-detach.sh
+git switch --detach HEAD
+expect_status 1 git symbolic-ref -q HEAD
+test "$(git rev-parse HEAD)" = "$(git rev-parse main)"
+git switch -c inspection
+test "$(git branch --show-current)" = inspection
+test "$(git rev-parse inspection)" = "$(git rev-parse main)"
+printf 'CHECK detached_head=new_branch_can_name_current_commit\n'
 ```
 
-新しいブランチを作成して切り替える場合は、以下です。
+この例では新しいコミットを作らず、同じコミットへ`inspection`というブランチ名を付けます。`switch`は移動先、`restore`は復元元と復元先、`checkout`はどちらの形式なのかを読むと、操作後の状態を予測しやすくなります。
 
-```bash
-git switch -c feature/login
-```
-
-特定のコミットから新しいブランチを作ることもできます。
-
-```bash
-git switch -c fix/login-bug 1234567
-```
-
-また、ブランチを作らずに特定のコミットを確認したい場合は、`--detach` を使います。
-
-```bash
-git switch --detach 1234567
-```
-
-`git switch` はブランチ操作に特化しているため、`checkout` よりも意図が明確です。
-
-ブランチを切り替えるなら `switch`、ファイルを戻すなら `restore`、という形で考えると分かりやすいです。
-
-## 内部的には何が起きているのか
-
-ブランチを切り替えると、Git は大きく以下のような処理を行います。
-
-- `HEAD` の参照先を切り替える
-- index を切り替え先ブランチの状態に合わせる
-- working tree のファイルを切り替え先ブランチの状態に合わせる
-
-つまり、ブランチを切り替えると、単に「今いるブランチ名」が変わるだけではありません。
-
-作業ディレクトリ上のファイルも、切り替え先ブランチの内容に合わせて更新されます。
-
-ただし、未コミットの変更があり、その変更が切り替え先ブランチの内容と衝突する可能性がある場合、Git はブランチ切り替えを止めることがあります。
-
-これは、作業中の変更を誤って失わないようにするためです。
-
-## どちらを使えばいいのか
-
-基本的には、以下の使い分けでよいと思います。
-
-```bash title="recommended usage"
-# ブランチを切り替える
-git switch <branch>
-
-# 新しいブランチを作って切り替える
-git switch -c <new-branch>
-
-# ファイルを戻す
-git restore <file>
-```
-
-逆に、以下のような古い記事や既存プロジェクトでは、まだ `checkout` が使われていることも多いです。
-
-```bash
-git checkout develop
-git checkout -b feature/login
-git checkout -- app/models/user.rb
-```
-
-そのため、`checkout` を完全に覚えなくてよいわけではありません。
-
-ただ、自分が普段使うコマンドとしては、ブランチ操作には `switch`、ファイル復元には `restore` を使う方が、意図が明確で分かりやすいです。
-
-## まとめ
-
-`git checkout` は、ブランチ切り替えやファイル復元など複数の役割を持った多機能コマンドです。
-
-一方で、`git switch` はブランチ操作に特化したコマンドです。
-
-そのため、現在は以下のように考えると分かりやすいです。
-
-```text
-git checkout = 従来の多機能コマンド
-git switch   = ブランチ操作用
-git restore  = ファイル復元用
-```
-
-つまり、`git switch` は `git checkout` のブランチ切り替え機能を、より分かりやすく扱えるようにしたコマンドです。
-
-今後、自分でコマンドを打つときは、ブランチ操作なら `git switch` を使っていこうと思います。
-
-## 参考文献
-
-- [Git Documentation: git-switch](https://git-scm.com/docs/git-switch)
-- [Git Documentation: git-checkout](https://git-scm.com/docs/git-checkout)
-- [Git Documentation: git-restore](https://git-scm.com/docs/git-restore)
+履歴を取り込む操作との違いは、[PRのマージ方式](/tech-note/articles/github/pull-request/merge-methods/)で扱います。

@@ -1,6 +1,6 @@
 ---
-title: Ubuntu + Wine上のMT5にPython APIで接続するときに詰まったこと
-description: MetaTrader5 package、initialize失敗、terminal path、Linux PythonとWine内Windows Pythonの境界を整理し、MT5 API連携の切り分け方をまとめる。
+title: MT5のPython連携は、配布物とterminal接続をどう切り分けるか
+description: MetaTrader5のWindows向け配布物、Wine構成の未確認範囲、initialize・login・shutdownの役割を分け、接続前にそろえる条件を整理します。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -15,185 +15,85 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-python-api.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+MT5の画面が表示できても、LinuxのPythonからそのまま接続できるとは限りません。先に「どのPythonでパッケージを読み込むか」と「どのterminalへ接続するか」を分けます。
 
-MT5 API連携で詰まると、Pythonコードだけを疑いたくなります。
+MetaTrader5のPython連携は、terminalとのプロセス間通信を使います。通常のHTTPクライアントのように、接続先URLだけを指定してOSの差を吸収する仕組みとは異なります。[Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
 
-しかしUbuntu + Wine構成では、Pythonコード以前に、Pythonがどこで動いているか、MT5 terminalがどこで動いているか、両者が同じterminalを見ているかが重要です。
+以下は公式資料と配布ファイルに基づく整理です。Wine上のWindows Python、MT5への接続、口座へのログインは実行していません。
 
-この記事では、MetaTrader5 packageと`initialize()`の前提、Linux native Pythonで断定してはいけない点、bridge構成の候補を整理します。
+## LinuxのPythonに、同じパッケージを入れれば使えますか
 
-## この記事で学べること
+まず、Pythonの版だけでなく、OS・実装・ABI・アーキテクチャを配布物と照合します。確認例としてMetaTrader5 5.0.6231には、次のwheelがあります。
 
-- MT5 Python APIがterminalに接続する前提
-- `initialize()`で詰まりやすい原因
-- Wine内Windows Python、Linux bot + worker bridge、MQL5 EA bridgeの違い
-- 注文処理前に確認する項目
-- 金融系コードを記事に出すときの注意
+`metatrader5-5.0.6231-cp312-cp312-win_amd64.whl`
 
-## 前提知識
+この版の公開ファイル一覧はWindows x86-64向けのwheelで構成され、Linux向けwheelは掲載されていません。これは5.0.6231の配布状態の確認であり、将来の版まで同じだという主張ではありません。[5.0.6231の配布ファイル](https://pypi.org/project/metatrader5/5.0.6231/#files)
 
-- MQL5公式ドキュメントでは、Python integrationとして`initialize`、`login`、`shutdown`、`terminal_info`、`copy_rates_*`、`order_send`などが整理されている
-- PyPIのMetaTrader5 packageは、2026-06-28時点の最新ファイルでは`win_amd64` wheelとして配布されている
-- そのため、Ubuntu native Pythonから公式packageがそのまま動くと断定しない
+| ファイル名の部分 | この例で表す条件 |
+|---|---|
+| 最初の`cp312` | CPython 3.12 |
+| 次の`cp312` | CPython 3.12のABI |
+| `win_amd64` | Windows x86-64 |
 
-## 本編
+wheelにはPython・ABI・platformの互換性タグがあります。「Python 3.12を使っている」という一致だけでは、Windows向けwheelとLinuxのPythonが適合することにはなりません。[Python Packagingの互換性タグ仕様](https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/)
 
-### Python APIでやりたいこと
+MetaQuotesのPython連携ガイドもWindows向けPythonを使う例を載せています。ただし、そこにある古いPythonの版を、現在選ぶべき版だとは読みません。採用するMetaTrader5の版について、実際の配布ファイルを確認します。[公式のPython連携手順](https://www.mql5.com/en/docs/python_metatrader5)
 
-MT5 API連携でやりたいことは、たとえば次です。
+## WineでWindows Pythonを動かせば、公式対応と考えてよいですか
 
-- terminal接続
-- account info取得
-- symbol情報取得
-- tick / bar取得
-- position確認
-- order requestのdry-runまたはdemo accountでの検証
+MetaQuotesは、LinuxへのMT5導入についてWineを利用する手順を案内しています。一方、その案内はWine上のWindows PythonとMetaTrader5パッケージを組み合わせた接続結果まで示すものではありません。[Linuxへの導入ガイド](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-ただし、注文APIを扱う場合は特に注意が必要です。この記事では収益性や売買判断は扱わず、技術的な接続境界だけを扱います。
+この2つを分けると、構成ごとの追加確認が見えてきます。
 
-### `initialize()`で詰まりやすい理由
+| 構成 | 資料から判断できる範囲と、残る確認 |
+|---|---|
+| Windows上のPythonとterminal | 公式Python連携手順の構成です。選んだ版・配布物・接続先の適合は別途確認します |
+| Wine上のWindows Pythonとterminal | Windows向け配布物を使う構成案です。Wineの版、CPU、prefix、terminalとの通信は、この組み合わせでの確認が必要です |
+| Linux Pythonから別プロセスへ中継 | 中継部分を別に設計する構成です。公式パッケージのインストールだけで、その通信路が提供されるわけではありません |
 
-`initialize()`は、MetaTrader 5 terminalとの接続を確立する関数です。公式ドキュメントでは、pathを指定してterminal executableへ接続する呼び出しも説明されています。
+中継を追加すると、要求のタイムアウトや接続断、応答を受け取れなかった場合の扱いも設計対象になります。この記事では中継プログラムを実装していません。
 
-Ubuntu + Wine構成で失敗する場合、原因候補は次です。
+Wine prefixは、Wineが扱う設定やファイルのまとまりです。Pythonとterminalについて同じprefixを意図したとしても、それだけを通信成功の証拠にはできません。prefixと実行ファイルの対応は、[WineとMT5の導入](/tech-note/articles/linux/mt5-ubuntu/04-wine-mt5-installation/)で整理しています。
 
-- MT5 terminalが起動していない
-- terminal pathが違う
-- login済みではない
-- broker serverが違う
-- PythonがMT5 terminalと同じ環境にいない
-- Wine prefixが違う
-- DISPLAYがない
+## initializeは、何を開始する関数ですか
 
-### 構成候補A: Wine内Windows Python
+`initialize()`はterminalへの接続を確立し、必要であればterminalも起動します。実行ファイルを指定する場合、公式仕様の`path`は先頭の無名引数です。呼び出しの形は`initialize(terminal_path)`であり、`path=`というキーワード引数として説明しません。[initializeの引数と動作](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
 
-```text
-Ubuntu
-  └─ Wine
-      ├─ MT5 terminal64.exe
-      └─ Windows Python
-          └─ MetaTrader5 package
-```
+引数を省略するとterminalの自動探索が行われます。また、接続情報を省略した場合には、直前の口座やterminalに保存された情報が使われることがあります。このため、`initialize()`を「設定も接続状態も変えない診断」として無条件に実行することはできません。同じ公式ページで、省略時の動作も確認します。
 
-メリットは、MT5 terminalとPython packageが同じWindows/Wine側にいるため、公式packageの前提と合わせやすいことです。
+関数の責務は次のように分かれます。これはAPIの説明であり、実行順を並べた接続スクリプトではありません。
 
-デメリットは、Linux側のbot運用と分離しづらく、venv、logging、deployが複雑になりやすいことです。
+| 関数 | 公式仕様で扱う対象 |
+|---|---|
+| `initialize()` | terminalへの接続。必要に応じてterminalを起動 |
+| `login()` | 指定した口座への接続 |
+| `shutdown()` | 確立したPython連携の接続を閉じる |
 
-### 構成候補B: Linux bot + Wine内worker bridge
+`login()`はterminalの起動確認とは別の操作です。また、`shutdown()`の説明は接続を閉じることであり、terminalプロセスの終了を保証するAPIとしては扱いません。[login](https://www.mql5.com/en/docs/python_metatrader5/mt5login_py)、[shutdown](https://www.mql5.com/en/docs/python_metatrader5/mt5shutdown_py)
 
-```text
-Linux Python bot
-↓ REST / RPC / socket / file queue
-Wine内Windows Python worker
-↓ MetaTrader5 package
-MT5 terminal64.exe
-```
+## 接続できないとき、どの境界から調べますか
 
-メリットは、bot本体をLinux側で運用し、MT5依存部分だけをworkerに閉じ込められることです。
+「APIが使えない」を一つの原因へ決めず、失敗が分かった段階を切り出します。
 
-デメリットは、bridge実装、retry、timeout、idempotency、ログ設計が必要になることです。
+| 分かったこと | 次に照合する条件 | まだ結論できないこと |
+|---|---|---|
+| 適合する配布物が見つからない | パッケージの版、Pythonタグ、ABI、platform | terminalや表示先の異常 |
+| パッケージの読み込みに失敗した | 実行したPythonと、その環境に入れた配布物 | terminalへの接続可否 |
+| `initialize()`が失敗した | 接続先の選択、起動条件、関数の結果とエラー | 単一の原因や表示経路の故障 |
+| 接続できたが後続関数が失敗した | 失敗した関数の契約と、その時点の状態 | すべてを初期接続の問題として扱うこと |
 
-### 構成候補C: MQL5 EA bridge
+`last_error()`はPythonライブラリの直近のエラーコードと説明を返し、独自のコード体系を使います。たとえばIPCのタイムアウトという結果だけでは、prefix、表示先、対象プロセスのどれが原因かまでは確定しません。結果を残す場合は、失敗した関数と結び付けます。[last_errorの仕様とコード一覧](https://www.mql5.com/en/docs/python_metatrader5/mt5lasterror_py)
 
-```text
-Linux Python bot
-↓ socket / HTTP / file
-MQL5 EA
-↓
-MT5
-```
+記録には、説明用の接続先ID、選んだ版、呼び出した関数、結果、発生時点があれば切り分けの入口になります。口座情報全体や保存済みの接続情報を、そのまま記事や共有ログに貼る必要はありません。
 
-メリットは、Python packageのOS問題を回避しやすく、MT5 terminal側の制御をEAに寄せられることです。
+## サービス化の前に、何を決めておきますか
 
-デメリットは、MQL5実装が必要になり、PythonとEAにロジックが分散することです。
+terminalを独立したサービスが起動するのか、Python側の接続処理による起動を許すのかを先に決めます。両方が無条件に起動・再起動すると、どちらが対象プロセスを管理するのかが曖昧になります。
 
-### 注文処理前に確認すること
+そのうえで、実行ユーザー、Wine prefix、Windows側から見た実行ファイル、Pythonの環境、選んだ表示経路を一組として記録します。GUI表示だけを確認した構成に、API接続済みという印を付けないことも必要です。
 
-注文処理はdemo accountまたはdry-run前提で検証します。
-
-確認すべき項目は次です。
-
-- `symbol_select()`で対象symbolを選択できるか
-- volume / lot stepがbroker仕様に合っているか
-- filling modeが合っているか
-- trade allowedか
-- market openか
-- marginが足りているか
-- `order_send()`のretcodeを必ず確認しているか
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["Linux bot"] --> B{"MT5 API boundary"}
-  B --> C["Wine Windows Python"]
-  B --> D["worker bridge"]
-  B --> E["MQL5 EA bridge"]
-  C --> F["MetaTrader5 package"]
-  D --> F
-  E --> G["MT5 terminal"]
-  F --> G
-```
-
-## CLI・設定例
-
-まずは接続確認だけに絞ります。実口座の認証情報はコードに書きません。
-
-```python
-import MetaTrader5 as mt5
-
-terminal_path = "TODO: masked terminal64.exe path"
-
-if not mt5.initialize(path=terminal_path):
-    print("initialize failed", mt5.last_error())
-    raise SystemExit(1)
-
-print(mt5.terminal_info())
-print(mt5.account_info())
-
-mt5.shutdown()
-```
-
-PyPIの配布ファイルも確認します。
-
-```bash
-$ python -m pip index versions MetaTrader5
-$ python -m pip debug --verbose
-```
-
-Linux側Pythonでpackageが見つからない場合、OSやPython versionだけでなく、配布wheelのplatform tagを確認します。
-
-## 内部動作
-
-MT5 API連携は、単なるHTTP APIではありません。
-
-```text
-Python process
-↓
-MetaTrader5 package
-↓
-MetaTrader 5 terminal process
-↓
-terminal login / symbol / account state
-↓
-broker connection
-```
-
-Pythonがどこで動いているかと、terminalがどこで動いているかがズレると、接続できても期待したterminalではない、またはそもそも`initialize()`できない状態になります。
-
-## まとめ
-
-- MT5 API連携では、Pythonコードより実行環境の境界が重要。
-- Ubuntu native Pythonから公式MetaTrader5 packageが必ず動くとは断定しない。
-- Wine内Windows Python、Linux bot + worker bridge、MQL5 EA bridgeを候補として比較する。
-- 注文APIを扱う場合はdemo account / dry-run前提にし、retcodeを必ず見る。
-
-## 参考文献
-
-- [MQL5 Reference: Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
-- [MQL5 Reference: initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
-- [PyPI: MetaTrader5](https://pypi.org/project/MetaTrader5/)
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
+起動の担当と接続確認をサービスへ落とし込む話は、[systemdでの管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation/)へ進みます。接続成功を確認したとしても、それはその条件での接続結果であり、継続稼働や後続処理の成功まで含みません。

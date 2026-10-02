@@ -42,6 +42,17 @@ describe("articles", () => {
     ]);
   });
 
+  it("keeps code and identifier characters in table-of-contents anchors", () => {
+    assert.deepEqual(extractHeadings(
+      "## query_parametersとparams\n## `to_unsafe_h`と**許可**\n## `to_unsafe_h`と**許可**\n### _強調_ と`a*b`",
+    ), [
+      { id: "query_parametersとparams", text: "query_parametersとparams", depth: 2 },
+      { id: "to_unsafe_hと許可", text: "to_unsafe_hと許可", depth: 2 },
+      { id: "to_unsafe_hと許可-1", text: "to_unsafe_hと許可", depth: 2 },
+      { id: "強調-とab", text: "強調 とa*b", depth: 3 },
+    ]);
+  });
+
   it("scores related articles by category, tags, and series", () => {
     const source = getAllArticles().find((article) => article.slug === "rails/sql/insert-select");
 

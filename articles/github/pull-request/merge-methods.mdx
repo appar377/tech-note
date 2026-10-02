@@ -1,6 +1,6 @@
 ---
-title: PRのマージ方法を理解しよう
-description: GitHubのCreate a merge commit、Squash merge、Rebase and mergeの違いと履歴の残り方を整理する。
+title: GitHubのマージ方式を、残したい履歴から選ぶ
+description: Create a merge commit、Squash and merge、Rebase and mergeで残るコミットと祖先関係を比較し、GitHub側の制約とローカル実験の範囲を分けます。
 date: 2026-06-26
 tags:
   - Git
@@ -12,224 +12,181 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/github-pr-merge-methods.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+PRを取り込んだ後、元のコミットをそのままたどりたいのか、PR全体を一つの変更として残したいのか、整理済みのコミットを直線状に並べたいのか。その目的によって、GitHubのマージ方式を選べます。
 
-GitHubのPull Requestには、Create a merge commit、Squash merge、Rebase and mergeという複数のマージ方法があります。
+最終的なファイルが同じでも、mainからたどれる履歴は同じになりません。ここでは、通常の非空コミット2つを持つPRを例に、履歴の違いと、GitHubで選択できる条件を分けて整理します。
 
-この記事では、ボタン名の違いだけでなく、mainブランチの履歴にどのようなコミットグラフが残るのかを基準に整理します。
+## 3つの方式は、何を履歴に残すのか
 
-## この記事で学べること
+2026年10月2日に確認したGitHubの英語版ドキュメントでは、選択肢は`Create a merge commit`、`Squash and merge`、`Rebase and merge`です。通常のマージでは、実行ボタンは`Merge pull request`と表記される場合があります。[GitHubのマージ手順](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request#merging-a-pull-request)
 
-- 3種類のPRマージ方法の違い
-- Merge Commitが残る場合と残らない場合
-- Squash Mergeでコミットが1つにまとめられる仕組み
-- チーム開発でどのマージ方法を選ぶべきか
+| 方式 | baseブランチ側へ残るもの | 元のコミットとの関係 |
+| --- | --- | --- |
+| Create a merge commit | マージコミットと、元のコミットへ続く経路 | 元のコミットをそのままたどれます |
+| Squash and merge | PRの変更をまとめた1コミット | 元のコミット群を祖先として結ぶ方式ではありません |
+| Rebase and merge | 個々の変更を載せ替えたコミット列 | GitHubでは新しいSHAになります |
 
-## 前提知識
+通常のマージは`--no-ff`相当で、取り込みの節目となるマージコミットを作ります。squashはPRの変更をまとめ、rebaseはマージコミットを作らずに取り込みます。[GitHubの方式比較](https://docs.github.com/en/pull-requests/reference/pull-request-merges)
 
-- GitHub Pull Requestを使ったことがある
-- Gitのコミットとブランチの概念を知っている
-- `main` と `feature` のような開発ブランチ運用を知っている
+「squashで履歴が消える」は、baseブランチからたどれる途中のコミットが残らない、という意味で読む必要があります。この操作だけで元ブランチ上のコミットやPRの記録がすべて即座に削除される、という意味ではありません。
 
-## 図解
+## 同じ変更をローカルで3通りに取り込む
 
-```mermaid
-flowchart TD
-  A[Pull Request] --> B[Create a merge commit]
-  A --> C[Squash merge]
-  A --> D[Rebase and merge]
-  B --> E[branch history remains]
-  C --> F[one new commit]
-  D --> G[linear history with copied commits]
+以下はGitの履歴を比べるための実験です。GitHubのPR、レビュー、CI、署名、マージキューは再現しません。各方式を、同じ`main`から作った別のブランチで比較します。
+
+以下は説明用のファイルだけを扱う再現例です。Git 2.46.0とmacOSの `/bin/bash` で実行し、記載した状態を確認しました。再現コードはGit 2.34以上を前提にしますが、その全バージョンで動作を確認したものではありません。
+
+この記事の`bash`ブロックを上から順に一つの`example.sh`へ保存し、`/bin/bash example.sh`で実行する構成です。端末へ断片だけ貼り付けたり、`source`で読み込んだりしないでください。最初に環境を分け、新しい一時ディレクトリ内にリポジトリを作ります。既存のGit設定を変更せず、このリポジトリにだけ説明用の名前・メールアドレスと署名無効を設定します。remoteは作らず、通信もしません。
+
+`expect_status`は終了コードが期待どおりか調べる関数です。`test`が失敗するとスクリプトはそこで止まります。出力の`REPO`が再現用リポジトリの場所です。
+
+```bash file=setup.sh
+set -eu
+
+# Save all blocks as one file and run it with /bin/bash, not by sourcing it.
+if [ "${1:-}" != "--isolated" ]; then
+  exec env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true \
+    /bin/bash "$0" --isolated
+fi
+
+demo_root=$(mktemp -d "${TMPDIR%/}/git-note.XXXXXX")
+mkdir "$demo_root/repo" "$demo_root/empty-template" "$demo_root/empty-hooks"
+cd "$demo_root/repo"
+git --version
+git init -q -b main --template="$demo_root/empty-template"
+git config --local user.name 'Git Example'
+git config --local user.email 'git-example@example.invalid'
+git config --local commit.gpgSign false
+git config --local tag.gpgSign false
+git config --local core.hooksPath "$demo_root/empty-hooks"
+git config --local core.autocrlf false
+git config --local gc.auto 0
+git config --local maintenance.auto false
+git config --local rerere.enabled false
+printf 'REPO %s\n' "$demo_root/repo"
+
+expect_status() {
+  expected_status=$1
+  shift
+  if "$@"; then actual_status=0; else actual_status=$?; fi
+  if [ "$actual_status" -ne "$expected_status" ]; then
+    printf 'Expected status %s, got %s\n' "$expected_status" "$actual_status" >&2
+    exit 1
+  fi
+}
 ```
 
-## Gitコマンド例
+`feature`に`D`と`E`を作り、その間に`main`を別ファイルの変更`C`で進めます。rebaseで載せ替えが必要になるよう、意図的に分岐させています。
 
-```bash
-git merge --no-ff feature
-git merge --squash feature
-git rebase main
+```bash file=merge-methods/01-history.sh
+printf 'base\n' > base.txt
+git add base.txt
+git commit -qm 'A'
+git tag base
+git switch -c feature
+printf 'first change\n' > first.txt
+git add first.txt
+git commit -qm 'D'
+printf 'second change\n' > second.txt
+git add second.txt
+git commit -qm 'E'
+git tag original-feature
+git switch main
+printf 'base branch work\n' > base-extra.txt
+git add base-extra.txt
+git commit -qm 'C'
+git branch method-merge main
+git branch method-squash main
+git branch method-rebase main
 ```
 
-## 内部動作
+`method-merge`では2つの履歴をつなぎます。先端コミットの親が2つあることと、元の`feature`先端へたどれることを確認します。
 
-```text
-Pull Request
-↓
-GitHubが選択されたマージ方式に応じてGit操作を実行
-↓
-mainにmerge commitまたは新しいcommit群を作成
-↓
-履歴の形が変わる
+```bash file=merge-methods/02-merge.sh
+git switch method-merge
+git merge -s ort --no-ff -m 'M' feature
+set -- $(git show -s --format=%P HEAD)
+test "$#" -eq 2
+git merge-base --is-ancestor original-feature HEAD
+test "$(git rev-list --count main..HEAD)" = 3
+test "$(git rev-list --first-parent --count main..HEAD)" = 1
+printf 'CHECK merge=parents_2_original_reachable_added_reachable_commits_3\n'
 ```
 
-## 本編
+`method-squash`では、マージ結果を準備してから1コミットにします。ローカルの`git merge --squash`だけではコミットしないため、`git commit`も必要です。[git-merge](https://git-scm.com/docs/git-merge/2.34.0#Documentation/git-merge.txt---squash)
 
-GitHubでPull Requestをマージするとき、何となくデフォルトのボタンを押していませんか？
-
-実はGitHubには次の3種類のマージ方法があります。
-
-- Create a merge commit
-- Squash merge
-- Rebase and merge
-
-それぞれ履歴の残り方が異なるため、特徴を理解して使い分けることが重要です。
-
-## 1. Create a merge commit
-
-最も一般的なマージ方法です。
-
-GitHubではデフォルトで有効になっていることが多く、普段意識せずにマージしている方もこの方法を利用していると思います。
-
-例えば次のような履歴があるとします。
-
-```text
-main
-
-A → B → C
-
-feature
-
-      D → E → F
+```bash file=merge-methods/03-squash.sh
+git switch method-squash
+git merge -s ort --squash feature
+git commit -qm 'S'
+set -- $(git show -s --format=%P HEAD)
+test "$#" -eq 1
+expect_status 1 git merge-base --is-ancestor original-feature HEAD
+test "$(git rev-list --count main..HEAD)" = 1
+git diff --quiet method-merge method-squash
+printf 'CHECK squash=parents_1_original_not_reachable_added_reachable_commits_1\n'
 ```
 
-この状態で **Create a merge commit** を行うと、以下のようになります。
+`method-rebase`では、元の`feature`を残したコピーを`main`へ載せ替え、その結果へfast-forwardします。最後には、比較用に「すでに祖先であるコミットへ向けた、何も載せ替えないローカルrebase」も確認します。
 
-```text
-A → B → C -------- M
-         \        /
-          D → E → F
+```bash file=merge-methods/04-rebase.sh
+git switch -c rebased-feature feature
+git rebase --merge -s ort --no-fork-point main
+git switch method-rebase
+git merge --ff-only rebased-feature
+set -- $(git show -s --format=%P HEAD)
+test "$#" -eq 1
+expect_status 1 git merge-base --is-ancestor original-feature HEAD
+test "$(git rev-list --count main..HEAD)" = 2
+test "$(git rev-list --first-parent --count main..HEAD)" = 2
+git diff --quiet method-merge method-rebase
+test "$(git rev-parse feature)" = "$(git rev-parse original-feature)"
+printf 'CHECK rebase=parents_1_original_not_reachable_added_reachable_commits_2\n'
+printf 'CHECK all_methods=same_final_tree\n'
+
+# A local no-op rebase is not GitHub's Rebase and merge implementation.
+git switch -c unchanged feature
+before_rebase=$(git rev-parse HEAD)
+git rebase --merge -s ort --no-fork-point base
+test "$(git rev-parse HEAD)" = "$before_rebase"
+printf 'CHECK local_rebase_onto_existing_ancestor=sha_unchanged\n'
 ```
 
-`M` がマージコミットです。
+この実験で確認した結果は次のとおりです。「増える数」は、操作前の`main`からはたどれなかったコミットの数で、新しく作成したコミット数とは異なります。
 
-### メリット
-
-- ブランチの分岐・マージの履歴がそのまま残る
-- 開発の流れを後から追いやすい
-- コミット単位で詳細な調査ができる
-
-### デメリット
-
-- Merge Commitが増える
-- 長期間運用すると履歴が複雑になりやすい
-
-## 2. Squash merge
-
-Squash Mergeは、PR内の複数コミットを **1つのコミットにまとめて** マージします。
-
-例えば以下のような履歴があるとします。
-
-```text
-feature
-
-D → E → F
-
-main
-
-A → B → C
-```
-
-これをSquash Mergeすると、以下のようになります。
-
-```text
-A → B → C → S
-```
-
-`S` は以下を1つにまとめた新しいコミットです。
-
-```text
-D + E + F
-```
-
-featureブランチ上にあった以下のコミット履歴は、mainブランチには残りません。
-
-- D
-- E
-- F
-
-### メリット
-
-- コミット履歴が非常にきれいになる
-- 「1PR = 1コミット」とできる
-- revertしやすい
-
-### デメリット
-
-- 作業途中のコミット履歴が失われる
-- 「どのコミットで不具合が入ったか」を追いにくくなる
-- `git bisect` が使いづらくなるケースもある
-
-Squash Mergeについては賛否両論があり、有名な記事として [No reason to squash](https://arialdomartini.github.io/no-reason-to-squash) があります。
-
-## 3. Rebase and merge
-
-Rebase Mergeは、**コミット履歴を維持したまま一直線の履歴にする** マージ方法です。
-
-例えば以下のような履歴があるとします。
-
-```text
-main
-
-A → B → C
-
-feature
-
-      D → E → F
-```
-
-これをRebase Mergeすると、以下のようになります。
-
-```text
-A → B → C → D' → E' → F'
-```
-
-見た目はそのままですが、実際には以下のような新しいコミットが作られます。
-
-- D'
-- E'
-- F'
-
-そのためコミットハッシュは変更されます。
-
-### メリット
-
-- 履歴が一直線になる
-- Merge Commitが作られない
-- `git log` が見やすい
-
-### デメリット
-
-- コミットハッシュが変わる
-- 公開済みブランチではリベースを避けるべきケースがある
-- Git初心者には少し理解が難しい
-
-## どれを使えばいいの？
-
-絶対的な正解はありません。
-
-チームの運用方針に合わせて選ぶのが一般的です。
-
-| マージ方法 | 履歴 | Merge Commit | コミット履歴 |
+| 比較ブランチ | 先端の親の数 | 元のEは祖先か | mainからたどれるコミットが増える数 |
 | --- | --- | --- | --- |
-| Create a merge commit | 分岐が残る | ○ | 全て残る |
-| Squash merge | 一直線 | × | 1つにまとまる |
-| Rebase and merge | 一直線 | × | 全て残る |
+| method-merge | 2 | はい | 3：D、E、M |
+| method-squash | 1 | いいえ | 1：S |
+| method-rebase | 1 | いいえ | 2：D′、E′ |
 
-## まとめ
+3つの先端のファイル内容が同じであることを、`git diff --quiet`でも照合しました。マージコミットだけを数えるのか、全親をたどるのかによって数え方が変わるため、通常のmergeでは`--first-parent`を使った件数も比較しています。
 
-それぞれのマージ方法には次のような特徴があります。
+## ローカルのrebaseをGitHubの動作と同一視してよいか
 
-- **Create a merge commit**: 開発の履歴をそのまま残したい場合に向いている
-- **Squash merge**: 履歴をシンプルに保ちたい場合に向いている
-- **Rebase and merge**: 履歴を一直線にしつつ、コミットも残したい場合に向いている
+上のコードの最後では、ローカルrebaseの前後でSHAが変わらないことを期待しています。載せ替えが不要なら、そのまま終わる場合があるからです。
 
-普段は何気なくマージボタンを押しているかもしれませんが、それぞれの違いを理解しておくと、チームの開発スタイルや運用方針に合わせて適切に使い分けられるようになります。
+一方、GitHubの`Rebase and merge`はcommitter情報を更新し、新しいSHAを作ると明記されています。また、最初から空だったコミットを落とす点も、通常のローカルrebaseの既定動作とは異なります。上の比較例には空コミットを含めていません。[GitHubが説明する相違点](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github#rebasing-and-merging-your-commits)、[ローカルrebaseの空コミット](https://git-scm.com/docs/git-rebase/2.34.0#Documentation/git-rebase.txt---keep-empty)
 
-## 参考文献
+そのため、「rebaseなら元のコミットをすべてそのまま維持する」という説明も正確ではありません。残したいのが変更の粒度なのか、元のSHAなのかを区別します。
 
-- [GitHub Docs: About pull request merges](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/about-pull-request-merges)
-- [Git Documentation: git-merge](https://git-scm.com/docs/git-merge)
-- [Git Documentation: git-rebase](https://git-scm.com/docs/git-rebase)
+## 方式を選べないときは、履歴以外に何を見るか
+
+GitHub上の選択肢はリポジトリで許可された方式に限られます。設定とrulesetで許可する方式が食い違うとマージできず、マージキューを使う場合はキュー側の方式が適用されます。[マージ方式の設定](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github)
+
+また、線形履歴を要求するブランチにはマージコミットを入れられないため、squashかrebaseが必要です。それとは別に、必要な権限、レビュー、ステータスチェック、署名などの条件を満たす必要があります。DraftのPRもそのままではマージできません。[保護ブランチの線形履歴](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-linear-history)、[PRのマージ条件](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request#about-pull-request-merges)
+
+署名もローカル例の対象外です。とくにGitHubのrebaseで作られるコミットを、元の署名がそのまま付いたコミットとして扱うことはできません。署名必須の運用では、[GitHubの署名に関する説明](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github#rebasing-and-merging-your-commits)と実際の適用ルールを確認します。
+
+## 調査や取り消しの単位を、先に決める
+
+元のコミットと分岐のつながりを残したいならmerge commit、PRを一つの変更として調べたいならsquash、個々の変更を残しつつ直線状に並べたいならrebaseが候補になります。ただし、途中のコミットを単位に調査する運用なら、各コミットが意味のある状態かも確認する必要があります。
+
+squashは取り消す対象を1コミットにまとめられますが、その後の変更と競合しないことまでは保証しません。また、同じfeatureブランチを使い続ける運用では、次回の祖先関係まで考える必要があります。[Squash後の再merge・rebase](/tech-note/articles/git/merge/squash-merge-rebase-conflict/)では、その問題を具体的な履歴で扱っています。

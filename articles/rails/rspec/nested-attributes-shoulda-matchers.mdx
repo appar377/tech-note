@@ -1,6 +1,6 @@
 ---
-title: "RSpecでaccept_nested_attributes_forをテストする：Shoulda Matchersによるモデル設定の確認"
-description: Railsのaccepts_nested_attributes_forをRSpecとShoulda Matchersでどうテストするか、設定確認と実際の更新確認を分けて整理する。
+title: "Nested Attributesの設定と親子保存をRSpecで確かめる"
+description: "Shoulda Matchersが確認する設定と、実DBで確かめる作成・更新・入力拒否・削除・rollbackを分けて検証します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,343 +14,279 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-nested-attributes-shoulda-matchers.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`accept_nested_attributes_for`のspecが成功していても、実際に親子のレコードが保存できるかは別に確認が必要です。このmatcherはRailsに登録された設定を読みます。子の属性を代入したり、親を保存したりして検証するものではありません。
 
-Railsでは、親モデルを保存するときに関連モデルも一緒に作成・更新したいことがあります。
+設定漏れはmatcherで短く確かめ、業務上必要な保存結果は実DBで確かめると、何が壊れたかを切り分けられます。ここでは説明用の注文と明細を使い、作成・更新、空入力の扱い、削除、DB制約違反時の状態まで確認するspecを作ります。
 
-そのときに使うのが `accepts_nested_attributes_for` です。
+対象はRuby 3.4.4、Rails / Active Record 8.1.3、RSpec Rails 8.0.4、Shoulda Matchers 8.0.1、PostgreSQL 17.10です。RSpecは3.13.0（core 3.13.6 / expectations 3.13.5 / mocks 3.13.8）を想定しています。この固定構成で、掲載した9例を実行し、すべて成功しました。
 
-```ruby
-class Order < ApplicationRecord
-  has_one :shipping_address
+## matcherは何を見ているのでしょうか
 
-  accepts_nested_attributes_for :shipping_address
+Railsの設定名は`accepts_nested_attributes_for`、Shoulda Matchersの名前は`accept_nested_attributes_for`です。末尾のsの有無が異なります。
+
+[Shoulda Matchers 8.0.1の実装](https://github.com/thoughtbot/shoulda-matchers/blob/v8.0.1/lib/shoulda/matchers/active_record/accept_nested_attributes_for_matcher.rb)では、対象インスタンスのクラスから`nested_attributes_options`を読み、指定した関連の設定があるかを調べます。追加指定をした場合は、その値も比較します。
+
+| matcherへの指定 | 確認する内容 |
+| --- | --- |
+| 関連名だけ | その関連のnested attributes設定が存在するか |
+| `allow_destroy(true)` | `allow_destroy`の設定値がtrueか |
+| `limit(3)` | `limit`の設定値が3か |
+| `update_only(true)` | `update_only`の設定値がtrueか |
+
+指定していないoptionは比較しません。8.0.1には`reject_if`を確認するための指定はありません。また、このmatcherは生成されたwriterを直接呼ばず、`save!`も実行しません。たとえば`.allow_destroy(true)`が通っても、アプリが渡す属性で子を削除できることまでは確認できません。
+
+Rails側では、macroが関連のwriterを生成し、autosaveを有効にします。matcherが設定を読む処理と、Railsがその設定に基づいて親子を保存する処理を分けて捉えます。[Rails 8.1.3のNested Attributes API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html)
+
+## 保存結果を確かめるためのモデルを用意します
+
+以下は再現用の独立したモデルです。実在の商品や注文は使いません。親に複数の明細がある例にして、子の入力を無視する場合と、保存全体が失敗する場合を分けます。
+
+検証用DBには次の2表が必要です。各表の`id`は通常の主キーとします。
+
+| テーブル | 列と制約 |
+| --- | --- |
+| `nested_orders` | `reference`: string、NOT NULL |
+| `nested_line_items` | `nested_order_id`: bigint、NOT NULL、親表への外部キー。`sku`: string、NOT NULL。`quantity`: integer、NOT NULL |
+| 子表のindex | `nested_order_id`と`sku`の複合unique index |
+
+このunique indexは、同じ注文内に同じSKUを二重登録できないという説明用のDB制約です。モデルにはSKUのuniqueness validationを置かず、後のspecでDB制約に到達する経路を確認します。
+
+```ruby file=lib/nested_matchers.rb
+require "active_record"
+
+class NestedOrder < ActiveRecord::Base
+  self.table_name = "nested_orders"
+
+  has_many :line_items,
+    class_name: "NestedLineItem",
+    foreign_key: :nested_order_id,
+    inverse_of: :nested_order
+
+  accepts_nested_attributes_for :line_items,
+    allow_destroy: true,
+    reject_if: :all_blank,
+    limit: 3
+
+  validates :reference, presence: true
+end
+
+class NestedLineItem < ActiveRecord::Base
+  self.table_name = "nested_line_items"
+
+  belongs_to :nested_order,
+    inverse_of: :line_items,
+    optional: false
+
+  validates :sku, presence: true
+  validates :quantity, numericality: { only_integer: true, greater_than: 0 }
 end
 ```
 
-RSpecでは、この設定をShoulda Matchersで簡潔にテストできます。
+関連名とクラス名が異なるので`class_name`と`foreign_key`を明示し、未保存の親子が逆関連を参照できるように`inverse_of`も指定しています。関連の名前解決は[class_nameとinverse_of](/tech-note/articles/rails/active_record/class-name-and-inverse-of/)で扱います。
 
-```ruby
-it { is_expected.to accept_nested_attributes_for(:shipping_address) }
-```
+再現用の`spec/spec_helper.rb`は、検証DBへの接続、RSpec Rails、Shoulda MatchersのRSpec連携を読み込む前提です。アプリに組み込む場合は既存の`rails_helper`などへ合わせます。matcherの組み込み方法は[公式READMEのRSpec設定](https://github.com/thoughtbot/shoulda-matchers/blob/v8.0.1/README.md#rspec)に従います。
 
-この記事では、このテストが何を確認しているのか、また何を確認していないのかを整理します。
+まず、次を`spec/nested_matchers_spec.rb`へ保存します。
 
-## この記事で学べること
+```ruby file=spec/nested_matchers_spec.rb
+require_relative "spec_helper"
+require_relative "../lib/nested_matchers"
 
-- accepts_nested_attributes_forの基本
-- Shoulda Matchersで設定を確認する方法
-- 設定確認だけでは保証できないこと
-- 実際の作成・更新・削除まで見るテスト
-
-## 前提知識
-
-- Railsのassociationを使ったことがある
-- accepts_nested_attributes_forを見たことがある
-- Shoulda Matchersでmodel specを書いたことがある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class User < ApplicationRecord
-  has_one :profile
-  accepts_nested_attributes_for :profile, allow_destroy: true
-end
-
-RSpec.describe User, type: :model do
-  it do
-    is_expected.to accept_nested_attributes_for(:profile).allow_destroy(true)
-  end
-
-  it "ネストした属性でプロフィールを更新する" do
-    user = create(:user, profile: build(:profile, bio: "before"))
-
-    user.update!(profile_attributes: { id: user.profile.id, bio: "after" })
-
-    expect(user.profile.reload.bio).to eq("after")
-  end
-end
-```
-
-## 本編
-
-### accepts_nested_attributes_forとは
-
-`accepts_nested_attributes_for` は、関連先モデルの属性を親モデル経由で受け取れるようにするRailsの機能です。
-
-例えば、注文と配送先住所の関係を考えます。
-
-```ruby
-class Order < ApplicationRecord
-  has_one :shipping_address
-
-  accepts_nested_attributes_for :shipping_address
-end
-```
-
-この設定があると、次のように `shipping_address_attributes` を渡せます。
-
-```ruby
-order.update!(
-  shipping_address_attributes: {
-    postal_code: "1000001",
-    city: "Tokyo"
-  }
-)
-```
-
-これにより、`Order` の更新と同時に `ShippingAddress` も作成・更新できます。
-
-### Shoulda Matchersでのテスト
-
-Shoulda Matchersを使うと、次のように書けます。
-
-```ruby
-RSpec.describe Order, type: :model do
-  describe "nested attributes" do
-    it { is_expected.to accept_nested_attributes_for(:shipping_address) }
+RSpec.describe NestedOrder, "設定", type: :model do
+  it "nested attributes の設定と指定した option を確認する" do
+    is_expected.to accept_nested_attributes_for(:line_items).
+      allow_destroy(true).
+      limit(3)
   end
 end
 ```
 
-これは、対象モデルに次の設定があることを確認しています。
+この1例では、関連の設定に加えて`allow_destroy: true`と`limit: 3`を確認しています。`update_only`は一対一関連に対する設定なので、この`has_many`の例では使いません。
 
-```ruby
-accepts_nested_attributes_for :shipping_address
+## 作成と更新は、DBから読み直して確かめます
+
+以降のspecは同じファイルの末尾へ順に追加します。保存動作の各例は、専用の検証DBで対象2表を空にしてから実行します。実データが入った環境を使わない前提です。
+
+```ruby file=spec/nested_matchers_spec.rb
+RSpec.describe NestedOrder, "作成と更新", type: :model do
+  before do
+    NestedLineItem.delete_all
+    NestedOrder.delete_all
+  end
+
+  it "親と子を一緒に作成して DB から読み直せる" do
+    order = described_class.create!(
+      reference: "ORDER-001",
+      line_items_attributes: [{ sku: "ITEM-A", quantity: 2 }]
+    )
+
+    expect(described_class.count).to eq(1)
+    expect(NestedLineItem.count).to eq(1)
+    expect(order.reload.line_items.pluck(:sku, :quantity)).to eq([["ITEM-A", 2]])
+    expect(NestedLineItem.first.nested_order_id).to eq(order.id)
+  end
+
+  it "id がある子は同じ行のまま更新する" do
+    order = described_class.create!(
+      reference: "ORDER-001",
+      line_items_attributes: [{ sku: "ITEM-A", quantity: 2 }]
+    )
+    line_id = order.line_items.first.id
+
+    order.update!(line_items_attributes: [{ id: line_id, quantity: 3 }])
+
+    expect(order.reload.line_items.pluck(:id, :quantity)).to eq([[line_id, 3]])
+    expect(NestedLineItem.count).to eq(1)
+  end
+end
 ```
 
-以前の書き方では、次のように `should` を使うこともあります。
+作成の例は、親と子がそれぞれ1行保存され、外部キーが親を指していることを確認します。更新の例は、子のidを渡したあとも同じ行が残り、数量だけが変わったことを確認します。関連先のRubyオブジェクトに値が代入されたことだけで終わらず、`reload`やSQLによる取得で保存結果を読み直します。
 
-```ruby
-it { should accept_nested_attributes_for(:shipping_address) }
-```
+この一対多の設定では、idなしの属性は新規作成用です。既存の子を更新する入力には、その親に関連する子のidを渡します。別の親の子を任意に更新するための仕組みではありません。[一対多のnested attributes](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html#module-ActiveRecord::NestedAttributes::ClassMethods-label-One-to-many)
 
-最近は、`is_expected.to` の方が明示的で読みやすいです。
+## 空入力の無視と、検証エラーは同じ結果でしょうか
 
-```ruby
-it { is_expected.to accept_nested_attributes_for(:shipping_address) }
-```
+`reject_if: :all_blank`は、`_destroy`以外の値がすべて空なら、その属性を無視します。空行を無視しただけなら親の保存は進みます。一部に値があって子が作られた場合は、子のvalidationも通る必要があります。
 
-### このテストが保証していること
+次の3例は、この違いと入力件数の上限を確かめます。
 
-このテストが保証しているのは、主に次のことです。
+```ruby file=spec/nested_matchers_spec.rb
+RSpec.describe NestedOrder, "入力の拒否", type: :model do
+  before do
+    NestedLineItem.delete_all
+    NestedOrder.delete_all
+  end
 
-```text
-対象モデルが関連先のnested attributesを受け取れる設定になっている
-```
+  it "すべて空の新規入力は無視し、親の変更は保存する" do
+    order = described_class.create!(reference: "BEFORE")
 
-具体的には、Rails内部で次のようなsetterが使える状態になっていることを確認しています。
+    order.update!(
+      reference: "AFTER",
+      line_items_attributes: [{ sku: "", quantity: "", _destroy: "0" }]
+    )
 
-```ruby
-shipping_address_attributes=
-```
+    expect(order.reload.reference).to eq("AFTER")
+    expect(order.line_items.count).to eq(0)
+  end
 
-### このテストが保証していないこと
+  it "一部だけ空なら validation が失敗し、親の変更も保存しない" do
+    order = described_class.create!(reference: "BEFORE")
 
-一方で、このテストだけでは確認できないこともあります。
-
-```text
-- 実際に関連レコードが作成されるか
-- 実際に関連レコードが更新されるか
-- strong parametersでpermitされているか
-- validation error時に親子まとめてrollbackされるか
-- allow_destroyが期待通り動くか
-- reject_ifが期待通り動くか
-```
-
-つまり、Shoulda Matchersのテストは「設定の存在確認」に近いです。
-実際の業務挙動まで確認しているわけではありません。
-
-### 実際の更新まで確認するテスト
-
-業務上重要な場合は、実際に更新できることまでテストした方がよいです。
-
-```ruby
-RSpec.describe Order, type: :model do
-  describe "nested attributes" do
-    it "shipping_address_attributesで配送先住所を更新できる" do
-      order = create(:order)
-      address = create(:shipping_address, order: order, city: "Before")
-
+    expect do
       order.update!(
-        shipping_address_attributes: {
-          id: address.id,
-          city: "After"
-        }
+        reference: "AFTER",
+        line_items_attributes: [{ sku: "", quantity: 1 }]
       )
+    end.to raise_error(ActiveRecord::RecordInvalid)
 
-      expect(address.reload.city).to eq("After")
-    end
+    expect(order.line_items.first.errors.of_kind?(:sku, :blank)).to be(true)
+    expect(order.reload.reference).to eq("BEFORE")
+    expect(NestedLineItem.count).to eq(0)
+  end
+
+  it "limit を超える 4 件の代入を拒否する" do
+    order = described_class.new(reference: "ORDER-001")
+    attributes = 4.times.map { |index| { sku: "ITEM-#{index}", quantity: 1 } }
+
+    expect do
+      order.line_items_attributes = attributes
+    end.to raise_error(ActiveRecord::NestedAttributes::TooManyRecords)
+
+    expect(described_class.count).to eq(0)
+    expect(NestedLineItem.count).to eq(0)
   end
 end
 ```
 
-このテストでは、設定の存在だけでなく、実際に関連レコードが更新されることを確認しています。
+最初の例では空の明細を作らず、親のreferenceはAFTERになります。次の例では数量に値があるため入力は無視されず、SKUのpresence validationに失敗します。親のreferenceはDB上でBEFOREのままです。これは検証段階で保存を止める例であり、実行済みのUPDATEを取り消せた証明にはなりません。
 
-### 作成まで確認するテスト
+`limit: 3`は、その代入で渡す属性の件数に対する上限です。注文が生涯に持てる明細数を3行へ制限するDB制約ではありません。Rails 8.1.3では、空入力を除外する前に件数を確認するため、無視される入力も渡した件数に含まれます。[属性の代入とlimitの実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/nested_attributes.rb)
 
-関連レコードを新規作成するケースも確認できます。
+## 削除とDBエラーは、保存のどの段階で反映されますか
 
-```ruby
-it "shipping_address_attributesで配送先住所を作成できる" do
-  order = create(:order)
+`allow_destroy: true`でも、属性を代入した瞬間にはDB行を削除しません。該当するidと`_destroy`を渡すと削除対象としてマークされ、親を保存すると削除されます。idのない削除指定では、どの既存行を削除するかを特定できません。
 
-  order.update!(
-    shipping_address_attributes: {
-      postal_code: "1000001",
-      city: "Tokyo"
-    }
-  )
+さらに、親のUPDATEが発行された後に子のINSERTがDB制約へ違反した場合も確かめます。最後の例ではSQL通知を購読し、親のUPDATEが実際に発行されたことと、その変更がDBに残らないことを分けて確認します。
 
-  expect(order.shipping_address).to be_present
-  expect(order.shipping_address.city).to eq("Tokyo")
+```ruby file=spec/nested_matchers_spec.rb
+RSpec.describe NestedOrder, "削除と rollback", type: :model do
+  before do
+    NestedLineItem.delete_all
+    NestedOrder.delete_all
+  end
+
+  it "削除予約は代入だけでは DB を消さず、親の保存で反映する" do
+    order = described_class.create!(
+      reference: "ORDER-001",
+      line_items_attributes: [{ sku: "ITEM-A", quantity: 2 }]
+    )
+    line = order.line_items.first
+
+    order.assign_attributes(line_items_attributes: [{ id: line.id, _destroy: "1" }])
+
+    marked_line = order.line_items.detect { |item| item.id == line.id }
+    expect(marked_line).to be_marked_for_destruction
+    expect(NestedLineItem.exists?(line.id)).to be(true)
+
+    order.save!
+
+    expect(NestedLineItem.exists?(line.id)).to be(false)
+    expect(order.reload.line_items.count).to eq(0)
+  end
+
+  it "id のない削除指定では既存の子を削除しない" do
+    order = described_class.create!(
+      reference: "ORDER-001",
+      line_items_attributes: [{ sku: "ITEM-A", quantity: 2 }]
+    )
+    line_id = order.line_items.first.id
+
+    order.update!(line_items_attributes: [{ _destroy: "1" }])
+
+    expect(order.reload.line_items.pluck(:id)).to eq([line_id])
+  end
+
+  it "子の DB unique 違反で、発行済みの親 UPDATE も rollback する" do
+    order = described_class.create!(
+      reference: "BEFORE",
+      line_items_attributes: [{ sku: "ITEM-A", quantity: 2 }]
+    )
+    parent_updates = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      parent_updates << payload[:sql] if payload[:sql].start_with?('UPDATE "nested_orders"')
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      expect do
+        order.update!(
+          reference: "AFTER",
+          line_items_attributes: [{ sku: "ITEM-A", quantity: 3 }]
+        )
+      end.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
+    expect(parent_updates.length).to eq(1)
+    expect(order.reload.reference).to eq("BEFORE")
+    expect(order.line_items.pluck(:sku, :quantity)).to eq([["ITEM-A", 2]])
+  end
 end
 ```
 
-### allow_destroyを使う場合
+重複SKUの例には子のidを渡していないため、既存明細の更新ではなく新規INSERTを試みます。モデルのvalidationは通りますが、DBの複合unique indexに違反し、`ActiveRecord::RecordNotUnique`になります。`update!`のトランザクションを抜けた後に例外を確認し、親のreferenceと既存明細が保存前のままであることを読み直します。
 
-`allow_destroy: true` を指定している場合、関連レコードを削除できるようになります。
+親の保存とnested attributesによる子の保存・削除は、同じDBトランザクション内で処理されます。PostgreSQLでDB例外が起きたトランザクションの内部から、そのまま問い合わせを続ける構成にはしません。[Autosaveの保存単位](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/AutosaveAssociation.html)と[トランザクション内の例外処理](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)
 
-```ruby
-class Order < ApplicationRecord
-  has_one :shipping_address
+この再現では外側の自動transactional fixtureを使わず、親の保存が作るトランザクションを確認する構成にします。SQL通知で見ているのは親UPDATEの発行だけです。クエリ性能や別接続からの同時更新を測定したものではありません。[sql.active_recordの通知](https://guides.rubyonrails.org/v8.1/active_support_instrumentation.html#sql-active-record)
 
-  accepts_nested_attributes_for :shipping_address, allow_destroy: true
-end
+実行するコマンドは次のとおりです。設定1例と保存動作8例の計9例が成功しました。本文から再構成したファイルでも、同じ9例の成功を確認しています。
+
+```sh
+bundle exec rspec spec/nested_matchers_spec.rb --format documentation
 ```
 
-この場合は、削除の挙動もテストすると安心です。
-
-```ruby
-it "_destroyで配送先住所を削除できる" do
-  order = create(:order)
-  address = create(:shipping_address, order: order)
-
-  order.update!(
-    shipping_address_attributes: {
-      id: address.id,
-      _destroy: "1"
-    }
-  )
-
-  expect(ShippingAddress.exists?(address.id)).to eq(false)
-end
-```
-
-### reject_ifを使う場合
-
-`reject_if` を使っている場合は、空の属性を無視することがあります。
-
-```ruby
-class Order < ApplicationRecord
-  has_one :shipping_address
-
-  accepts_nested_attributes_for :shipping_address,
-                                reject_if: :all_blank
-end
-```
-
-この場合は、空の属性では作成されないことを確認できます。
-
-```ruby
-it "空の属性では配送先住所を作成しない" do
-  order = create(:order)
-
-  order.update!(
-    shipping_address_attributes: {
-      postal_code: "",
-      city: ""
-    }
-  )
-
-  expect(order.shipping_address).to be_nil
-end
-```
-
-### strong parametersは別で確認する
-
-`accepts_nested_attributes_for` が設定されていても、Controller側でparamsがpermitされていなければ更新できません。
-
-例えば、次のようにpermitする必要があります。
-
-```ruby
-params.require(:order).permit(
-  :status,
-  shipping_address_attributes: [
-    :id,
-    :postal_code,
-    :city,
-    :_destroy
-  ]
-)
-```
-
-model specでは、strong parametersまでは確認できません。
-request specで、実際にリクエストを送って更新できるかを確認するとよいです。
-
-### メリット・デメリット
-
-#### Shoulda Matchersで書くメリット
-
-```text
-- 短く書ける
-- 設定漏れに気づける
-- associationやvalidationと並べて読みやすい
-```
-
-#### デメリット
-
-```text
-- 実際の作成・更新までは確認できない
-- strong parametersの設定漏れには気づけない
-- 複雑な条件は別途テストが必要
-```
-
-## 図解
-
-![RSpecでaccept_nested_attributes_forをテストする：Shoulda Matchersによるモデル設定の確認](/images/articles/rails-rspec-nested-attributes-shoulda-matchers.png)
-
-```mermaid
-flowchart TB
-  A[Parent model User] --> B[accepts_nested_attributes_for]
-  B --> C[Child model Profile]
-  D[Shoulda Matchers] --> E[設定を検証]
-  F[更新spec] --> G[実際のDB更新を検証]
-```
-
-## 内部動作
-
-Shoulda Matchersのaccept_nested_attributes_forは、modelがネスト属性を受け付ける設定になっていることを確認します。ただし、そのテストだけではstrong parameters、フォーム入力、実際の作成・更新・削除が正しく動くことまでは保証しません。設定確認と振る舞い確認を分けることで、薄いテストと実用的なテストの役割が明確になります。
-
-## まとめ
-
-次のテストは、
-
-```ruby
-it { is_expected.to accept_nested_attributes_for(:shipping_address) }
-```
-
-対象モデルに `accepts_nested_attributes_for :shipping_address` が設定されていることを確認するテストです。
-
-ただし、これは設定確認に近いテストです。
-
-実際に業務上重要なら、次のような挙動も別途確認した方がよいです。
-
-```text
-- 関連レコードを作成できるか
-- 関連レコードを更新できるか
-- _destroyで削除できるか
-- reject_ifが期待通り動くか
-- request specでparams経由の更新ができるか
-```
-
-Shoulda Matchersは便利ですが、設定確認と業務挙動の確認は分けて考えることが重要です。
-
-## 参考文献
-
-- [Rails API](Nested Attributes: https://api.rubyonrails.org/classes/ActiveRecord/NestedAttributes/ClassMethods.html)
-- [Shoulda Matchers ActiveRecord](https://matchers.shoulda.io/docs/v6.5.0/Shoulda/Matchers/ActiveRecord.html)
+このmodel specは、controllerが許可する入力や、ログイン中の利用者が注文を変更できるかまでは確認しません。Strong Parametersや認可を含む入口は[request specの検証範囲](/tech-note/articles/rails/rspec/request-spec-vs-controller-spec/)で別に確かめます。モデルへ属性を直接渡せたことと、実際のリクエストから同じ属性が届くことを区別しておくと、設定matcherをどこまで信頼できるかが明確になります。

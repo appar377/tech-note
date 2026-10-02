@@ -48,6 +48,7 @@ const frontmatterSchema = z.object({
   category: z.string().min(1),
   level: articleLevelSchema,
   articleType: articleTypeSchema,
+  editorialProfile: z.literal("question-led-v1").optional(),
   series: seriesSchema.optional(),
   draft: z.boolean().default(false),
   thumbnail: z.string().optional(),
@@ -66,6 +67,7 @@ export type Article = {
   categorySlug: string;
   level: ArticleLevel;
   articleType: ArticleType;
+  editorialProfile?: "question-led-v1";
   series?: {
     name: string;
     slug: string;
@@ -148,7 +150,13 @@ export function getArticleBySlug(slugSegments: string[]) {
 }
 
 export function getAdjacentArticles(article: Article) {
-  const articles = getAllArticles().sort(compareArticlesAsc);
+  const seriesArticles = article.series ? getArticlesBySeries(article.series.slug) : [];
+  const topicPath = article.slugSegments.slice(0, -1).join("/");
+  const articles = seriesArticles.length > 1
+    ? seriesArticles
+    : getAllArticles()
+        .filter((candidate) => candidate.slugSegments.slice(0, -1).join("/") === topicPath)
+        .sort(compareArticlesAsc);
   const currentIndex = articles.findIndex((item) => item.slug === article.slug);
 
   return {
@@ -548,10 +556,16 @@ function buildSeriesSections(
 }
 
 function stripInlineMarkdown(value: string) {
+  const codeSpans: string[] = [];
   return value
-    .replace(/`([^`]+)`/g, "$1")
+    .replace(/(`+)(.*?)\1/g, (_match, _ticks, code: string) => {
+      codeSpans.push(code);
+      return `\u0000${codeSpans.length - 1}\u0000`;
+    })
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
-    .replace(/[*_~]/g, "")
+    .replace(/(\*\*|__|~~)(?=\S)(.+?)\1/g, "$2")
+    .replace(/(?<![\p{L}\p{N}_])([*_])(?=\S)(.+?)\1(?![\p{L}\p{N}_])/gu, "$2")
+    .replace(/\u0000(\d+)\u0000/g, (_match, index: string) => codeSpans[Number(index)])
     .trim();
 }
 

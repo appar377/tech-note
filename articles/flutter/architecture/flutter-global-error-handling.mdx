@@ -1,6 +1,6 @@
 ---
-title: "Flutterの未捕捉エラーを一か所へ集約する"
-description: "エラー発生源ごとの入口を理解したうえで、共通`ErrorReporter`へ正規化する。表示用フォールバック、ログ送信、デバッグ時の再throw、重複排除を分離する。"
+title: "Flutterのエラーはどこで捕捉するか――報告・表示・回復を分ける"
+description: "FlutterError、PlatformDispatcher、Zoneの捕捉範囲を分け、共通の報告先へ接続する。重複排除、既存ハンドラー、表示用フォールバックの役割を確認します。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,141 +14,124 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/flutter-global-error-handling.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+Widgetの`build`で起きた例外と、待たれていない非同期処理の例外は、同じ入口に届くとは限りません。共通の報告先を用意する場合も、まずどこが例外を受け取るのかを分けて考えます。
 
-Flutter Framework内のエラー、非同期処理の未捕捉エラー、PlatformDispatcher経由のエラーが別経路で届き、同じ例外が二重送信されることもあった。
+以下の説明用コードはFlutter 3.41.9、Dart SDK 3.11.5で確認しています。外部の監視サービスへは送信せず、メモリ上の記録先を使って捕捉と報告の接続を検証しました。
 
-エラー発生源ごとの入口を理解したうえで、共通`ErrorReporter`へ正規化する。表示用フォールバック、ログ送信、デバッグ時の再throw、重複排除を分離する。
+## 捕捉する入口と、代わりの画面を混同しない
 
-## この記事で学べること
+- `FlutterError.onError`: Flutterがbuild・layout・paintなどのコールバックで捕捉したエラーを受け取ります。
+- `PlatformDispatcher.instance.onError`: root isolateで処理されなかったエラーを受け取ります。
+- `runZonedGuarded`: 作成したZone内の同期例外と、そのエラーZoneに属する未処理の非同期エラーを扱います。
+- `ErrorWidget.builder`: buildに失敗したWidgetの代わりに何を表示するかを決めます。
 
-- `FlutterError.onError`
-- `PlatformDispatcher.instance.onError`
-- `runZonedGuarded`
-- `ErrorWidget.builder`の役割
-- 同期/非同期/framework/platformの違い
-- 元のhandlerを保持するか
+Flutterの捕捉範囲と代替表示は[Handling errors in Flutter](https://docs.flutter.dev/testing/errors)で説明されています。`ErrorWidget.builder`でメッセージを表示できても、失敗した処理やアプリの状態が回復したことにはなりません。同じ例外をここからもう一度報告すると、framework側の報告と重なる可能性があります。
 
-## 前提知識
+また、[PlatformDispatcher.onErrorの仕様](https://api.flutter.dev/flutter/dart-ui/PlatformDispatcher/onError.html)は、子isolateからのエラーが直接は届かないこと、ハンドラーが呼ばれる前にプロセスが終了する場合があることを明記しています。これらの入口を設定しても、あらゆるクラッシュを捕捉できるという意味にはなりません。
 
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+## 共通の報告先には、元の例外・スタック・経路を渡す
 
-## 図解
+次の`ErrorReporter`は報告の受付をまとめる小さな部品です。実送信は行わず、`enqueue`として渡す同期関数に記録を預けます。元のスタックを受け取り、報告側で新たに取得したスタックに置き換えません。
 
-![Flutterの未捕捉エラーを一か所へ集約する](/images/articles/flutter-global-error-handling.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+同じ例外オブジェクトが短時間に複数経路から届く場合に備え、同一性で重複を除きます。文字列が同じ別の例外は別件です。
 
 ```dart
-class AppErrorReporter {
-  Future<void> run(Future<void> Function() body) async {
-    FlutterError.onError = (details) {
-      report(details.exception, details.stack);
-    };
+import 'dart:collection';
+import 'package:flutter/foundation.dart';
 
-    await runZonedGuarded(body, report);
+enum ErrorSource { framework, platform, zone }
+
+typedef ErrorSink =
+    void Function(Object error, StackTrace stack, ErrorSource source);
+
+class ErrorReporter {
+  ErrorReporter(this.enqueue, {DateTime Function()? now})
+    : _now = now ?? DateTime.now;
+
+  // 同期的にキューへ積むだけの関数。実送信・再試行は別の担当。
+  final ErrorSink enqueue;
+  final DateTime Function() _now;
+  final _seen = LinkedHashMap<Object, DateTime>.identity();
+  int dropped = 0;
+
+  void capture(Object error, StackTrace stack, ErrorSource source) {
+    final now = _now();
+    _seen.removeWhere(
+      (_, at) => now.difference(at) >= const Duration(seconds: 2),
+    );
+    if (_seen.containsKey(error)) return;
+    if (_seen.length >= 128) _seen.remove(_seen.keys.first);
+    _seen[error] = now;
+    try {
+      enqueue(error, stack, source);
+    } catch (_) {
+      // 報告処理の失敗を同じ報告先へ再帰させない。
+      dropped++;
+    }
   }
+}
 
-  void report(Object error, StackTrace? stackTrace) {}
+VoidCallback installErrorHooks(ErrorReporter reporter) {
+  final previousFlutter = FlutterError.onError;
+  final previousPlatform = PlatformDispatcher.instance.onError;
+  FlutterError.onError = (details) {
+    reporter.capture(
+      details.exception,
+      details.stack ?? StackTrace.empty,
+      ErrorSource.framework,
+    );
+    previousFlutter?.call(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    reporter.capture(error, stack, ErrorSource.platform);
+    // 送信の受付だけで「処理済み」へ変更しない。
+    return previousPlatform?.call(error, stack) ?? false;
+  };
+  return () {
+    FlutterError.onError = previousFlutter;
+    PlatformDispatcher.instance.onError = previousPlatform;
+  };
 }
 ```
 
-## 本編
+2秒・128件はこの例の方針で、Flutterの保証値ではありません。同じオブジェクトでも時間窓を過ぎれば再び記録し、上限に達したら古い項目を捨てます。これは報告先への到達を保証する仕組みではなく、最初の経路だけを残す簡単な重複排除です。複数のエラーが同じオブジェクトを使う設計には適しません。
 
-### 発生した状況
+`enqueue`は同期的に受付を済ませる契約です。Futureを返す非同期送信を直接渡すと、その後の失敗はこの`try`では処理できません。送信担当でバッファの上限・再試行・失敗時の扱いを決めます。ここでは受付自体が例外を投げた場合だけ`dropped`を増やし、同じ報告処理へ再帰させないようにしています。
 
-Flutter Framework内のエラー、非同期処理の未捕捉エラー、PlatformDispatcher経由のエラーが別経路で届き、同じ例外が二重送信されることもあった。
+例外のメッセージやスタックには、URLや識別子などが含まれることがあります。生の内容を外部へ送る前に、送信項目の選別や秘匿化を行います。このコードには送信処理や汎用的な秘匿化機能はありません。
 
-### 当初の理解・誤解
+## 既存ハンドラーの動作と、処理済みの判断を保つ
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、エラー発生源ごとの入口を理解したうえで、共通`ErrorReporter`へ正規化する。表示用フォールバック、ログ送信、デバッグ時の再throw、重複排除を分離... という観点で見る必要がありました。
+`installErrorHooks`は元のハンドラーを保存し、独自の報告後に呼びます。Flutterの通常のログ出力やテスト環境のエラー管理を、代入だけで失わないためです。ただし、既存の監視SDKも送信する場合、その送信はこの`ErrorReporter`の重複排除の外にあります。アプリ起動時にどの部品がハンドラーを所有するかを決め、重ねてインストールしない前提です。
 
-### 観測したこと
+Platform側の戻り値にも意味があります。`true`はエラーを処理したという通知です。報告キューへ積めたことだけで処理済みにはせず、この例は既存ハンドラーの判断を返します。元のハンドラーがなければ`false`とし、プラットフォームのフォールバックに委ねます。回復や終了の方針は別途決める必要があります。
 
-- `ErrorReporter.capture(error, stack, source)`
-- `main()`の初期化例
-- 同一例外が複数経路で来ても1回送信するtest
-- ErrorWidgetは報告とUIを分ける
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 集中化 | 観測性・一貫性／入口ごとの差異を隠しすぎる危険 |
-| 個別処理 | 文脈豊富／漏れと重複 |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- Flutter SDKバージョンでエラー経路を確認
-- すべての例外が完全に捕捉できると断定しない
-- Zoneを過度にアプリ設計へ浸透させない
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- Flutter SDKバージョンでエラー経路を確認
-- すべての例外が完全に捕捉できると断定しない
-- Zoneを過度にアプリ設計へ浸透させない
-
-## 再発防止テスト
+起動側は、報告先の準備後に次の関数を一度呼びます。`error_reporter.dart`には先ほどのコードを置きます。
 
 ```dart
-void main() {
-  test('flutter-global-error-handling', () async {
-    final subject = TestSubject();
+import 'package:flutter/widgets.dart';
+import 'error_reporter.dart';
 
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
+// reporter.enqueueの準備が済んでからmainで一度呼ぶ。
+void startApp(Widget app, ErrorReporter reporter) {
+  WidgetsFlutterBinding.ensureInitialized();
+  installErrorHooks(reporter);
+  runApp(app);
 }
 ```
 
-## 一般化できる設計原則
+フックから返す復元関数はテストなどで使います。この簡単な復元処理は、その後に別のSDKがハンドラーを書き換えていないことを前提にしています。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+## Zoneを追加するなら、初期化も同じZoneへ置く
 
-## まとめ
+すでに上の入口で扱える範囲に、理由なく`runZonedGuarded`を重ねる必要はありません。Zoneの境界が必要な場合は、`WidgetsFlutterBinding.ensureInitialized()`と`runApp()`を同じZone内で実行します。片方だけを外に置くと、[FlutterのZone mismatch](https://docs.flutter.dev/release/breaking-changes/zone-errors)に該当します。
 
-エラーハンドリングは「全部catchする」ことではなく、発生源・報告・回復・表示を別責務として接続することだと締める。
+さらに、[runZonedGuardedの仕様](https://api.dart.dev/dart-async/runZonedGuarded.html)では、異なるエラーZoneの境界を非同期エラーが越えないとされています。内側で失敗したFutureを外側で待つと、完了しないように見える場合があります。「アプリ全体を包んで、そのFutureを外からawaitすればよい」とは限りません。
 
+入力の検証失敗や通信エラーなど、呼び出し側で回復方法が分かる失敗は、その場で処理します。グローバルな入口は、通常の画面操作で必要なエラー表示や再試行を置き換えるものではありません。
 
-この記事では、次のような短絡的な一般化は避けます。
-
-- catchして握りつぶす例を推奨しない
-- ErrorWidgetで回復したから処理状態も正常と扱わない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+検証は5テストです。同一オブジェクトの重複・時間窓・保持数上限・受付失敗、既存ハンドラーとスタックの保持、実際のWidget build失敗と代替表示、Zone内の非同期例外を確認しました。Platform側は登録コールバックを直接呼ぶ検証であり、実機の未処理例外の配送やネイティブクラッシュ、監視サービスへの送信は未確認です。

@@ -1,6 +1,6 @@
 ---
 title: "IDの有無でPOSTとPUTを切り替えるsaveメソッドは良い設計か"
-description: "create/updateの契約が同じなら`save`は有効だが、APIやドメインの意味が異なるなら明示メソッドまたはCommand型に分ける。IDの有無だけを業務状態の唯一の判定にしない。"
+description: "IDだけで新規作成と更新を切り替える前に、入力・権限・競合時の扱いを比べる。明示メソッドとCommand型で操作を表す例を示す。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,139 +14,95 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/repository-save-create-update-design.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`save(project)`の内部で「IDがなければ作成、あれば更新」と分岐すると、呼び出しは短くなります。ただし、端末で仮のIDを付けた下書きまで、サーバーに保存済みとは限りません。
 
-Repositoryに`save(entity)`を作り、IDがなければPOST、あればPUTとする案は呼び出し側が簡潔になる。一方でcreateとupdateの入力・権限・エラーが違うと、1メソッドが複数責務を隠す。
+一つにまとめる前に、作成と更新で必要な入力、失敗したときの扱い、操作の権限が同じかを確かめます。この記事ではHTTPの仕様とアプリ側の操作を分け、Dart SDK 3.11.5のメモリ内テストで分岐と失敗を確認します。実サーバーへの通信は行っていません。
 
-create/updateの契約が同じなら`save`は有効だが、APIやドメインの意味が異なるなら明示メソッドまたはCommand型に分ける。IDの有無だけを業務状態の唯一の判定にしない。
+## POSTとPUTは、createとupdateの別名ではない
 
-## この記事で学べること
+HTTPのPUTは、指定したリソースの状態を作成または置き換える要求です。対象がまだ存在しない場合の作成も仕様に含まれます。POSTは対象リソース固有の処理を要求するため、新規作成だけに限定されません。[RFC 9110のPOST・PUT](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.3)
 
-- `create`と`update`のREST上の違い
-- 新規入力と既存Entityを同じ型にする問題
-- IDがnullableなモデル
-- Repositoryの責務
-- `save`が許容できる条件
-- 明示的`create`/`update`
+部分的な変更を表すPATCHにも、適用する変更形式などの契約が必要です。PUTとPATCHを、便利そうな方へ置き換えることはできません。[RFC 5789](https://www.rfc-editor.org/rfc/rfc5789.html#section-2)
 
-## 前提知識
+そのため、Repositoryのメソッド名を決めるときは、まずアプリが行う操作を定義し、その後で実APIに対応付けます。以下では、作成と名前の変更を別の操作にしています。
 
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![IDの有無でPOSTとPUTを切り替えるsaveメソッドは良い設計か](/images/articles/repository-save-create-update-design.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+## 入力が違うなら、メソッドと型を分ける
 
 ```dart
-class UserRepository {
-  UserRepository(this._api);
+final class Project {
+  const Project(this.id, this.name, this.version);
+  final String id;
+  final String name;
+  final int version;
+}
 
-  final UserApi _api;
+final class CreateProjectInput {
+  const CreateProjectInput(this.name);
+  final String name;
+}
 
-  Future<User> create(CreateUserInput input) => _api.createUser(input);
+final class RenameProjectInput {
+  const RenameProjectInput(this.name, {required this.expectedVersion});
+  final String name;
+  final int expectedVersion;
+}
 
-  Future<User> update(UserId id, UpdateUserInput input) {
-    return _api.updateUser(id, input);
-  }
+abstract interface class ProjectRepository {
+  Future<Project> create(CreateProjectInput input);
+  Future<Project> rename(String id, RenameProjectInput input);
 }
 ```
 
-## 本編
+新規作成には名前を渡し、更新には対象のIDと、どのversionを見て変更したかを渡します。表示用のEntityへnullableなIDや更新用の仮状態をすべて詰め込む必要がなくなります。ここでの`rename`をPOST・PUT・PATCHのどれへ対応させるかは、この型だけからは決まりません。
 
-### 発生した状況
+Flutterのアーキテクチャガイドも、RepositoryとServiceの入力・出力を明確にすることを勧めています。ただし、上のメソッド構成はこの記事の例であり、Flutterが固定のAPI名を要求しているわけではありません。[Data layerの説明](https://docs.flutter.dev/app-architecture/guide#data-layer)
 
-Repositoryに`save(entity)`を作り、IDがなければPOST、あればPUTとする案は呼び出し側が簡潔になる。一方でcreateとupdateの入力・権限・エラーが違うと、1メソッドが複数責務を隠す。
+## IDがある場合の失敗を、先に確かめる
 
-### 当初の理解・誤解
+メモリ内の検証では、次の条件を独立して確認しました。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、create/updateの契約が同じなら`save`は有効だが、APIやドメインの意味が異なるなら明示メソッドまたはCommand型に分ける。IDの有無だけを... という観点で見る必要がありました。
-
-### 観測したこと
-
-- `save`分岐実装
-- 明示2メソッド実装
-- sealed commandでdispatchする代案
-- ID有無とAPI呼び分けtest
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
+| 条件 | 検証結果 |
 | --- | --- |
-| `save` | 呼び出し簡潔／副作用と分岐が隠れる |
-| 分離 | 契約が明確／呼び出しAPIが増える |
+| 未保存の`local-draft`というIDを、ID分岐のsaveへ渡す | 更新側を呼び、対象なしで失敗した |
+| IDなしで作成し、返されたIDで名前を変更する | 作成→更新の順に呼び、名前が変わった |
+| version 1を見た二つの更新のうち、先の更新だけを適用する | 後から届いた古いversionの更新を拒否し、先の変更を維持した |
+| 対象のIDは存在するが、テスト用Repositoryの書込み許可を外す | 更新を拒否し、元の値を維持した |
 
-## 内部動作
+これはテスト用のfakeが定義した契約です。実サービスで同じ制約を守るには、サーバー側の認可や競合検査も必要です。クライアントがIDを持つことは、その対象を更新する権限の証明にはなりません。
 
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+version比較も、クライアントだけで完結させてはいけません。HTTPで競合を扱う方法の一つに、ETagと`If-Match`による条件付き要求があります。サーバーが条件を評価して変更を適用する仕組みと合わせます。[RFC 9110のIf-Match](https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1)
 
-- PUT/PATCHの仕様は実API契約に合わせる
-- IDがある=更新可能とは限らず認可が必要
+## 一つの入口が必要なら、操作をCommandへ残す
 
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- PUT/PATCHの仕様は実API契約に合わせる
-- IDがある=更新可能とは限らず認可が必要
-
-## 再発防止テスト
+呼び出し側が操作をキューへ入れるなど、一つの入口が都合よい場面もあります。その場合でも、IDの有無から操作を推測せず、選んだ操作を型として渡せます。先ほどの型へ次を追加します。
 
 ```dart
-void main() {
-  test('repository-save-create-update-design', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
-  });
+sealed class ProjectWrite {
+  const ProjectWrite();
+}
+final class CreateProject extends ProjectWrite {
+  const CreateProject(this.input);
+  final CreateProjectInput input;
+}
+final class RenameProject extends ProjectWrite {
+  const RenameProject(this.id, this.input);
+  final String id;
+  final RenameProjectInput input;
 }
 
-class TestSubject {
-  Future<Object> call() async => Object();
-}
+Future<Project> execute(
+  ProjectRepository repository,
+  ProjectWrite command,
+) => switch (command) {
+  CreateProject(:final input) => repository.create(input),
+  RenameProject(:final id, :final input) => repository.rename(id, input),
+};
 ```
 
-## 一般化できる設計原則
+この例でも、戻り値は作成・更新後の`Project`です。対象なし、権限不足、競合を同じnullに丸めると呼び出し側が判断できないため、利用するAPIに応じて区別できるエラーの契約を設けます。Commandを使っただけで再試行や永続キューが実装されるわけではありません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
-
-## まとめ
-
-便利な統合メソッドは、異なる契約を隠していない場合にだけ使う。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- 常に分離が正しいと断定しない
-- HTTPメソッドだけでドメイン責務を決めない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+`save`が常に悪いわけではありません。たとえば、呼び出し側が「この状態を保存する」とだけ指定でき、作成・更新の違いが契約として隠れてよい仕組みなら、一つの入口は自然です。入力、許可、競合、再試行の意味が分かれるなら、その違いをメソッド名か型に残す方が読み取りやすくなります。

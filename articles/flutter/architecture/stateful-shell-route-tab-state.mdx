@@ -1,6 +1,6 @@
 ---
 title: "Flutterのタブ切り替えで画面状態を保持するStatefulShellRoute"
-description: "`StatefulShellRoute`はbranchごとに独立したNavigator stackを持たせ、タブ切り替え後も各branchの履歴と状態を保持する。保持できる代わりに、戻る操作、deep link、メモリ使用量を設計する必..."
+description: "タブごとのNavigatorとWidgetのStateを保持する。3つのbranchで履歴・スクロール位置・再選択を確かめ、アプリ再起動後の復元との違いを整理します。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,138 +14,158 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/stateful-shell-route-tab-state.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+詳細画面を開いたまま別のタブへ移動し、戻ったときには同じ詳細画面を見せたい。この動作には、選択中のタブ番号だけでなく、タブごとのナビゲーション履歴が必要です。`StatefulShellRoute`では各branchに別のNavigatorを持たせ、その履歴を切り替えます。
 
-BottomNavigationBarでタブを切り替えるたびに画面履歴やスクロール位置が消える問題があり、単一NavigatorとbranchごとのNavigatorの違いを理解する必要があった。
+説明用の例はFlutter 3.41.9、Dart SDK 3.11.5、go_router 17.3.0で確認しています。三つのタブに詳細ページとカウンターを置き、画面が保持される範囲を確かめます。
 
-`StatefulShellRoute`はbranchごとに独立したNavigator stackを持たせ、タブ切り替え後も各branchの履歴と状態を保持する。保持できる代わりに、戻る操作、deep link、メモリ使用量を設計する必要がある。
+## 三つのタブに、三つのNavigatorを割り当てる
 
-## この記事で学べること
+通常の`ShellRoute`が子ルートを一つのNavigatorに載せるのに対し、`StatefulShellRoute`はbranchごとにNavigatorを作ります。画面の外枠には`StatefulNavigationShell`を置き、タブ操作を`goBranch`へ渡します。[StatefulShellRouteの公式説明](https://pub.dev/documentation/go_router/latest/go_router/StatefulShellRoute-class.html)では、この違いを独立したナビゲーションツリーとして説明しています。
 
-- `ShellRoute`と`StatefulShellRoute`の違いを利用版に合わせて説明
-- branchごとのNavigatorKey
-- BottomNavigationBarと`navigationShell.goBranch`
-- 初期locationへ戻す動作
-- Android back/ブラウザback
-- deep linkで特定branch内部へ入る
-
-## 前提知識
-
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Flutterのタブ切り替えで画面状態を保持するStatefulShellRoute](/images/articles/stateful-shell-route-tab-state.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+次の設定は`/home`、`/search`、`/settings`をbranchの入口にし、それぞれの下に`detail`を置きます。`GlobalKey`はbranchごとに新しく作り、別のNavigatorと共有しません。
 
 ```dart
-final router = GoRouter(
-  routes: [
-    StatefulShellRoute.indexedStack(
-      builder: (context, state, shell) => ScaffoldWithNav(shell: shell),
-      branches: [
-        StatefulShellBranch(routes: [GoRoute(path: '/home', builder: home)]),
-        StatefulShellBranch(routes: [GoRoute(path: '/settings', builder: settings)]),
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+const tabPaths = ['/home', '/search', '/settings'];
+const tabLabels = ['ホーム', '検索', '設定'];
+
+GoRouter createTabRouter({String initialLocation = '/home'}) {
+  return GoRouter(
+    initialLocation: initialLocation,
+    routes: [
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, shell) => Scaffold(
+          body: shell,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: shell.currentIndex,
+            onDestinationSelected: (index) => shell.goBranch(
+              index,
+              initialLocation: index == shell.currentIndex,
+            ),
+            destinations: [
+              for (final label in tabLabels)
+                NavigationDestination(
+                  icon: const Icon(Icons.circle_outlined),
+                  label: label,
+                ),
+            ],
+          ),
+        ),
+        branches: [
+          for (var i = 0; i < tabPaths.length; i++)
+            StatefulShellBranch(
+              navigatorKey: GlobalKey<NavigatorState>(),
+              routes: [
+                GoRoute(
+                  path: tabPaths[i],
+                  builder: (context, state) => TabCounterPage(
+                    name: tabPaths[i],
+                    detailLocation: '${tabPaths[i]}/detail',
+                  ),
+                  routes: [
+                    GoRoute(
+                      path: 'detail',
+                      builder: (context, state) =>
+                          TabCounterPage(name: '${tabPaths[i]}/detail'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+        ],
+      ),
+    ],
+  );
+}
+```
+
+`createTabRouter()`はアプリの組み立て時に一度呼び、そのGoRouterを`MaterialApp.router(routerConfig: router)`へ渡します。Widgetの`build`ごとに呼んでルーターを作り直すと、保持する対象も作り直すことになります。ルーターが不要になったら、その所有者が`router.dispose()`を呼びます。
+
+`indexedStack`はbranchを並べて保持する標準のコンテナです。このコンテナ自体にはタブ間の切替アニメーションを追加していません。見た目のアニメーションを変える話と、Navigatorの履歴を分ける話は分けて扱えます。
+
+## 保持されるのは、そのWidgetが持っているState
+
+設定で使ったページは次の実装です。カウンターと`ScrollController`をStateに持たせ、詳細へ進む場合は入れ子のURLへ移動します。
+
+```dart
+class TabCounterPage extends StatefulWidget {
+  const TabCounterPage({super.key, required this.name, this.detailLocation});
+  final String name;
+  final String? detailLocation;
+  @override
+  State<TabCounterPage> createState() => _TabCounterPageState();
+}
+
+class _TabCounterPageState extends State<TabCounterPage> {
+  final _scroll = ScrollController();
+  int _count = 0;
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: Text(widget.name)),
+    body: Column(
+      children: [
+        Text('count: $_count'),
+        TextButton(
+          onPressed: () => setState(() => _count++),
+          child: const Text('増やす'),
+        ),
+        if (widget.detailLocation != null)
+          TextButton(
+            onPressed: () => context.go(widget.detailLocation!),
+            child: const Text('詳細へ'),
+          ),
+        Expanded(
+          child: ListView.builder(
+            key: ValueKey('list:${widget.name}'),
+            controller: _scroll,
+            itemExtent: 48,
+            itemCount: 50,
+            itemBuilder: (context, index) => Text('項目 $index'),
+          ),
+        ),
       ],
     ),
-  ],
-);
+  );
+}
 ```
 
-## 本編
+あるbranchの詳細でカウンターを増やし、別のタブへ移動して戻ると、その詳細ページとカウンターが残ります。branchの最初のページでリストをスクロールした場合も、同じ`ScrollController`が使われ、位置が保たれます。
 
-### 発生した状況
+これは画面が存続している間の状態です。サーバーのデータキャッシュや、アプリを終了した後の保存データを自動で作る機能ではありません。ルーターとWidgetツリーを破棄して作り直した検証では、カウンターは0へ戻りました。終了後の復元が必要なら、[FlutterのState restoration](https://docs.flutter.dev/platform-integration/android/restore-state-android)や業務データの永続化を別に設計します。
 
-BottomNavigationBarでタブを切り替えるたびに画面履歴やスクロール位置が消える問題があり、単一NavigatorとbranchごとのNavigatorの違いを理解する必要があった。
+## 同じタブを押したときに、何を初期化するか
 
-### 当初の理解・誤解
+`goBranch`は通常、そのbranchで最後に表示していた場所へ戻ります。この例では、選択中のタブをもう一度押したときだけ`initialLocation: true`を渡し、branchの入口へ戻す方針です。[goBranchの仕様](https://pub.dev/documentation/go_router/latest/go_router/StatefulNavigationShell/goBranch.html)が、この引数による行き先の違いを定義しています。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`StatefulShellRoute`はbranchごとに独立したNavigator stackを持たせ、タブ切り替え後も各branchの履歴と状態を保持する... という観点で見る必要がありました。
+入口へ戻ることと、WidgetのStateを消すことは同じではありません。検証では、入口のカウンターを1にして詳細へ進み、同じタブを再選択すると入口へ戻りますが、入口のカウンターは1のままでした。毎回0にする、リストの先頭へ戻す、といった動作は別のイベントとして実装します。
 
-### 観測したこと
+この例の操作の対応は次のとおりです。
 
-- 3branchの最小GoRouter設定
-- 各タブでdetailへ進み、切替後に履歴が残るWidget test
-- backボタンの期待をテーブル化
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
+| 操作 | この例での結果 |
 | --- | --- |
-| 独立Navigator | UXが自然／ルート構成とback制御が複雑 |
-| 単一Navigator | 単純／タブ履歴を失いやすい |
+| 別のタブを選ぶ | そのbranchの最後の場所へ移る |
+| 選択中のタブを押す | そのbranchの入口へ戻る |
+| 詳細で`router.pop()` | 同じbranchの入口へ戻る |
+| branchの入口で`canPop()` | この構成では`false`になる |
 
-## 内部動作
+branchの入口で戻れないときに「ホームのタブへ切り替える」といった要件は、この設定には含めていません。OSの戻る操作やブラウザの履歴を、タブを選んだ順番と同一視しないようにします。
 
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+## 深いURLと、画面を残す負担も確認する
 
-- GoRouter APIは利用中バージョンを確認する
-- Widget state保持とサーバーデータcache保持は別
+初期URLを`/search/detail`にしたWidgetテストでは、検索タブが選ばれ、詳細ページが表示されます。そこから`pop`すると`/search`へ戻ります。これはルート設定に深いURLを与える検証で、OSからリンクを受け取る設定やブラウザの戻る・進むまで確認したものではありません。
 
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
+一度表示したbranchを保持すると、そのWidgetやStateも残ります。go_router 17.3.0の[実装](https://github.com/flutter/packages/blob/go_router-v17.3.0/packages/go_router/lib/src/route.dart)では、非表示のbranchに`Offstage`と`TickerMode`を使っています。ただし、これを通信やTimerの自動終了と考えることはできません。画面が見えない間の処理を止める要件は、[通信のキャンセルと所有者の寿命](/tech-note/articles/flutter/architecture/dio-cancel-token-lifecycle/)のように別に決めます。
 
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- GoRouter APIは利用中バージョンを確認する
-- Widget state保持とサーバーデータcache保持は別
-
-## 再発防止テスト
-
-```dart
-void main() {
-  test('stateful-shell-route-tab-state', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
-}
-```
-
-## 一般化できる設計原則
-
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
-
-## まとめ
-
-タブUIは見た目の切り替えではなく、複数のナビゲーション履歴をどう所有するかの設計だと締める。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- StatefulShellRouteを使えば全状態が永続化されると書かない
-- GlobalKeyを無秩序に共有しない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+検証は5件です。三つのbranchの詳細履歴とカウンター、スクロール位置、再選択、初期URLからの遷移と`pop`、ルーター再生成後の初期化を確認しました。実機の戻るジェスチャー、ブラウザ履歴、プロセス終了後の復元、メモリ使用量の測定は未検証です。

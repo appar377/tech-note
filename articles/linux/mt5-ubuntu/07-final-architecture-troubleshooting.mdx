@@ -1,6 +1,6 @@
 ---
-title: Ubuntu Server + Wine + MT5 + Python bot構成に落ち着いた理由と失敗集
-description: Ubuntu Server上でWine、MT5、display layer、Python bot、systemdを組み合わせる最終構成と、よくある失敗の切り分けを整理する。
+title: Ubuntu・Wine・MT5構成の問題を、症状からどう切り分けるか
+description: 画面が出ない、Pythonで接続できない、サービスで動かない症状を分け、表示・配布物・起動条件・APIのどこへ戻って確認するか整理します。
 date: 2026-06-28
 tags:
   - Ubuntu Server
@@ -15,190 +15,132 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-final-troubleshooting.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+「画面が出ない」「Pythonから接続できない」「サービスにすると動かない」は、同じ問題とは限りません。症状ごとに確認する境界を選び、分かったことと、まだ見ていないことを分けると、次に調べる対象を絞れます。
 
-Ubuntu Server + Wine + MT5 + Python botの構成は成立します。
+このシリーズは、Ubuntu系Linux、表示経路、Wine、MT5、Python、systemdの役割を9本に分けて整理しました。ここではそれらを使って切り分ける順序を考えます。特定の構成で導入や連続稼働が成功したという報告ではありません。
 
-ただし、Windows前提のMT5をLinuxサーバーに寄せるため、設計・運用・障害対応のコストは増えます。
+## どの構成にも、同じ表示サーバーが必要ですか
 
-この記事では、シリーズ全体の最終構成、メリット・デメリット、トラブルシュート、次にやるなら改善したい点を整理します。
+最初に、対象の構成を一行で説明できるようにします。たとえば「WineのX11経路を使い、独立したXサーバーへ接続する」という構成案なら、表示先への接続が確認対象に入ります。これはLinux上のすべてのWine構成に共通する前提ではありません。
 
-## この記事で学べること
+Wine 10.0ではWaylandドライバーが既定で有効になり、X11とWaylandの両方を利用できる場合にはX11が優先されると説明されています。したがって、OSやデスクトップの名前だけで、個々のWineプロセスの表示経路を断定しません。[Wine 10.0のリリースノート](https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md)
 
-- Ubuntu Server + Wine + MT5 + Python botの最終構成
-- この構成にした理由
-- メリットとデメリット
-- レイヤー別トラブルシュート
-- 次に作るなら最初から設計したいこと
+MetaQuotesのLinux導入ガイドはWineを利用する方法を案内していますが、任意の表示経路、Python、中継サービス、常駐設定を組み合わせた検証結果ではありません。採用した構成の条件を別に残します。[Linuxへの導入ガイド](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-## 前提知識
+## 症状から、どの境界へ戻りますか
 
-- MT5はLinux上ではWine経由で動かす前提がある
-- Ubuntu ServerではGUIがないため、XvfbやVNCなどのdisplay layerが必要になる
-- Python API連携では、MT5 terminalとPython実行環境の位置関係が重要になる
-- systemdでは手動shellと環境変数が異なる
+次の表は原因一覧ではありません。症状から確認の入口を選ぶための表です。右端にある結論は、その症状だけではまだ出せません。
 
-## 本編
+| 症状・分かったこと | 次に照合する境界 | まだ決められないこと |
+|---|---|---|
+| ウィンドウが表示されない | 選んだ表示経路、接続・認証、対象terminalの起動 | OSやWine全体の非対応 |
+| GUIは表示できるがAPIを使えない | Python配布物、対象terminal、API接続 | GUIを変更すれば直ること |
+| 対話起動では動き、サービスでは動かない | 実行ユーザー、環境、prefix、実行ファイル、起動順序 | `DISPLAY`だけが原因であること |
+| サービスは`active`だが接続確認がない | そのサービスの起動完了条件と、アプリ側の接続結果 | APIが準備完了であること |
+| 再起動前の成功記録しかない | 同じ条件が復元されたか、今回の起動で再確認したか | 過去の結果が現在にも当てはまること |
 
-### 最終構成
+Python連携はterminalとのプロセス間通信です。ウィンドウを描画できた結果は、その通信の確認を代替しません。[Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
 
-最終的な構成は、次のように考えます。
+同じように、systemdのサービス種別による起動完了とアプリの準備完了も区別します。たとえば`Type=exec`は実行ファイルを実行できた時点を扱い、その後の接続成功を自動で確認するものではありません。[systemd v258のサービス種別](https://github.com/systemd/systemd/blob/v258/man/systemd.service.xml)
 
-```text
-[VPS / Ubuntu Server]
-  ├─ SSH
-  ├─ firewall
-  ├─ Wine
-  │   └─ MetaTrader 5 terminal64.exe
-  ├─ display layer
-  │   └─ Xvfb or VNC
-  ├─ Python layer
-  │   └─ bot / worker / bridge
-  ├─ systemd
-  │   ├─ display service
-  │   ├─ mt5 service
-  │   └─ bot service
-  └─ logs
-      ├─ journald
-      └─ application logs
+## 未確認を、失敗と取り違えずに記録できますか
+
+説明用の例として、3つの症状に対する確認項目を決めます。`confirmed`はその項目を確認できた、`failed`はその項目の確認が失敗した、`unknown`はまだ確認できていない、という記録です。
+
+次のPython 3コードは、与えられた記録を分類するだけです。実環境を調べる診断器ではなく、API呼び出しや環境変数・ファイル・プロセスの参照もありません。すべての入力は合成値です。
+
+```python file=inspection_summary.py
+import json
+
+
+PLANS = {
+    "no-window": ("display-route", "terminal-launch"),
+    "api-unavailable": ("python-package", "terminal-target", "api-connection"),
+    "service-only-failure": ("launch-context", "process-start", "api-connection"),
+}
+
+
+def inspection_summary(symptom, observations):
+    if symptom not in PLANS:
+        raise ValueError("choose a supported symptom")
+    summary = {"confirmed": [], "failed": [], "unknown": []}
+    for check in PLANS[symptom]:
+        state = observations.get(check, "unknown")
+        if state not in summary:
+            raise ValueError("unsupported observation state")
+        summary[state].append(check)
+    return summary
+
+
+cases = [
+    ("no-observations", "api-unavailable", {}),
+    ("package-failure", "api-unavailable", {"python-package": "failed"}),
+    ("connection-failure", "api-unavailable", {
+        "python-package": "confirmed", "terminal-target": "confirmed",
+        "api-connection": "failed",
+    }),
+    ("window-confirmed-only", "api-unavailable", {"terminal-launch": "confirmed"}),
+    ("service-context-unknown", "service-only-failure", {
+        "process-start": "confirmed", "api-connection": "failed",
+    }),
+    ("window-plan-confirmed", "no-window", {
+        "display-route": "confirmed", "terminal-launch": "confirmed",
+    }),
+]
+
+print(json.dumps([
+    {"case": name, "checks": inspection_summary(symptom, observations)}
+    for name, symptom, observations in cases
+], indent=2))
 ```
 
-この構成では、MT5だけを見るのではなく、MT5を取り巻く運用レイヤーを明示します。
+`inspection_summary.py`として保存すると、6つの例についてJSONを出す設計です。Python 3.11.5で6つの合成入力を実行し、本文から取り出したコードでも、次の分類とJSONの全項目が一致しました。実環境の診断結果ではありません。
 
-### この構成にした理由
+| 合成ケース | 期待する読み取り方 |
+|---|---|
+| `no-observations` | APIに関する3項目すべてが未確認 |
+| `package-failure` | 配布物の確認が失敗。接続先とAPIは未確認 |
+| `connection-failure` | 配布物と接続先は確認済み。API接続の確認が失敗 |
+| `window-confirmed-only` | GUI起動の記録を、API側の確認へ転用しない |
+| `service-context-unknown` | プロセス起動は確認済みでも、起動環境は未確認として残る |
+| `window-plan-confirmed` | 表示と起動の2項目について確認済み。他の機能の結果は含めない |
 
-Ubuntu Server構成に寄せる理由は次です。
+記録にない項目は`unknown`として扱います。たとえばAPI接続の確認が失敗しても、未確認の起動環境を「問題なし」に書き換えません。また、選んだ確認項目に含まれない情報は、この分類には使いません。対象外の項目が成功したからといって、対象の確認が終わったことにはならないためです。
 
-- SSHベースで運用できる
-- systemdで自動起動とrestartを管理できる
-- journaldでログ確認できる
-- bot本体や周辺処理をLinux側で管理しやすい
-- GUIは必要なときだけ確認すればよい
+実際に使う記録では、確認した条件、時点、対象の起動世代も必要です。この例は同じ対象・条件に整理済みの入力を前提とし、古い記録の選別や根本原因の推定は実装していません。
 
-一方で、MT5がWindows前提であることは変わりません。そのため、Wine、display、Python APIの境界を受け入れる必要があります。
+## 変更前後を比べるとき、何をそろえますか
 
-### メリット
+原因を絞るには、「前は動いた」という記憶を、比較できる条件へ分解します。
 
-- VPSリソースを抑えやすい
-- Linuxの運用ツールを使える
-- botをservice化しやすい
-- SSH、firewall、ログ管理を既存のLinux運用に寄せられる
-- GUIあり検証とheadless本番を分けられる
+- OS・アーキテクチャ、Wine・Python・パッケージの版をそろえます。
+- 実行ユーザー、prefix、対象terminal、表示経路、起動方法を対応付けます。
+- 確認した項目と時点を記録し、未確認や別の起動で得た結果を混ぜません。
 
-### デメリット
+サービスへ移した場合は、対話シェルの環境がそのまま引き継がれるとは考えません。system managerとuser managerの環境の組み立てには違いがあります。[systemd v258の実行環境](https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml)
 
-- MT5はLinuxネイティブではない
-- Wineに依存する
-- GUIセッションに依存する
-- Python APIの実行環境に注意が必要
-- MT5 update、broker update、Wine updateの影響を受ける
-- 障害時の切り分けが複雑になる
+条件を一つ変えた後は、その変更が関わる境界を再確認します。表示方式を変えたら接続と認証、Pythonを変えたら配布物と読み込み、起動主体を変えたら環境と終了処理が対象です。複数の設定を一度に変更しても、その結果だけではどの変更が影響したかを分けられません。
 
-### レイヤー別トラブルシュート
+共有する記録には説明用IDを使い、口座情報、認証情報、Xauthorityのcookie、環境変数全体を貼り付けないようにします。必要なのは「何を、どの条件で確かめたか」が対応する記録です。
 
-| レイヤー | 症状 | 原因候補 | 確認方法 |
-|---|---|---|---|
-| OS | 再起動後に動かない | service disabled | `systemctl status` |
-| Display | MT5が起動しない | `DISPLAY`なし | env / journal |
-| Wine | terminalが見つからない | prefix違い | `WINEPREFIX` / path |
-| MT5 | loginできない | server / credentials / network | MT5 GUI / terminal logs |
-| Python | initialize失敗 | terminal path / process | `last_error()` |
-| Order | 注文失敗 | volume / filling / market | retcode |
-| systemd | 手動では動く | HOME / PATH / WINEPREFIX差分 | unit確認 |
+## 次に読む記事は、どの問いから選びますか
 
-### 次にやるなら
+全9本は、同じ手順を順番に実行するためのものではありません。現在の問いに対応する記事へ戻れます。
 
-次に同じ構成を作るなら、最初から次を設計します。
+| 知りたいこと | 対応する記事 |
+|---|---|
+| 構成をどの層に分けるか | [全体像](/tech-note/articles/linux/mt5-ubuntu/00-series-overview/) |
+| OS・デスクトップと保守条件をどう選ぶか | [OS選定](/tech-note/articles/linux/mt5-ubuntu/01-os-selection/) |
+| 画面で確認できる範囲はどこまでか | [GUI確認](/tech-note/articles/linux/mt5-ubuntu/02-gui-flavors-validation/) |
+| ログイン中のデスクトップに依存しない表示先をどう設計するか | [headless構成](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design/) |
+| 表示への接続と認証をどう分けるか | [Wayland・X11・Xauthority](/tech-note/articles/linux/mt5-ubuntu/03-wayland-x11-xauthority/) |
+| prefixと実行ファイルをどう対応付けるか | [WineとMT5の導入](/tech-note/articles/linux/mt5-ubuntu/04-wine-mt5-installation/) |
+| 配布物とterminalへの接続をどう確認するか | [Python連携](/tech-note/articles/linux/mt5-ubuntu/05-mt5-python-api-integration/) |
+| 起動主体と接続確認をどう分けるか | [systemdでの管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation/) |
+| 症状から確認する境界を選ぶにはどうするか | この記事 |
 
-- Wine prefixを明示的に管理する
-- terminal pathを設定ファイル化する
-- MT5 API workerをbot本体から分離する
-- account / terminal health checkを作る
-- broker固有symbol名をconfig化する
-- systemd unitとbot logを最初から設計する
-- VNCはSSH tunnel前提にする
-- 実環境値を構築ログとして残す
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["Ubuntu Server"] --> B["firewall / SSH"]
-  A --> C["display layer"]
-  C --> D["Wine"]
-  D --> E["MT5 terminal"]
-  E --> F["Python worker / bridge"]
-  F --> G["bot"]
-  A --> H["systemd"]
-  H --> C
-  H --> E
-  H --> G
-  H --> I["journald"]
-  G --> J["application logs"]
-```
-
-## CLI・設定例
-
-障害時は、レイヤーごとに見ます。
-
-```bash
-$ systemctl status xvfb.service
-$ systemctl status mt5.service
-$ systemctl status mt5-bot.service
-$ journalctl -u mt5.service --since "1 hour ago"
-$ journalctl -u mt5-bot.service --since "1 hour ago"
-$ ps aux | grep -E "Xvfb|wine|terminal64|python"
-```
-
-Python側では、接続失敗時に`last_error()`を必ず出します。
-
-```python
-import MetaTrader5 as mt5
-
-if not mt5.initialize(path="TODO: masked terminal64.exe path"):
-    print("initialize failed", mt5.last_error())
-    raise SystemExit(1)
-
-mt5.shutdown()
-```
-
-## 内部動作
-
-最終構成では、障害は1つのレイヤーだけで完結しません。
-
-```text
-boot
-↓
-systemd
-↓
-display layer
-↓
-Wine
-↓
-MT5 terminal
-↓
-Python API / bridge
-↓
-bot
-↓
-logs / health check
-```
-
-たとえば`initialize()`が失敗した場合でも、原因はPythonコードとは限りません。MT5が起動していない、DISPLAYがない、Wine prefixが違う、terminal pathが違う、login状態がない、broker接続が切れているなど、複数の候補があります。
-
-## まとめ
-
-- LinuxでMT5を動かすこと自体は可能だが、Windows前提のアプリをLinux運用に寄せるコストはある。
-- 本番運用では、Wine、display、MT5、Python、systemdの境界を設計する必要がある。
-- GUIあり検証とUbuntu Server本番を分けると、切り分けしやすい。
-- 投資判断ではなく、サーバー運用としての再現性、ログ、復旧性を設計することが重要。
-
-## 参考文献
-
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
-- [MQL5 Reference: Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
-- [MQL5 Reference: initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
-- [systemd.service manual](https://www.freedesktop.org/software/systemd/man/systemd.service.html)
-- [X.Org: Xvfb manual page](https://www.x.org/archive//X11R7.0/doc/html/Xvfb.1.html)
+一つの確認が終わったら、その結果を適用できる条件を残します。条件が変わった部分から確認し直すと、構成全体を最初から作り直さずに、次の判断へ進めます。

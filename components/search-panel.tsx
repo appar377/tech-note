@@ -1,100 +1,157 @@
 "use client";
 
 import Link from "next/link";
-import { Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { SearchEntry } from "@/lib/articles";
+import { contentKind, searchContent, type ContentKind } from "@/lib/search";
 
-type SearchPanelProps = {
-  index: SearchEntry[];
-  compact?: boolean;
+const kindLabels = {
+  all: "すべて",
+  articles: "記事",
+  books: "ブック",
+  notes: "ノート",
 };
 
-export function SearchPanel({ index, compact = false }: SearchPanelProps) {
-  const [query, setQuery] = useState("");
-
-  const results = useMemo(() => {
-    const terms = query
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-    if (terms.length === 0) {
-      return [];
-    }
-
-    return index
-      .map((entry) => ({
-        entry,
-        score: scoreEntry(entry, terms),
-      }))
-      .filter((item) => item.score > 0)
-      .sort((a, b) => b.score - a.score || b.entry.date.localeCompare(a.entry.date))
-      .slice(0, compact ? 5 : 12)
-      .map((item) => item.entry);
-  }, [compact, index, query]);
+export function SearchPanel({
+  index,
+  compact = false,
+  initialQuery = "",
+}: {
+  index: SearchEntry[];
+  compact?: boolean;
+  initialQuery?: string;
+}) {
+  const [query, setQuery] = useState(initialQuery);
+  const [category, setCategory] = useState("");
+  const [kind, setKind] = useState<ContentKind>("all");
+  const [limit, setLimit] = useState(12);
+  const inputId = useId();
+  const categories = useMemo(
+    () => [...new Set(index.map((entry) => entry.category))].sort(),
+    [index],
+  );
+  const results = useMemo(
+    () => searchContent(index, query, category, kind),
+    [index, query, category, kind],
+  );
+  const showResults = !compact || query.trim().length > 0;
+  const visibleResults = results.slice(0, compact ? 5 : limit);
 
   return (
-    <div className="tech-shell min-w-0 rounded-lg border p-3">
-      <label className="relative block">
-        <Search
-          aria-hidden
-          size={18}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
-        />
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="ROW_NUMBER, Rails UPSERT, GitHub Pages..."
-          className="h-12 w-full min-w-0 rounded-lg border border-zinc-200 bg-white/70 pl-10 pr-3 text-sm text-zinc-950 outline-none transition placeholder:text-zinc-400 focus:border-cyan-500 focus:bg-white focus:ring-4 focus:ring-cyan-500/10 dark:border-zinc-800 dark:bg-white/[0.04] dark:text-zinc-50 dark:focus:border-cyan-400 dark:focus:bg-zinc-950/80"
-        />
+    <div
+      className={
+        compact ? "content-search content-search--compact" : "content-search"
+      }
+    >
+      <label htmlFor={inputId} className="search-label">
+        キーワード
       </label>
-      {query ? (
-        <div className="mt-3 max-h-[420px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-900/80">
-          {results.length > 0 ? (
-            results.map((result) => (
-              <Link
-                key={result.url}
-                href={result.url}
-                className="block min-w-0 rounded-md px-2 py-3 outline-none transition hover:bg-cyan-500/10 focus-visible:bg-cyan-500/10"
+      <div className="search-input-row">
+        <input
+          id={inputId}
+          type="search"
+          autoComplete="off"
+          value={query}
+          placeholder="例：Dart const、Rails トランザクション"
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setLimit(12);
+          }}
+        />
+        {query ? (
+          <button
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setLimit(12);
+            }}
+          >
+            クリア
+          </button>
+        ) : (
+          <span aria-hidden>⌕</span>
+        )}
+      </div>
+      {!compact ? (
+        <div className="search-filters">
+          <fieldset>
+            <legend className="sr-only">読み物の種類</legend>
+            {Object.entries(kindLabels).map(([value, label]) => (
+              <button
+                type="button"
+                key={value}
+                aria-pressed={kind === value}
+                onClick={() => {
+                  setKind(value as ContentKind);
+                  setLimit(12);
+                }}
               >
-                <span className="block break-words text-sm font-semibold text-zinc-950 dark:text-zinc-50">
-                  {result.title}
-                </span>
-                <span className="mt-1 line-clamp-1 block text-xs text-zinc-500 dark:text-zinc-400">
-                  {result.description}
-                </span>
-              </Link>
-            ))
-          ) : (
-            <p className="px-2 py-4 text-sm text-zinc-500 dark:text-zinc-400">
-              該当する記事はありません。
-            </p>
-          )}
+                {label}
+              </button>
+            ))}
+          </fieldset>
+          <label>
+            分野
+            <select
+              value={category}
+              onChange={(event) => {
+                setCategory(event.target.value);
+                setLimit(12);
+              }}
+            >
+              <option value="">すべての分野</option>
+              {categories.map((name) => (
+                <option key={name}>{name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+      {showResults ? (
+        <div className="search-results">
+          <p role="status" aria-live="polite" className="result-count">
+            {results.length}件
+            {results.length > visibleResults.length
+              ? `のうち${visibleResults.length}件を表示`
+              : ""}
+          </p>
+          {visibleResults.map((result) => (
+            <article key={result.url} className="search-result">
+              <div className="article-row__meta">
+                <span>{kindLabels[contentKind(result)]}</span>
+                <span>{result.category}</span>
+              </div>
+              <h2>
+                <Link href={result.url}>{result.title}</Link>
+              </h2>
+              <p>{result.description}</p>
+            </article>
+          ))}
+          {results.length === 0 ? (
+            <div className="empty-state">
+              <p>一致する読み物はありません。</p>
+              <p>キーワードを短くするか、分野を「すべて」に戻してください。</p>
+            </div>
+          ) : null}
+          {!compact && results.length > limit ? (
+            <button
+              className="load-more"
+              type="button"
+              onClick={() => setLimit((current) => current + 12)}
+            >
+              さらに12件表示
+            </button>
+          ) : null}
+          {compact && results.length > 5 ? (
+            <Link
+              className="text-link"
+              href={{ pathname: "/search", query: { q: query } }}
+            >
+              検索ページで絞り込む →
+            </Link>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
-}
-
-function scoreEntry(entry: SearchEntry, terms: string[]) {
-  const haystack = {
-    title: entry.title.toLowerCase(),
-    description: entry.description.toLowerCase(),
-    category: entry.category.toLowerCase(),
-    tags: entry.tags.join(" ").toLowerCase(),
-    series: entry.series?.toLowerCase() ?? "",
-    content: entry.content.toLowerCase(),
-  };
-
-  return terms.reduce((score, term) => {
-    if (haystack.title.includes(term)) score += 80;
-    if (haystack.description.includes(term)) score += 35;
-    if (haystack.category.includes(term)) score += 30;
-    if (haystack.tags.includes(term)) score += 30;
-    if (haystack.series.includes(term)) score += 25;
-    if (haystack.content.includes(term)) score += 10;
-    return score;
-  }, 0);
 }

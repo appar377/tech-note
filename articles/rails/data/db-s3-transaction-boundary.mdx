@@ -1,6 +1,6 @@
 ---
-title: "DBトランザクションではS3をロールバックできない――外部ストレージを含む処理の設計"
-description: "ローカルDBトランザクションの境界を外部サービスまで拡張できない場合、状態遷移、冪等性、リトライ、補償処理、定期修復を組み合わせる。原子的成功を装うのではなく、中間状態を設計する。"
+title: "DBトランザクションとS3アップロードをどこで分けるか"
+description: "片方だけ成功する二つの失敗を分け、pending行と固定キーを先に保存して、再試行できる状態を残す設計を確認します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -14,137 +14,204 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/db-s3-transaction-boundary.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+画像をS3へアップロードした後にDBの保存が失敗したら、`transaction`で画像も元に戻るでしょうか。Active Recordのトランザクションが戻すのは、そのDB接続で行った更新です。外部ストレージへの書き込みは別に残ります。
 
-DBレコード作成とS3アップロードを1つの処理にまとめたとき、どちらかだけ成功する不整合が起き得る。`ActiveRecord::Base.transaction`で囲めば全体が戻るように見えるが、S3はそのトランザクションへ参加しない。
+処理順を逆にしても、今度は「DBでは利用可能なのに、ファイルがない」という失敗が起こり得ます。そこで、アップロード前に`pending`の行と送信先のキーを保存し、途中で止まっても同じ処理を続けられるようにします。
 
-ローカルDBトランザクションの境界を外部サービスまで拡張できない場合、状態遷移、冪等性、リトライ、補償処理、定期修復を組み合わせる。原子的成功を装うのではなく、中間状態を設計する。
+以下はRuby 3.4.4、Active Record 8.1.3、pg 1.6.3、PostgreSQL 17.10を対象にした小さな例です。外部ストレージにはメモリ上のfakeを使い、実S3には接続しません。専用のローカルDBで、本文に対応する9例のRSpecが成功しました。
 
-## この記事で学べること
+## 順序を入れ替えるだけで解決できるか
 
-- DB成功/S3失敗、S3成功/DB失敗の失敗行列
-- なぜDBロールバックでS3操作は戻らないか
-- アップロード先を一時キーにする案
-- `pending`→`available`→`failed`の状態遷移
-- Outbox/Inbox、非同期ワーカー、冪等キー
-- 補償トランザクションとしてのS3削除
+DBと外部ストレージの片方だけが成功したとき、残るものが違います。
 
-## 前提知識
+| 操作の順序と失敗箇所 | DBに残る状態 | 外部ストレージに残る状態 |
+| --- | --- | --- |
+| DBトランザクション内で行を作り、アップロード成功後にロールバック | 行はない | オブジェクトはある |
+| 利用可能な行を先にコミットし、その後のアップロードが書き込み前に失敗 | 利用可能な行がある | オブジェクトはない |
+| `pending`行をコミットし、アップロードの応答を受け取れず停止 | 未確定の行がある | 成功しているか、この時点では分からない |
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+Railsはトランザクションの範囲をDB接続単位と説明しています。Rubyのブロック内へHTTP呼び出しを書いても、外部サービスがそのDBトランザクションに参加するわけではありません。[Rails 8.1.3のトランザクション](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)
 
-## 図解
+また、通信がタイムアウトしたことと、相手が処理しなかったことは同じではありません。応答を失った側からは結果が分からないため、再試行時の副作用も考える必要があります。[AWSの再試行と冪等性の説明](https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/)
 
-![DBトランザクションではS3をロールバックできない――外部ストレージを含む処理の設計](/images/articles/db-s3-transaction-boundary.png)
+## DBだけがロールバックする様子を確かめる
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
+使い捨てのローカルDBに、`boundary_assets`を用意します。列は`id`のほか、`object_key:string`、`content_sha256:string`、`status:string`です。各列に`NOT NULL`、`object_key`にunique indexを付け、`status`の初期値を`pending`にします。
 
-## 実装コード例
+次のモデルとfakeは、Active Recordを読み込み、DB接続を設定した後に使います。fakeはキーと文字列をHashに保存するだけで、S3のAPIや耐久性を再現するものではありません。コード中のバイト列やキーは説明用の合成値です。
 
 ```ruby
-class UploadImage
-  def call(file)
-    key = storage.put_object(file)
+require "digest"
+require "securerandom"
 
-    ImageRecord.transaction do
-      ImageRecord.create!(storage_key: key)
+class BoundaryAsset < ActiveRecord::Base
+  self.table_name = "boundary_assets"
+
+  validates :object_key, :content_sha256, presence: true
+  validates :status, inclusion: { in: %w[pending ready] }
+end
+
+class BoundaryObjectStore
+  attr_reader :objects, :writes
+  attr_accessor :fail_before_put
+
+  def initialize
+    @objects = {}
+    @writes = []
+    @fail_before_put = false
+  end
+
+  def put(key:, body:)
+    raise IOError, "upload failed before storing bytes" if fail_before_put
+
+    @objects[key] = body.dup
+    @writes << key
+  end
+end
+```
+
+アップロードに相当する`put`が完了した後、DBをロールバックします。
+
+```ruby
+body = "example image bytes"
+rolled_back_store = BoundaryObjectStore.new
+key = "assets/rolled-back-row"
+
+BoundaryAsset.transaction do
+  BoundaryAsset.create!(
+    object_key: key,
+    content_sha256: Digest::SHA256.hexdigest(body),
+    status: "ready"
+  )
+  rolled_back_store.put(key: key, body: body)
+  raise ActiveRecord::Rollback
+end
+
+BoundaryAsset.exists?(object_key: key) # => false
+rolled_back_store.objects[key]        # => "example image bytes"
+```
+
+DBから行は消えても、fakeに書いた値は残ります。この例が確かめるのは、DBのロールバックが外部への操作を取り消さないことです。S3の実通信を検証した結果ではありません。
+
+反対に、`ready`の行を先にコミットしてからfakeの`fail_before_put`を`true`にすると、書き込みが失敗してもDBの行は残ります。この逆順の失敗も、RSpecでは独立した例にしています。
+
+## 最初にpendingを保存すると、何を残せるか
+
+保存先のキーをアップロードのたびに作り直すと、再試行が別のオブジェクトを作る原因になります。次の例では、一件のアップロード予定に対してキーを一つ決め、同じ行を再利用します。`content_sha256`は、再試行で違う内容を渡していないかを確認するための値です。[RubyのDigest](https://docs.ruby-lang.org/en/3.4/Digest.html)
+
+```ruby
+class BoundaryUpload
+  def initialize(store:)
+    @store = store
+  end
+
+  def prepare(body:)
+    ensure_outside_transaction!
+    BoundaryAsset.create!(
+      object_key: "assets/#{SecureRandom.uuid}",
+      content_sha256: Digest::SHA256.hexdigest(body),
+      status: "pending"
+    )
+  end
+
+  def call(asset:, body:)
+    ensure_outside_transaction!
+    asset.reload
+    unless Digest::SHA256.hexdigest(body) == asset.content_sha256
+      raise ArgumentError, "body differs from the prepared content"
     end
-  rescue ActiveRecord::RecordInvalid
-    storage.delete_object(key) if key
-    raise
+    return asset if asset.status == "ready"
+
+    @store.put(key: asset.object_key, body: body)
+    asset.update!(status: "ready")
+    asset
+  end
+
+  private
+
+  def ensure_outside_transaction!
+    if BoundaryAsset.current_transaction.open?
+      raise ArgumentError, "call after the database transaction has committed"
+    end
   end
 end
 ```
 
-## 本編
-
-### 発生した状況
-
-DBレコード作成とS3アップロードを1つの処理にまとめたとき、どちらかだけ成功する不整合が起き得る。`ActiveRecord::Base.transaction`で囲めば全体が戻るように見えるが、S3はそのトランザクションへ参加しない。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、ローカルDBトランザクションの境界を外部サービスまで拡張できない場合、状態遷移、冪等性、リトライ、補償処理、定期修復を組み合わせる。原子的成功を装うのではなく、... という観点で見る必要がありました。
-
-### 観測したこと
-
-- 状態カラムを持つモデル例
-- Outbox生成とワーカーの擬似コード
-- 同じイベントを2回処理しても1つだけ確定するテスト
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 同期処理 | 単純で即時性／失敗復旧とタイムアウトが難しい |
-| 非同期状態機械 | 回復性／UI・運用・状態管理が複雑 |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- ACIDの適用範囲は参加するDB資源に限られる
-- 外部APIの成功/失敗とDBコミットは別の失敗ドメイン
-- Exactly-onceを安易に主張せず、冪等なat-least-once処理を設計する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- ACIDの適用範囲は参加するDB資源に限られる
-- 外部APIの成功/失敗とDBコミットは別の失敗ドメイン
-- Exactly-onceを安易に主張せず、冪等なat-least-once処理を設計する
-
-## 再発防止テスト
+`prepare`で行を保存してから、`call`でアップロードします。DBの作成・更新はそれぞれ短い保存処理に任せ、アップロードをその間へ置いています。呼び出し側のトランザクションへ巻き込まれるのを避けるため、同じDB接続の[`current_transaction.open?`](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html#method-i-current_transaction)が`true`なら開始しません。
 
 ```ruby
-RSpec.describe "db-s3-transaction-boundary" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+store = BoundaryObjectStore.new
+upload = BoundaryUpload.new(store: store)
+asset = upload.prepare(body: body)
 
-    expect(result).to be_present
-  end
-end
+asset.status                        # => "pending"
+store.objects.empty?                # => true
+BoundaryAsset.current_transaction.open? # => false
+
+upload.call(asset: asset, body: body)
+
+asset.reload.status                 # => "ready"
+store.objects[asset.object_key]      # => "example image bytes"
+
+upload.call(asset: asset, body: body)
+store.writes                        # => [asset.object_key]
 ```
 
-## 一般化できる設計原則
+利用側は`ready`の行だけを表示や配信の対象にします。`pending`は「失敗」と断定した状態ではなく、まだ利用可能と確定していない状態です。アップロード前に失敗したときも、成功後にDB更新へ進めなかったときも、この行が後続の確認先になります。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+この`prepare`自体を再度呼ぶと、新しい行を作ります。クライアントから同じ作成リクエストが届く場合の重複排除は実装していません。再試行では既存のasset IDを引き継ぐ必要があります。
 
-## まとめ
+## アップロード成功直後に止まったら、どこから再開するか
 
-「不整合をゼロに見せる」より「不整合状態を観測し、安全に収束させる」設計が現実的だとまとめる。
+`put`が成功してから`ready`へ更新するまでには、まだ停止する余地があります。次は、その間の状態を手順を分けて作る例です。実際にプロセスを停止させるものではありません。
 
+```ruby
+retry_store = BoundaryObjectStore.new
+first_upload = BoundaryUpload.new(store: retry_store)
+pending_asset = first_upload.prepare(body: body)
+fixed_key = pending_asset.object_key
 
-この記事では、次のような短絡的な一般化は避けます。
+retry_store.put(key: fixed_key, body: body)
+# readyへの更新前に処理が止まった状態を残します。
+BoundaryAsset.find(pending_asset.id).status # => "pending"
+retry_store.objects[fixed_key]             # => "example image bytes"
 
-- 分散トランザクションを導入すれば簡単に解決すると書かない
-- 補償処理が必ず成功する前提にしない
+retry_upload = BoundaryUpload.new(store: retry_store)
+retry_upload.call(asset: BoundaryAsset.find(pending_asset.id), body: body)
 
-## 参考文献
+BoundaryAsset.find(pending_asset.id).status # => "ready"
+retry_store.objects.size                  # => 1
+retry_store.writes                        # => [fixed_key, fixed_key]
+```
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+fakeへの書き込みは2回ですが、同じキーへ同じ内容を書いているため、現在の値は一件です。「呼び出しが一度だけ」と「再試行後も同じ結果になる」は区別します。RSpecでは`update!`の直前に例外を注入し、`call`を通った場合にも同じ中間状態が残ることを確認する構成です。
+
+再送に必要な元のバイト列を、停止後にも取得できることが前提です。この例は引数の文字列を再利用していますが、プロセスのメモリにしかない内容や、すぐ削除する一時ファイルでは復旧できません。元データの保管期限と取得方法も決めます。
+
+## 固定キーなら、S3でも一度だけ保存されるか
+
+このfakeは同じHashの値を上書きしますが、実際のS3の保存規則をすべて表してはいません。S3の`PutObject`が成功応答を返した場合、オブジェクト全体の追加は完了しています。それでも、その後のDB更新とは別の操作です。[S3 PutObject API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html)
+
+さらに、Versioningを有効にしたバケットでは、同じキーへの上書きが新しいバージョンを作ります。固定キーにしただけで、バージョン数や書き込み回数が一つになるとはいえません。[S3 Versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html)
+
+上書きを認めない設計なら、`If-None-Match: *`のような条件付き書き込みを検討します。既存のキーがあれば失敗するため、再試行時には「自分が前回保存した内容か」を照合してから確定する手順が別途必要です。既存なら何でも成功扱いにしてはいけません。[S3の条件付き書き込み](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
+
+このコードのSHA-256比較は、呼び出し元が渡した文字列の確認だけです。S3上の内容を照合したり、別の書き込み元を排除したりする機能ではありません。object keyと期待する内容を変更しない規則、複数workerの排他や期限付きの処理権、実オブジェクトとの照合は未実装です。
+
+## 非同期化や補償を加えるとき、何が別途必要か
+
+処理をworkerへ渡すなら、`pending`行とアップロード予定のOutboxイベントを同じDBトランザクションへ記録し、コミット後にworkerが処理する構成にできます。配送の重複は残るため、イベントIDやasset IDを引き継ぎます。受信イベントの重複を記録するInboxを置く場合も、外部ストレージの成功とDBの記録を一つのコミットにはできません。[Transactional Outboxの公式説明](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html)
+
+この例の`prepare`は外側のトランザクションを拒否するため、そのまま流用はできません。Outboxを組み込むなら、pending行の作成とイベント記録をまとめる入口を別に設け、アップロードは引き続きコミット後に行います。
+
+DB更新とOutboxの具体例は、[after_commitの後で通知に失敗したら](/tech-note/articles/rails/active_record/after-commit-business-workflow)で扱っています。ここではworkerの起動、再試行の間隔、処理権の更新、監視までは実装していません。同期処理なら呼び出し元が結果を待てますが、非同期処理では待機中の表示と結果の取得方法も必要です。
+
+一時キーへアップロードしてから確定用キーへ移す案でも、DBとストレージの境界は残ります。一時データの期限や、確定途中の失敗から再開する方法まで決めて使います。この例では固定キーを維持し、DBの状態で利用可否を分けています。
+
+中止したアップロードを削除する補償処理も、DBロールバックとは別のAPI操作です。削除が失敗した場合に再実行できる記録を残します。S3ではVersioningが有効な場合、version IDを指定しない削除はdelete markerを作る動作になるため、何を削除対象にするかも確認が必要です。[S3 DeleteObject API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html)
+
+`failed`を追加するなら、単発のタイムアウトではなく、照合や再試行方針に基づいて処理を打ち切った状態として定義します。長く残る`pending`を見つける照合、補償の再試行、運用上の期限は、この最小例とは別に用意する部分です。途中の状態を残してこそ、再送するのか、既存オブジェクトを確かめるのか、中止するのかを後から判断できます。

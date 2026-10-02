@@ -1,6 +1,6 @@
 ---
 title: "Flutterで複数の401が同時に返ったとき、Token Refreshを一度だけ実行する設計"
-description: "Refresh処理をsingle-flight化し、同時401のうち1つだけが更新を担当し、他は同じFutureを待つ。generation/versionを記録し、既に別リクエストが更新済みなら再refreshせず再試行する。"
+description: "同時401では更新中のFutureを共有し、遅れて届く401は送信時のトークン世代で判定します。失敗の共有、ログアウトとの競合、一回だけの再送を小さな実装で整理します。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,144 +14,200 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/single-flight-token-refresh-concurrent-401.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+画面表示時に複数のAPIを呼び、期限切れのアクセストークンに対して401がまとめて返ったとします。各要求が個別にトークンを更新すると、同じリフレッシュトークンを何度も使ってしまいます。更新中のFutureを共有し、待っている要求へ同じ結果を渡すのがsingle-flightです。
 
-画面表示時に複数APIを並行実行すると、期限切れAccess Tokenに対して複数の401が同時に返る。それぞれがRefresh APIを呼ぶと、token rotationや再試行が競合する。
+ただし、Futureの共有だけでは足りません。更新が終わった後に届く古い401と、ログアウト後に完了する更新も区別する必要があります。送信時の「トークン世代」と「ログインセッション」を記録すると、この二つを分けて扱えます。
 
-Refresh処理をsingle-flight化し、同時401のうち1つだけが更新を担当し、他は同じFutureを待つ。generation/versionを記録し、既に別リクエストが更新済みなら再refreshせず再試行する。
+以下はFlutter 3.41.9（Dart SDK 3.11.5）、Dio 5.9.2を対象にした説明用の例です。一つのIsolate内で一つのcoordinatorを共有する範囲に絞り、認証サーバーへの接続や端末ストレージへの保存は含めません。
 
-## この記事で学べること
+## 更新が終わってから、古い401が届くこともある
 
-- Thundering Herdとしての同時401
-- 共有中のrefresh Future/Mutex/queue
-- リクエスト送信時のtoken generation
-- 401時に現在generationと比較
-- Refresh endpoint自体をinterceptor対象から除外
-- 元リクエストは最大1回だけretry
+要求AとBが、どちらも世代0のトークンで送信されたとします。Aの401を受けて更新が成功し、現在のトークンが世代1になった後で、Bの401が到着することがあります。
 
-## 前提知識
+この時点では更新中のFutureはありません。Futureの有無だけで判定すると、Bがもう一度更新を始めてしまいます。Bの送信時の世代0と現在の世代1を比較し、世代が変わっていれば現在のトークンで再送します。
 
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+リフレッシュトークンのrotationでは、更新時に新しい値が発行され、古い値が無効になります。同じ古い値の再使用が検知されると、認証サーバーが有効なリフレッシュトークンを失効させる場合もあります。[RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)がこの仕組みを説明しています。クライアント内の重複更新を防いでも、複数Isolateや別端末まで調停できるわけではありません。
 
-## 図解
+## 401なら必ず更新してよい、とは判断しない
 
-![Flutterで複数の401が同時に返ったとき、Token Refreshを一度だけ実行する設計](/images/articles/single-flight-token-refresh-concurrent-401.png)
+Bearer認証の`invalid_token`は期限切れだけでなく、失効や不正なトークンも含みます。[RFC 6750 §3.1](https://www.rfc-editor.org/rfc/rfc6750.html#section-3.1)では、新しいアクセストークンの取得と再試行は許容されますが、すべての401が自動更新で回復するとは定めていません。
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
+更新対象かどうかはAPIのエラー契約に沿って決めます。対象のAPI、認証方式、エラーコードを確認し、ログインAPIや更新API自身の失敗を通常のAPIと同じ更新処理へ戻さないようにします。後述の`canRefresh`には、この判定を渡します。
 
-## 実装コード例
+## トークン世代とログインセッションを持つ
+
+`generation`は同じログイン中に更新が成功するたび増やします。`session`はログアウトや別のログインで変えます。トークンが新しくなったことと、認証の主体が入れ替わったことを同じカウンターに混ぜない設計です。
+
+次のcoordinatorは、現在のトークンと更新中のFutureをメモリにだけ保持します。`refresh`は、更新APIの結果を`TokenPair`へ変換する関数として外から渡します。
 
 ```dart
-class TokenRefreshCoordinator {
-  Future<TokenPair>? _refreshing;
+class TokenPair {
+  const TokenPair(this.accessToken, this.refreshToken);
+  final String accessToken;
+  final String refreshToken;
+}
 
-  Future<TokenPair> refreshOnce() {
-    return _refreshing ??= _refresh().whenComplete(() {
-      _refreshing = null;
-    });
+class TokenSnapshot {
+  const TokenSnapshot(this.session, this.generation, this.tokens);
+  final int session;
+  final int generation;
+  final TokenPair tokens;
+}
+
+class SessionChanged implements Exception {}
+
+// Only a confirmed terminal rejection, such as invalid_grant, uses this type.
+class RefreshRejected implements Exception {}
+
+class TokenRefreshCoordinator {
+  TokenRefreshCoordinator({
+    required TokenPair initial,
+    required Future<TokenPair> Function(String) refresh,
+  }) : _current = TokenSnapshot(0, 0, initial),
+       _refresh = refresh;
+
+  final Future<TokenPair> Function(String) _refresh;
+  TokenSnapshot? _current;
+  Future<TokenSnapshot>? _inFlight;
+  int _session = 0;
+
+  TokenSnapshot get current => _current ?? (throw SessionChanged());
+
+  // Pass null on logout; pass new tokens only after a new login succeeds.
+  void replaceSession(TokenPair? tokens) {
+    _session++;
+    _current = tokens == null ? null : TokenSnapshot(_session, 0, tokens);
+    _inFlight = null;
   }
 
-  Future<TokenPair> _refresh() async {
-    return TokenPair(accessToken: 'new-access', refreshToken: 'new-refresh');
+  Future<TokenSnapshot> refreshAfter401(TokenSnapshot sent) {
+    final now = _current;
+    if (now == null || now.session != sent.session) {
+      return Future.error(SessionChanged());
+    }
+    if (now.generation != sent.generation) return Future.value(now);
+    if (_inFlight != null) return _inFlight!;
+
+    late final Future<TokenSnapshot> flight;
+    flight = _refreshFor(now).whenComplete(() {
+      if (identical(_inFlight, flight)) _inFlight = null;
+    });
+    _inFlight = flight;
+    return flight;
+  }
+
+  Future<TokenSnapshot> _refreshFor(TokenSnapshot before) async {
+    try {
+      final tokens = await _refresh(before.tokens.refreshToken);
+      if (_session != before.session) throw SessionChanged();
+      return _current = TokenSnapshot(
+        before.session,
+        before.generation + 1,
+        tokens,
+      );
+    } on RefreshRejected {
+      if (_session == before.session) replaceSession(null);
+      rethrow;
+    }
   }
 }
 ```
 
-## 本編
+`refreshAfter401`には、失敗した要求を送ったときのsnapshotを渡します。現在のsnapshotを渡し直すと、古いトークンで送った事実が失われるので注意します。同じセッション・同じ世代で更新が進行中なら、呼び出し側には同じFutureを返します。
 
-### 発生した状況
+更新が完了するたびに`_inFlight`を解除しますが、`identical`で自分のFutureか確認しています。古いセッションの更新が終わったときに、新しいセッションで始まっている更新を消さないためです。成功したトークンも、開始時と現在のセッションが一致する場合だけ採用します。
 
-画面表示時に複数APIを並行実行すると、期限切れAccess Tokenに対して複数の401が同時に返る。それぞれがRefresh APIを呼ぶと、token rotationや再試行が競合する。
+`TokenPair`は更新後に採用すべき一組です。更新APIが新しいリフレッシュトークンを返した場合には古い値を置き換えます。返さない場合の扱いも含め、変換を`refresh`側で行います。[RFC 6749 §6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6)を踏まえ、サーバーのレスポンス仕様を確認します。
 
-### 当初の理解・誤解
+## 再送できる要求だけ、一回だけ送る
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Refresh処理をsingle-flight化し、同時401のうち1つだけが更新を担当し、他は同じFutureを待つ。generation/versionを記... という観点で見る必要がありました。
+coordinatorは更新結果を共有するだけです。元のAPIを何回送るかは、次の関数で制限します。初回の送信だけを`try`の内側に置き、二回目の401はそのまま呼び出し側へ返します。
 
-### 観測したこと
+```dart
+import 'package:dio/dio.dart';
 
-- `TokenRefreshCoordinator`
-- `Future&lt;String&gt;? _inFlightRefresh`方式
-- generation counter方式
-- Dio interceptorの擬似コード
-- 10件同時401でrefresh呼び出しが1回のtest
+Future<T> sendWithOneRefresh<T>({
+  required TokenRefreshCoordinator auth,
+  required Future<T> Function(TokenSnapshot) send,
+  required bool Function(DioException) canRefresh,
+  required bool replayAllowed,
+}) async {
+  final sent = auth.current;
+  try {
+    return await send(sent);
+  } on DioException catch (error) {
+    if (error.response?.statusCode != 401 ||
+        !replayAllowed ||
+        !canRefresh(error)) {
+      rethrow;
+    }
+  }
+  await auth.refreshAfter401(sent);
+  final latest = auth.current;
+  if (latest.session != sent.session) throw SessionChanged();
+  return send(latest); // Outside the catch: a second 401 is not retried.
+}
+```
 
-### 修正案の比較
+`send`は渡されたsnapshotからAuthorizationヘッダーを設定し、一回の要求を送ります。二回呼ばれても元の要求内容を再現できることが前提です。`replayAllowed`は、次の両方を確認した場合にだけ`true`にします。
 
-| 方針 | 見るべき点 |
-| --- | --- |
-| 単一Future共有 | 単純／失敗・キャンセル伝播を設計 |
-| queue | 順序制御／待機リクエスト管理が複雑 |
+- **同じ操作を再実行してよいこと。** 更新系APIなら、最初の要求が適用されていない保証や、サーバー側の重複排除の契約を確認します。[RFC 9110 §9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2)も、根拠のない非冪等な要求の自動再送を避けるよう定めています。
+- **同じbodyを再生成できること。** 読み終わったStreamや送信済みのアップロードbodyを、そのまま再利用しません。Dioの`FormData`や`MultipartFile`は要求ごとに作り直します。[Dio 5.9.2の再利用に関する説明](https://pub.dev/packages/dio/versions/5.9.2#reuse-formdatas-and-multipartfiles)を確認し、再生成できない場合は自動再送を止めます。
 
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- 並行制御は同一Isolate内だけか、プロセスを跨ぐかを明記
-- Refresh Token rotation仕様を認証サーバーに合わせる
-- 401すべてが期限切れとは限らない
+実際のDio interceptorへ移す場合の処理順は、次のようになります。これは接続箇所を示す擬似コードです。
 
 ```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
+onRequest: 送信に使うsnapshotと再試行回数をRequestOptions.extraへ保存
+onError: 更新対象の401・初回・再送可能な要求であるか判定
+         送信時snapshotでrefreshAfter401を待つ
+         キャンセルとセッションを再確認し、bodyとヘッダーを再生成
+         再試行回数を1にして送信し、その結果でhandlerを完了
 ```
 
-## 調査手順
+再試行回数を`onRequest`のたびに0へ戻すと制限が消えるため、再送時にも保持します。更新APIには、この認証interceptorを持たない専用クライアントを使うなどして、再帰的な更新を防ぎます。
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+Dioの`QueuedInterceptor`は、`onRequest`・`onResponse`・`onError`をそれぞれ別のキューで処理します。[5.9.2の公式実装](https://github.com/cfug/dio/blob/dio_v5.9.2/dio/lib/src/interceptor.dart)から分かるとおり、キューを使うだけでトークン世代の比較や、要求全体の一括排他まで実現するものではありません。
 
-- 並行制御は同一Isolate内だけか、プロセスを跨ぐかを明記
-- Refresh Token rotation仕様を認証サーバーに合わせる
-- 401すべてが期限切れとは限らない
+## 更新失敗とログアウトで、待機中の要求をどう終わらせるか
 
-## 再発防止テスト
+この例の`RefreshRejected`は、認証サーバーから再ログインが必要な拒否を確認した場合にだけ使うアプリ側の例外です。たとえば更新要求に対する`invalid_grant`が該当します。[RFC 6749 §5.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2)では、無効・期限切れ・失効済みなどのリフレッシュトークンがこのエラーに含まれます。coordinatorは認証状態を消し、同じFutureを待つ要求へ失敗を返します。
+
+一方、通信断やタイムアウトをすべて`RefreshRejected`へ変換しません。この例では通常の失敗を待機者へ共有してFutureを解除し、自動ループはせずに呼び出し側へ返します。後から別の要求が来れば更新を開始できますが、これだけでは再試行の頻度を制限できません。バックオフや手動の再試行方針は別に必要です。
+
+更新APIの応答を失った場合には、サーバーでrotationが完了している可能性もあります。同じリフレッシュトークンの再送が許されるかは、サーバーの再使用検知や猶予期間の契約に従います。Futureを解除したことを、再送してよい根拠にはしません。
+
+ログアウトでは`replaceSession(null)`を呼びます。以前の更新が後から成功しても、セッション番号が一致しないのでトークンを復元しません。これはメモリ内の採用判定です。永続ストレージへの書き込み、認証状態の通知、通常のAPIレスポンスを画面へ反映する判定にも、同じセッション境界を通す必要があります。
+
+待機中の一画面が閉じても、ほかの要求が同じ更新を待っている場合があります。元の要求のキャンセルで共有更新まで止めず、その要求の再送を抑止する方針にします。実装時は`send`側でキャンセル状態を確認し、Dioへ対応する`CancelToken`を渡します。この最小例には待機者ごとのキャンセル機構は含めていません。
+
+また、[Future.timeout](https://api.dart.dev/dart-async/Future/timeout.html)は元のFutureの処理を止めません。共有Futureの外側にtimeoutを付けて、時間切れだけで`_inFlight`を解除すると、実際には古い更新が続いたまま新しい更新を始める可能性があります。更新通信の終了、遅れた結果の破棄、再試行の許可を同じ所有者が決めます。
+
+## 通信の順序を固定して、競合を確かめる
+
+テストでは認証サーバーへ接続せず、`Completer`で更新の完了時点を操作します。たとえば、同じsnapshotで10件の401を処理させ、更新関数の呼び出しが1回であることを確認します。固定の待ち時間を挟む必要はありません。
 
 ```dart
-void main() {
-  test('single-flight-token-refresh-concurrent-401', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
-}
+final gate = Completer<TokenPair>();
+var calls = 0;
+final auth = TokenRefreshCoordinator(
+  initial: const TokenPair('example-access-0', 'example-refresh-0'),
+  refresh: (_) {
+    calls++;
+    return gate.future;
+  },
+);
+final sent = auth.current;
+final pending = List.generate(10, (_) => auth.refreshAfter401(sent));
+expect(calls, 1);
+gate.complete(const TokenPair('example-access-1', 'example-refresh-1'));
+await Future.wait(pending);
+expect(auth.current.generation, 1);
 ```
 
-## 一般化できる設計原則
+この抜粋では`dart:async`と`flutter_test`を使います。トークンの文字列は説明用の固定値です。8テストで、同時401、更新後に届く401、共有した失敗からの次試行、ログアウト、別ログインとの競合、更新の拒否、二回目の401、更新・再送対象外の要求を確認しました。実HTTP、Dio interceptorへの組み込み、rotationを行う認証サーバー、実機ストレージは検証範囲に含めません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
-
-## まとめ
-
-認証更新はInterceptorの小技ではなく、並行状態機械として設計する。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- 401なら無条件refreshし続ける実装を出さない
-- 無限retryを許さない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+調査ログには要求を対応付ける相関ID、世代、再試行回数、更新の開始・終了を残します。Authorizationヘッダーやアクセストークン、リフレッシュトークンそのものをログへ出す必要はありません。

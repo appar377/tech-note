@@ -102,25 +102,20 @@ Tech Noteは単発ブログではなく、技術書をWeb化した知識サイ�
 
 ### Article Structure
 
-全公開記事は、少なくとも次の見出しを持つ必要があります。
+記事は読者の問いに沿って構成します。`editorialProfile: question-led-v1` は、説明・一次資料への出典・具体例・見出しとコードの整合性を検査します。見出し名、最低文字数、図の有無だけで品質を判定しません。未完成の雛形、閉じていないコードブロック、出典のない本文は検査で拒否します。
 
-- `概要`
-- `この記事で学べること`
-- `前提知識`
-- `本編`
-- `図解`
-- `内部動作`
-- `まとめ`
-- `参考文献`
+公開本文・表紙・出典・metadataの整合性は `test/fixtures/content-integrity.json` とテストで確認します。内容を変更するときは一次資料と具体例を再確認してから対応する期待値を更新してください。ハッシュの更新だけで技術検証が完了するわけではありません。
 
-カテゴリごとの追加要件があります。
+## Reading UI
 
-- SQL / Database: `SQL例`, `EXPLAIN`, `実際の性能比較`
-- Git: `Gitコマンド例`
-- Linux / Docker / AWS: `CLI・設定例`
-- Rails / Flutter / Next.js: `実装コード例`
-- Computer Science: `疑似コード`, `計算量`
+トップと検索から記事・ブック・ノートへ進めます。記事の前後移動は同じシリーズまたは同じフォルダの文脈を保ちます。Booksは独立したMDX本文、Seriesは既存記事への目次です。本文の目次、章移動、読書モード、ダーク表示を利用できます。
 
-図解は必須です。Mermaid、画像、SVG、Canvasなどを本文に含めます。SEOの目安として本文は4,000〜8,000文字程度を推奨しますが、CIでは警告のみです。
+## Private Drafts
 
-新規記事は `templates/article-template.mdx` を元に作成します。
+`draft: true` は静的サイトの一覧・検索・本文出力から除外されます。ただし公開Gitリポジトリへcommitした原稿はソースとして閲覧できます。未公開原稿と内部検証記録は、この公開リポジトリの外で保管してください。
+
+ローカル下書きレビューはdevelopment環境で `TECH_NOTE_PREVIEW=1` の場合だけ有効です。このスイッチは認証機能ではありません。本番ビルドでは有効になりません。
+
+## Deployment
+
+既存の `.github/workflows/pages.yml` がmainへのpush時にNode22で依存導入・lint・型検査・テスト・静的ビルドを行い、GitHub Pagesへ公開します。公開先は https://appar377.github.io/tech-note/ です。

@@ -1,6 +1,6 @@
 ---
-title: "実務で必要だったのは、構文知識より実行モデルの理解だった"
-description: "フレームワークを横断して再利用できる学習軸は、構文ではなく実行モデルである。状態、identity、lifecycle、transaction、async/concurrency、side effectの6軸でコードを読む。"
+title: "コードの動作を、状態・評価時点・境界から読む"
+description: "DartのCompleterで待機中の状態変更を再現し、依頼時点と完了時点の値、成功と失敗の進み方を分けて実行モデルを読みます。"
 date: 2026-07-20
 tags:
   - "Engineering"
@@ -14,124 +14,154 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/execution-model-over-syntax.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+非同期関数を呼んだ後に、渡したオブジェクトを書き換えました。関数が待機から戻ったとき、読むのは呼び出した時点の値でしょうか、それとも変更後の値でしょうか。
 
-Rails、Flutter、Swiftで詰まった問題は構文ミスより、状態がどこにあり、いつ消え、誰が所有し、どの境界で確定するかを誤解したものが多かった。
+この問いには、`Future<String>` という戻り値の型だけでは答えられません。どのオブジェクトを保持し、いつ属性を読むかを見る必要があります。Dart 3.11.5向けの説明用コードで、その時系列を分けます。Dart 3.11.5で実行し、待機前の記録、再開後の値、失敗時の記録を期待値と照合しました。
 
-フレームワークを横断して再利用できる学習軸は、構文ではなく実行モデルである。状態、identity、lifecycle、transaction、async/concurrency、side effectの6軸でコードを読む。
+## awaitすれば、呼び出した時点の状態が固定されますか？
 
-## この記事で学べること
+次の2つの関数は、同じ `ExportDraft` と、完了を待つFutureを受け取ります。`renderLatest` は待機の後にtitleを読み、`renderRequested` は待機の前に取り出したStringを使います。
 
-- `Future`型と`await`の混同
-- Dirty TrackingとDB履歴の混同
-- `with_lock`とreload
-- Secure StorageとDIの役割混同
-- Equatableと値等価性
-- Safe Area modifier
+`Completer` は例を進めるための合図です。ネットワークやsleepを使わず、どの時点で待機を終わらせるかを呼び出し側で決めます。[Dart: Completer](https://api.dart.dev/dart-async/Completer-class.html)
 
-## 前提知識
+```dart file="execution_model.dart"
+import 'dart:async';
+import 'dart:convert';
 
-- Rails、Dart、Swiftのいずれかで、状態や副作用の扱いに触れたこと
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+final class ExportDraft {
+  String title;
+  ExportDraft(this.title);
+}
 
-## 図解
+Future<String> renderLatest(
+  ExportDraft draft, Future<void> ready, List<String> events,
+) async {
+  events.add('start:${draft.title}');
+  await ready;
+  events.add('resume:${draft.title}');
+  return draft.title;
+}
 
-![実務で必要だったのは、構文知識より実行モデルの理解だった](/images/articles/execution-model-over-syntax.png)
+Future<String> renderRequested(
+  ExportDraft draft, Future<void> ready, List<String> events,
+) async {
+  final requestedTitle = draft.title;
+  events.add('start:$requestedTitle');
+  await ready;
+  events.add('resume:$requestedTitle');
+  return requestedTitle;
+}
+
+typedef Renderer = Future<String> Function(
+  ExportDraft draft, Future<void> ready, List<String> events,
+);
+
+Future<Map<String, Object?>> changedWhileWaiting(Renderer render) async {
+  final draft = ExportDraft('draft');
+  final gate = Completer<void>();
+  final events = <String>[];
+  final pending = render(draft, gate.future, events);
+  final beforeComplete = List<String>.of(events);
+  draft.title = 'review';
+  events.add('edit:review');
+  gate.complete();
+  final rendered = await pending;
+  return {
+    'before_complete': beforeComplete,
+    'events': events,
+    'rendered': rendered,
+    'current_title': draft.title,
+  };
+}
+
+Future<Map<String, Object?>> failedWhileWaiting() async {
+  final gate = Completer<void>();
+  final events = <String>[];
+  final pending = renderRequested(ExportDraft('draft'), gate.future, events);
+  try {
+    gate.completeError(StateError('blocked'));
+    await pending;
+    return {'outcome': 'unexpected_success', 'events': events};
+  } on StateError {
+    return {'outcome': 'StateError', 'events': events};
+  }
+}
+
+Future<void> main() async {
+  print(jsonEncode({
+    'latest': await changedWhileWaiting(renderLatest),
+    'requested': await changedWhileWaiting(renderRequested),
+    'failed': await failedWhileWaiting(),
+  }));
+}
+```
+
+`changedWhileWaiting` の順序は、関数の呼び出し、同じdraftの変更、合図の完了、結果の取得です。`await pending` は関数の完了を待ちますが、渡したdraftの過去の状態を保存する操作ではありません。
+
+| 出力内の値 | latestの期待値 | requestedの期待値 |
+| --- | --- | --- |
+| `before_complete` | `['start:draft']` | `['start:draft']` |
+| `rendered` | `review` | `draft` |
+| `current_title` | `review` | `review` |
+
+どちらが適切かは要件によります。「完了時点の最新のタイトル」を使うなら前者、「依頼時点のタイトル」を使うなら後者です。`renderRequested` も元のdraftへの変更を止めてはいません。この例ではStringを先に取り出すことで、使う値を固定しています。可変リストやオブジェクトを代入するだけで、その内部まで複製されると考えないでください。
+
+## 関数は呼んだ瞬間に、どこまで進みますか？
+
+Dartの `async` 関数は最初の `await` までは同期的に進みます。そのため、この例では `pending` を受け取る時点で `start:draft` がeventsへ追加されています。[Dart: Execution flow with async and await](https://dart.dev/libraries/async/async-await#execution-flow-with-async-and-await)
 
 ```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+sequenceDiagram
+  participant C as 呼び出し側
+  participant R as renderLatest
+  participant G as Completer
+  C->>R: draftとgate.futureを渡す
+  R->>R: titleを読みstartへ記録
+  R-->>C: 未完了のFuture
+  C->>C: draft.titleをreviewへ変更
+  C->>G: complete()
+  G-->>R: awaitの待機が終わる
+  R->>R: 同じdraftからtitleを再読込
+  R-->>C: reviewでFutureが完了
 ```
 
-## 実装コード例
+この例は同じisolate内の処理です。非同期で待機することから、別スレッドで同時にCPU処理を実行すると推測する必要はありません。Dartのisolate、イベントループ、並列実行は区別して読みます。[Dart: Concurrency](https://dart.dev/language/concurrency)
 
-```text
-構文
-  -> 状態がどこにあるか
-  -> いつ評価されるか
-  -> どの境界を越えるか
-  -> どこで副作用が起きるか
-```
+また、戻り値がFutureであることだけで「呼び出してもまだ何も始まらない」とは判断できません。何を返し、どの処理がいつ始まるかは関数の契約を見ます。型と待機の基礎は[Future型とasync/awaitの役割](/tech-note/articles/flutter/dart/dart-future-async-await/)で扱います。
 
-## 本編
+## 成功時の順序が分かれば、調査は終わりですか？
 
-### 発生した状況
+失敗の境界も確認します。`failedWhileWaiting` は待機中のFutureを `StateError` で完了させています。期待値は `outcome: StateError`、eventsは `['start:draft']` だけです。`await` の後にある `resume` の記録には進みません。
 
-Rails、Flutter、Swiftで詰まった問題は構文ミスより、状態がどこにあり、いつ消え、誰が所有し、どの境界で確定するかを誤解したものが多かった。
+`await` したFutureがエラーで完了すると、その位置でエラーを受け取れます。この例では呼び出し側で捕捉しています。エラーを捕捉したからといって、待機前の処理や別の場所で行った変更まで取り消されるわけではありません。[Dart: Futureのエラー処理](https://dart.dev/libraries/async/async-await#handling-errors)
 
-### 当初の理解・誤解
+実際の調査で役立つのは、期待する順序と比べられる記録です。上の `events` は説明用タイトルと処理の段階だけを残します。`latest` の期待順序は `start:draft → edit:review → resume:review`、`requested` は最後が `resume:draft` になります。実行して得たeventsも、この順序と一致しました。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、フレームワークを横断して再利用できる学習軸は、構文ではなく実行モデルである。状態、identity、lifecycle、transaction、async/co... という観点で見る必要がありました。
+## 別のフレームワークでも、何を共通の問いにできますか？
 
-### 観測したこと
+共通化できるのは調べる問いです。Dartのawait、DBのtransaction、Swiftのactor隔離が同じ仕組みという意味ではありません。
 
-- 1つの処理を状態/境界/時系列で分解するMermaid図
-- デバッグ時に出すログの例
-- API調査テンプレート
+| 観点 | 今回の例で確認すること | 別の処理へ進むときの確認先 |
+| --- | --- | --- |
+| 状態 | titleはdraftにあり、取り出したStringと分けて読む | [Dirty Trackingはどこに残るか](/tech-note/articles/rails/active_record/active-record-dirty-tracking-lifecycle/) |
+| 同一性 | 呼び出し側と関数が同じdraftを参照している | [値・参照・識別の比較](/tech-note/articles/architecture/execution-model/identity-equality-ruby-dart-swift/) |
+| 寿命 | Futureの完了まで、必要な値とeventsを保持する | [CancelTokenの所有と終了](/tech-note/articles/flutter/architecture/dio-cancel-token-lifecycle/) |
+| transaction | この例にDB transactionはなく、awaitはrollbackを提供しない | [with_lockとreloadの影響](/tech-note/articles/rails/active_record/with-lock-dirty-tracking-after-commit/) |
+| 非同期・並行性 | 待機前後の読み取りを分ける | [Swiftのactor隔離とnonisolated](/tech-note/articles/swift/concurrency/swift-nonisolated-actor-isolation/) |
+| 副作用 | draftの変更とeventsへの記録が別の場所で起きる | [保存領域とDIの役割](/tech-note/articles/flutter/auth/di-dio-secure-storage-roles/) |
 
-### 修正案の比較
+UIでも、変更が届く対象を追う問いは使えます。ただしSwiftUIのSafe Areaはレイアウトの規則なので、今回のawaitの順序から挙動を推測することはできません。[ignoresSafeAreaの適用先](/tech-note/articles/swiftui/layout/swiftui-ignores-safe-area/)のように、対象の仕様と実行環境で確認します。
 
-| 方針 | 見るべき点 |
-| --- | --- |
-| 構文先行 | 始めやすい／複雑な障害で止まる |
-| 実行モデル先行 | 応用可能／学習初期は抽象的 |
+## 新しいAPIを調べるとき、何を最小例に残しますか？
 
-## 内部動作
+まず入力と期待結果を1つ決め、次に期待が崩れる境界を1つ動かします。今回なら「待機中にtitleを変える」がその境界です。成功と失敗を同じ例へ入れ、どの行まで進んだかを確認します。
 
-複数の言語やフレームワークを横断すると、同じ名前の概念でも意味が変わります。構文を暗記するより、実行時に何が保持され、いつ評価され、どこで副作用が出るかを追う方が、保守時の判断に効きます。
+記録するのは、利用版、入力、状態の保持先、読み取る時点、成功時と失敗時の結果、根拠となる公開契約です。時間やスレッド名を推測で補う必要はありません。依存先を代わりの実装へ差し替えた場合は、その例で確かめられる範囲も書きます。
 
-- 構文知識を軽視する記事にしない
-- すべてのフレームワークへ完全に同じモデルを当てはめない
+その後、外部境界で必要な検証を追加します。今回のCLI例は共有状態の読み取り時点を確かめるもので、実際の保存や通信の成功は確認しません。どの層に何を残すかは[テストの重複を機能境界で整理する](/tech-note/articles/rails/rspec/test-duplication-across-layers/)、APIの契約を狭める方法は[copyWithやwith_lockの名前と動作](/tech-note/articles/architecture/execution-model/framework-api-abstraction-leaks/)へつながります。
 
-```text
-syntax
-  -> state
-  -> lifecycle
-  -> boundary
-  -> execution model
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- 構文知識を軽視する記事にしない
-- すべてのフレームワークへ完全に同じモデルを当てはめない
-
-## 再発防止テスト
-
-```text
-given: 状態と境界を明示する
-when: 実行モデルに沿って処理を進める
-then: 期待した副作用だけが発生する
-```
-
-## 一般化できる設計原則
-
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
-
-## まとめ
-
-新しい技術を学ぶときは「何を書くか」だけでなく「実行時に何が、どこで、いつ起きるか」を説明できることを目標にする。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- 精神論で終わらせない
-- 具体例なしに「本質を理解する」とだけ書かない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+構文の意味を押さえた上で、誰が保持する値を、どの時点で読むかまで説明すると、確認すべき実行結果が具体的になります。

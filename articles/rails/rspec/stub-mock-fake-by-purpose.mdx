@@ -1,6 +1,6 @@
 ---
-title: "RSpecのStubとMockを用語ではなく目的から理解する"
-description: "テストダブルは用語より、何を保証したいかで選ぶ。Stubは入力に対する返り値を制御し、Mockは重要な相互作用を契約として検証し、Fakeは実際に動く軽量実装として振る舞う。"
+title: "Stub・Mock・Fakeを、外部境界で確かめたいことから選ぶ"
+description: "固定の応答で足りる場面と、書き込み後の状態を持つfakeが必要な場面を分けます。インメモリストレージとHTTPアダプターの共有テストを通して、契約を確かめる範囲と限界を説明します。"
 date: 2026-07-20
 tags:
   - "Testing"
@@ -14,142 +14,240 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/stub-mock-fake-by-purpose.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+一度の読み取りを成功させたいだけなら、固定値を返すstubで足りることがあります。一方、書き込み、読み取り、上書きを繰り返す処理で、呼ぶたびに戻り値の設定を増やしていくと、テストが操作手順の写しになりがちです。その場合は、状態を持つ小さなfakeが役立ちます。
 
-Stub、Mock、Fakeの定義を暗記しても、外部APIクライアントやジョブをどれで置き換えるべきか判断できなかった。目的を「値の制御」「相互作用の検証」「動く代替実装」に分けると選びやすくなった。
+ここでは、文章を追記する処理を題材にします。保存先をどう置き換えるかだけでなく、fakeの振る舞いを何に照らして確認するかまで扱います。RSpecの構文自体は[allow・receive・have_receivedの意味](/tech-note/articles/rails/rspec/stub-mock-meaning/)を参照してください。
 
-テストダブルは用語より、何を保証したいかで選ぶ。Stubは入力に対する返り値を制御し、Mockは重要な相互作用を契約として検証し、Fakeは実際に動く軽量実装として振る舞う。
+対象環境はRuby 3.4.4、RSpec 3.13.0、rspec-mocks 3.13.8です。掲載した10例はローカルで実行し、すべて成功しました。HTTPの応答と文章は説明用で、実サービスへ接続しません。Rubyブロックは上から一つのspecファイルへ並べて実行できる構成です。
 
-## この記事で学べること
+## 固定値、呼び出し、変化する状態のどれを見るか
 
-- 用語分類には流派差があることを先に注記
-- RSpecの`allow`、`expect(...).to receive`、spy
-- Stubで外部レスポンスを固定する
-- Mockで重要な通知・保存要求を検証する
-- Fake RepositoryやFake Storageの利点
-- verifying doubleを使う理由
+用語には文献やライブラリによる使い方の違いがあります。ここでは[Martin Fowlerが整理しているtest doubleの区分](https://martinfowler.com/bliki/TestDouble.html)を手掛かりに、次の役割で使います。一つのdoubleが応答を返しながら呼び出しを記録することもあり、排他的な分類ではありません。
 
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![RSpecのStubとMockを用語ではなく目的から理解する](/images/articles/stub-mock-fake-by-purpose.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
-
-```ruby
-class UserNotifier
-  def self.call(user)
-    UserMailer.welcome(user).deliver_later
-  end
-end
-
-RSpec.describe UserNotifier do
-  it "uses a stub for return values" do
-    mailer = instance_double(UserMailer, deliver_later: true)
-
-    allow(UserMailer).to receive(:welcome).and_return(mailer)
-
-    described_class.call(create(:user))
-
-    expect(UserMailer).to have_received(:welcome)
-  end
-end
-```
-
-## 本編
-
-### 発生した状況
-
-Stub、Mock、Fakeの定義を暗記しても、外部APIクライアントやジョブをどれで置き換えるべきか判断できなかった。目的を「値の制御」「相互作用の検証」「動く代替実装」に分けると選びやすくなった。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、テストダブルは用語より、何を保証したいかで選ぶ。Stubは入力に対する返り値を制御し、Mockは重要な相互作用を契約として検証し、Fakeは実際に動く軽量実装と... という観点で見る必要がありました。
-
-### 観測したこと
-
-- DioではなくRails側のHTTP clientをstubする例
-- `instance_double`と`have_received`
-- インメモリFake Repository
-- Fakeが本番実装と契約不一致になるテスト
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
+| 確かめたいこと | この例で使うもの |
 | --- | --- |
-| Stub | 簡単／過度に使うと統合不良を見逃す |
-| Mock | 相互作用を保証／リファクタリング耐性が下がる |
-| Fake | 現実的／実装と保守が増える |
+| 応答が503だった場合のアプリケーションの反応 | HTTP応答を固定するstub |
+| 指定したパスと本文で要求を送ったか | 呼び出しの期待、またはspyによる事後確認 |
+| 追記を二回実行すると、保存内容がどう変わるか | メモリ上に状態を持つfake |
 
-## 内部動作
+fakeを選ぶ理由は、実サービスに似た名前のクラスを置くことではありません。テストが必要とする状態の変化を、戻り値の列より分かりやすく表せるかを見ます。
 
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+## 保存先の小さな契約を決める
 
-- Mockの意味はライブラリ/書籍で差がある
-- テストダブルは本番契約を自動で保証しない
+説明用の保存先は、`write(key:, body:)`と`read(key:)`だけを持ちます。bodyはStringです。同じキーへのwriteは置き換え、成功時にはnilを返します。存在しないキーをreadすると`KeyError`になり、呼び出し元が渡した文字列や読み取った文字列を後で変えても、保存済みの値は変わらない契約にします。
 
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
+キーは小文字英数字・`_`・`-`に限定します。実際のストレージ全般の仕様ではなく、この例のdocument IDの条件です。
 
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- Mockの意味はライブラリ/書籍で差がある
-- テストダブルは本番契約を自動で保証しない
-
-## 再発防止テスト
+HTTP側にも説明用の契約を置きます。`PUT /documents/{key}`が204なら保存成功、GETの200は本文、404は未登録、その他は`RemoteError`です。このAPIを提供する実サービスがあると主張するものではありません。[Net::HTTP](https://docs.ruby-lang.org/en/3.4/Net/HTTP.html#method-i-request)の要求オブジェクトを使い、送信を担当する`http`を外から渡します。
 
 ```ruby
-RSpec.describe "stub-mock-fake-by-purpose" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+require "rspec"
 
-    expect(result).to be_present
+require "net/http"
+
+module PurposeDoubles
+  def self.validate_key!(key)
+    unless key.is_a?(String) && /\A[a-z0-9_-]+\z/.match?(key)
+      raise ArgumentError, "key must contain only lowercase letters, digits, _ or -"
+    end
+  end
+
+  class MemoryStorage
+    def initialize
+      @objects = {}
+    end
+
+    def write(key:, body:)
+      PurposeDoubles.validate_key!(key)
+      @objects[key] = body.dup
+      nil
+    end
+
+    def read(key:)
+      PurposeDoubles.validate_key!(key)
+      @objects.fetch(key).dup
+    end
+  end
+
+  class HttpStorage
+    class RemoteError < StandardError; end
+
+    def initialize(http:)
+      @http = http
+    end
+
+    def write(key:, body:)
+      request = Net::HTTP::Put.new(path_for(key))
+      request["Content-Type"] = "application/octet-stream"
+      request.body = body
+      response = @http.request(request)
+      raise RemoteError, "write failed" unless response.code == "204"
+      nil
+    end
+
+    def read(key:)
+      response = @http.request(Net::HTTP::Get.new(path_for(key)))
+      raise KeyError, "key is absent" if response.code == "404"
+      raise RemoteError, "read failed" unless response.code == "200"
+      response.body.dup
+    end
+
+    private
+
+    def path_for(key)
+      PurposeDoubles.validate_key!(key)
+      "/documents/#{key}"
+    end
+  end
+
+  class AppendLine
+    def initialize(storage:)
+      @storage = storage
+    end
+
+    def call(key:, line:)
+      current = begin
+        @storage.read(key: key)
+      rescue KeyError
+        ""
+      end
+      @storage.write(key: key, body: current + line + "\n")
+    end
   end
 end
 ```
 
-## 一般化できる設計原則
+`AppendLine`は、読み取りと書き込みの間で保存先の種類を意識しません。未登録なら空の文章から始め、末尾に一行を加えます。fakeを使うと、二回目の読み取りは一回目の書き込みを反映します。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+```ruby
+RSpec.describe PurposeDoubles::AppendLine do
+  it "uses the fake's changing state for two appends without sending HTTP" do
+    storage = PurposeDoubles::MemoryStorage.new
+    append = described_class.new(storage: storage)
+    append.call(key: "draft", line: "first")
+    append.call(key: "draft", line: "second")
+    expect(storage.read(key: "draft")).to eq("first\nsecond\n")
+  end
+end
+```
 
-## まとめ
+期待する保存内容は`"first\nsecond\n"`です。readの戻り値を「最初は空、次はfirst」と順番に設定せず、fakeの状態を使っています。ただし、このread→writeは並行する追記を失わない仕組みではありません。二つの処理が同じ内容を読んでから書けば、片方の更新が上書きされる可能性があります。fakeにもこの例のHTTPアダプターにも、原子的な追記機能はありません。
 
-「何を置き換えたか」より「このテストでどの契約を保証したいか」を先に決める。
+## fakeの振る舞いも共有のテストへ通す
+
+fakeにだけ都合のよい振る舞いを実装すると、アプリケーションのテストは通っても、別の保存先へ差し替えたときに失敗します。そこで、操作の契約を[RSpecのshared examples](https://rspec.info/features/3-13/rspec-core/example-groups/shared-examples/)として一か所に置きます。
+
+```ruby
+RSpec.shared_examples "article document storage" do
+  it "writes, reads and replaces a value" do
+    expect(storage.write(key: "draft", body: "first")).to be_nil
+    expect(storage.read(key: "draft")).to eq("first")
+    storage.write(key: "draft", body: "second")
+    expect(storage.read(key: "draft")).to eq("second")
+  end
+
+  it "raises KeyError for a key that has not been written" do
+    expect { storage.read(key: "absent") }.to raise_error(KeyError)
+  end
+
+  it "does not share mutable strings with the caller" do
+    original = +"first"
+    storage.write(key: "draft", body: original)
+    original << " changed"
+    returned = storage.read(key: "draft")
+    expect(returned).to eq("first")
+    returned << " changed"
+    expect(storage.read(key: "draft")).to eq("first")
+  end
+end
 
 
-この記事では、次のような短絡的な一般化は避けます。
+RSpec.describe PurposeDoubles::MemoryStorage do
+  let(:storage) { described_class.new }
+  it_behaves_like "article document storage"
 
-- 用語警察のような記事にしない
-- すべての依存をMock化しない
+  it "rejects a path-shaped key rather than treating it as a document ID" do
+    expect { storage.write(key: "../draft", body: "text") }.to raise_error(ArgumentError)
+  end
+end
+```
 
-## 参考文献
+三つ目の例は値の共有を調べています。元のStringやreadで返したStringを変更しても、保存済みの文章が変わらないことを要求します。Hashへ渡した値をそのまま保持したり、その値をそのまま返したりすると、この条件を満たせません。
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+意図的にread側の`dup`を外したfakeで、同じ条件が崩れることを再現できます。次の例は、内側の値の期待が失敗すること自体を外側で確認しています。
+
+```ruby
+RSpec.describe PurposeDoubles::AppendLine do
+  it "exposes a fake that leaks its stored String through read" do
+    leaky_class = Class.new(PurposeDoubles::MemoryStorage) do
+      def read(key:)
+        @objects.fetch(key)
+      end
+    end
+    storage = leaky_class.new
+    storage.write(key: "draft", body: "first")
+    storage.read(key: "draft") << " changed"
+    expect do
+      expect(storage.read(key: "draft")).to eq("first")
+    end.to raise_error(RSpec::Expectations::ExpectationNotMetError)
+  end
+end
+```
+
+壊れたfakeのreadから受け取った文字列を変えると、再度readした値も変わってしまいます。メソッド名と引数が合うだけでは、この違いは分かりません。`instance_double`の検査と、操作後の振る舞いを確認するテストは役割が異なります。
+
+## HTTPアダプターを動かし、通信だけを置き換える
+
+同じ共有テストをHTTPアダプターにも適用します。この例では`Net::HTTP`のinstance doubleを渡し、PUTとGETに応じた応答をテスト内で返します。要求オブジェクトの作成とHTTPステータスの解釈は、`HttpStorage`の実装を動かします。
+
+```ruby
+RSpec.describe PurposeDoubles::HttpStorage do
+  let(:http) { instance_double(Net::HTTP) }
+  let(:storage) { described_class.new(http: http) }
+  let(:objects) { {} }
+
+  before do
+    allow(http).to receive(:request) do |request|
+      case request
+      when Net::HTTP::Put
+        objects[request.path] = request.body.dup
+        instance_double(Net::HTTPResponse, code: "204", body: nil)
+      when Net::HTTP::Get
+        if objects.key?(request.path)
+          instance_double(Net::HTTPResponse, code: "200", body: objects.fetch(request.path).dup)
+        else
+          instance_double(Net::HTTPResponse, code: "404", body: nil)
+        end
+      else
+        raise "unexpected synthetic request"
+      end
+    end
+  end
+
+  it_behaves_like "article document storage"
+
+  it "maps a server error to RemoteError instead of acknowledging a write" do
+    allow(http).to receive(:request).and_return(instance_double(Net::HTTPResponse, code: "503", body: "unavailable"))
+    expect { storage.write(key: "draft", body: "text") }.to raise_error(described_class::RemoteError, "write failed")
+    expect(http).to have_received(:request).with(have_attributes(
+      method: "PUT", path: "/documents/draft", body: "text"
+    )).once
+  end
+end
+```
+
+503の例では、失敗応答を成功として返さないことと、PUTのパス・本文を確認しています。呼び出しを調べるために、保存先の内部メソッドをすべて期待する必要はありません。
+
+ここで共有テストを通しているのは、メモリのfakeと、**応答をstubしたHTTPアダプター**です。応答側のHashもこちらで書いたモデルなので、実サービスの404や204がこの想定どおりかを独立に確認したことにはなりません。提供元の仕様を確認し、必要な範囲でテスト用の実サービスとの契約テストや結合テストを追加する余地が残ります。
+
+## fakeに任せたことを、実サービスの保証に広げない
+
+このfakeは一つのプロセスのメモリだけに保存します。認証、通信失敗、永続化、容量制限、文字コード、並行更新、可視性の遅延は再現していません。共有テストも、そこに書いた契約だけを調べます。例えば、実サービス側の仕様を誤解してfakeとstubの両方を実装すれば、双方のテストが通る場合があります。
+
+`allow_any_instance_of`でクラス全体を差し替える方法もありますが、[RSpecの公式説明](https://rspec.info/features/3-13/rspec-mocks/working-with-legacy-code/any-instance/)は、対象や呼び出し回数の意味が分かりにくくなることなどを理由に、通常の利用を勧めていません。この例のように依存オブジェクトを渡せば、どの保存先を置き換えたかがテストから分かります。
+
+固定値を返すだけならstubを置き、境界への重要な要求は期待やspyで確認します。操作を重ねた後の状態を見たいときは、小さなfakeを使います。そのうえで、何を省略したfakeなのか、どこを実際の境界で確認するのかを残しておくと、テストの成功をどこまで信頼できるか判断できます。

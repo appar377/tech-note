@@ -1,6 +1,6 @@
 ---
 title: "GoRouterのrefreshListenableとRiverpodを接続するAdapter設計"
-description: "GoRouterとRiverpodの間に小さなAdapterを置き、認証状態変更を`notifyListeners`へ変換する。Routerの寿命、Provider購読解除、redirectの純粋性を明示する。"
+description: "認証状態の変化をListenableへ変換してGoRouterのredirectを再評価する。ルーターの寿命、購読解除、復帰先URLを一つの例で確認します。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,135 +14,131 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/gorouter-riverpod-refresh-adapter.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+ログイン状態が変わったとき、GoRouterに必要なのは現在の行き先の再評価です。認証状態を読むたびにルーター全体を作り直す構成では、ナビゲーションの状態も作り直すことになります。Riverpodの通知を`refreshListenable`へ渡し、同じGoRouterで`redirect`を評価し直す構成にします。
 
-GoRouterはルーティング再評価の通知をListenableとして受け取り、RiverpodはProviderの状態として認証を管理する。異なるリアクティブモデルを直接結ぶと、再生成や無限redirectが起きやすい。
+説明用の例はFlutter 3.41.9、Dart SDK 3.11.5、flutter_riverpod 3.3.2、go_router 17.3.0で確認しています。認証処理そのものは実装せず、起動時の確認中・未ログイン・ログイン済みの三状態を入力として扱います。
 
-GoRouterとRiverpodの間に小さなAdapterを置き、認証状態変更を`notifyListeners`へ変換する。Routerの寿命、Provider購読解除、redirectの純粋性を明示する。
+## 先に、認証状態と行き先の対応を決める
 
-## この記事で学べること
+`redirect`は認証を実行する場所にはせず、状態とURLを受け取って行き先を返す関数にします。移動が不要なら`null`を返します。[GoRouterのRedirection](https://pub.dev/documentation/go_router/latest/topics/Redirection-topic.html)もこの戻り値を定義しています。
 
-- GoRouterが再評価を必要とするタイミング
-- Riverpodのauth state
-- `ChangeNotifier`/Listenable adapter
-- Adapterの購読開始とdispose
-- RouterをProvider内で一度生成する
-- redirectで状態を変更しない
+| 認証状態 | 現在の行き先 | 判断 |
+| --- | --- | --- |
+| 確認中 | `/loading`以外 | 復帰先を保持して`/loading`へ |
+| 未ログイン | `/login`以外 | 復帰先を保持して`/login`へ |
+| ログイン済み | `/login`または`/loading` | 復帰先へ |
+| 各状態に合うページ | そのまま表示できる場所 | 移動しない |
 
-## 前提知識
+復帰先を`from`に保存すると、`/detail?id=7`からログインを経ても詳細へ戻れます。ただしURL由来の文字列をそのまま移動先として受け入れず、この例が持つ`/home`と`/detail`だけを許可します。
 
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
-## 図解
+enum AuthState { loading, signedOut, signedIn }
 
-![GoRouterのrefreshListenableとRiverpodを接続するAdapter設計](/images/articles/gorouter-riverpod-refresh-adapter.png)
+class AuthController extends Notifier<AuthState> {
+  @override
+  AuthState build() => AuthState.loading;
+  // 説明用。実アプリでは認証処理の結果からstateを更新する。
+  void setState(AuthState value) => state = value;
+}
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+final authProvider = NotifierProvider<AuthController, AuthState>(
+  AuthController.new,
+);
+
+String returnLocation(String? value) {
+  final uri = Uri.tryParse(value ?? '');
+  if (uri == null || uri.hasScheme || uri.hasAuthority) return '/home';
+  // この例が持つ保護ページだけを許可する。
+  if (uri.path != '/home' && uri.path != '/detail') return '/home';
+  return uri.toString();
+}
+
+String? authRedirect(AuthState auth, Uri location) {
+  final gate = location.path == '/login' || location.path == '/loading';
+  final target = returnLocation(
+    gate ? location.queryParameters['from'] : location.toString(),
+  );
+  switch (auth) {
+    case AuthState.loading:
+      if (location.path == '/loading') return null;
+      return Uri(
+        path: '/loading',
+        queryParameters: {'from': target},
+      ).toString();
+    case AuthState.signedOut:
+      if (location.path == '/login') return null;
+      return Uri(path: '/login', queryParameters: {'from': target}).toString();
+    case AuthState.signedIn:
+      return gate ? target : null;
+  }
+}
 ```
 
-## 実装コード例
+`AuthController.setState`はテストから状態を与えるための入口です。実アプリではセッション確認やログインの結果を反映します。確認失敗を扱う必要があれば、失敗と再試行の状態も設けます。通信失敗を無条件に「未ログイン」へ変換する設計にはしていません。
+
+`returnLocation`は外部URL、ログイン画面への戻り、未知のパスを`/home`へ置き換えます。クエリ自体の意味は検査していないため、`id`などの入力値は遷移先でも検証します。ルーティングの判定だけでデータへのアクセス権が保護されるわけではなく、API側の認可も必要です。
+
+## ref.listenで通知し、redirectの中で最新値を読む
+
+次のコードを先ほどの定義に続けます。Adapterは認証データを持たず、Riverpodから受けた変更を`notifyListeners`へ変換するだけです。
 
 ```dart
 class RouterRefreshAdapter extends ChangeNotifier {
-  RouterRefreshAdapter(this.ref) {
-    ref.listen<AuthState>(authProvider, (_, __) => notifyListeners());
-  }
-
-  final Ref ref;
+  void refresh() => notifyListeners();
 }
-```
 
-## 本編
-
-### 発生した状況
-
-GoRouterはルーティング再評価の通知をListenableとして受け取り、RiverpodはProviderの状態として認証を管理する。異なるリアクティブモデルを直接結ぶと、再生成や無限redirectが起きやすい。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、GoRouterとRiverpodの間に小さなAdapterを置き、認証状態変更を`notifyListeners`へ変換する。Routerの寿命、Provid... という観点で見る必要がありました。
-
-### 観測したこと
-
-- 現行GoRouter/Riverpod版に合わせたAdapter
-- `ref.listen`から`notifyListeners`
-- redirect matrix
-- auth state変更で期待locationへ遷移するtest
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| Adapter | 境界が明確／寿命管理が増える |
-| Router再生成 | 単純に見える／履歴や状態を失う危険 |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- `refreshListenable`等のAPIはpackage版を確認
-- BuildContext依存とProvider依存の循環を避ける
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- `refreshListenable`等のAPIはpackage版を確認
-- BuildContext依存とProvider依存の循環を避ける
-
-## 再発防止テスト
-
-```dart
-void main() {
-  test('gorouter-riverpod-refresh-adapter', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
+final routerProvider = Provider<GoRouter>((ref) {
+  final refresh = RouterRefreshAdapter();
+  final subscription = ref.listen(authProvider, (_, _) => refresh.refresh());
+  final router = GoRouter(
+    initialLocation: '/home',
+    refreshListenable: refresh,
+    redirect: (context, state) =>
+        authRedirect(ref.read(authProvider), state.uri),
+    routes: [
+      for (final path in ['/home', '/detail', '/login', '/loading'])
+        GoRoute(
+          path: path,
+          builder: (context, state) =>
+              Scaffold(body: Center(child: Text(state.uri.toString()))),
+        ),
+    ],
+  );
+  ref.onDispose(() {
+    subscription.close();
+    router.dispose();
+    refresh.dispose();
   });
-}
+  return router;
+});
 
-class TestSubject {
-  Future<Object> call() async => Object();
+class RouterApp extends ConsumerWidget {
+  const RouterApp({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MaterialApp.router(routerConfig: ref.watch(routerProvider));
+  }
 }
 ```
 
-## 一般化できる設計原則
+`routerProvider`の生成処理で`ref.watch(authProvider)`を呼ぶと、認証変更が生成処理の再実行につながります。この例では`ref.listen`を使い、通知時にルーターの再評価を促します。`redirect`が呼ばれたときに`ref.read`で最新の認証状態を取得するので、生成時の値を閉じ込めません。[RiverpodのRefs](https://riverpod.dev/docs/concepts2/refs)は、再構築する`watch`とコールバックを実行する`listen`を区別しています。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+go_router 17.3.0は、`refreshListenable`にリスナーを登録し、情報Providerの破棄時に解除します。[該当バージョンの実装](https://github.com/flutter/packages/blob/go_router-v17.3.0/packages/go_router/lib/src/information_provider.dart)と、実際の画面遷移の両方で確認しました。
 
-## まとめ
+このProviderは認証変更だけでは作り直されません。ただし、明示的な`invalidate`やProviderContainerの破棄では終了します。終了時はRiverpodの購読を閉じ、GoRouterを破棄してからAdapterを破棄します。アプリの入口では`ProviderScope(child: RouterApp())`として、この所有関係を維持します。
 
-異なる状態管理モデルを接続するときは、暗黙変換ではなく寿命を持つAdapterとして境界化する。
+## 同じルーターで深いURLへ戻れるかを確かめる
 
+検証では`MaterialApp.router`をWidgetテストで動かし、`/detail?id=7&tab=notes`から確認中、ログイン画面、元の詳細へ進むことを確認しました。認証変更の前後でGoRouterが同じインスタンスであること、ログアウトで再びログイン画面へ進むことも確認しています。
 
-この記事では、次のような短絡的な一般化は避けます。
+さらに、状態と行き先の対応、外部・不正・未知の復帰先、Providerを明示的に作り直した後の通知を合わせて4テストにしました。行き先がすでに条件を満たす場合に`null`を返すため、同じ場所へのリダイレクトを繰り返しません。既定のリダイレクト回数制限を増やしてループを隠す方法は使いません。
 
-- redirect内でlogin処理を実行しない
-- 毎buildでGoRouterを新規生成しない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+実サービスとのログイン、ブラウザの戻る・進む、OSからのディープリンク、タブ別Navigatorの履歴保持はこの検証には含めていません。ここでのAdapterは認証状態の通知を接続するためのもので、すべてのナビゲーション状態を管理する部品ではありません。

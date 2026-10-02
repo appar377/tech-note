@@ -1,6 +1,6 @@
 ---
-title: Lubuntu / Xubuntu / KubuntuでMT5を検証して分かったGUI環境の使い分け
-description: Ubuntu Serverへ移す前に、GUIあり環境でWine、MT5起動、broker login、terminal path、Wine prefixを検証する理由を整理する。
+title: MT5のGUI確認では、何を観測すると次の切り分けに進めるか
+description: 画面表示、入力、セッション情報を分けて記録し、Wineの表示経路・Python接続・常駐管理のどこを別途確かめるか整理します。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -15,146 +15,96 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-gui-validation.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+MT5のウィンドウが表示できたら、その条件で画面を描画できたことは確認できます。ただし、Pythonから接続できることや、ログインセッションを離れても同じように動くことまでは分かりません。
 
-Ubuntu ServerでいきなりMT5を動かそうとすると、問題の切り分けが難しくなります。
+この記事では、GUIの観測を次の切り分けに使える形で残す方法を考えます。Lubuntu・Xubuntu・Kubuntuなどの候補選びは[OS選定](/tech-note/articles/linux/mt5-ubuntu/01-os-selection/)で扱い、ここでは同じ確認項目を使います。以下は確認計画と説明用コードであり、MT5を実際に起動・操作した結果ではありません。
 
-MT5が起動しない原因が、Wineなのか、DISPLAYなのか、broker loginなのか、Python APIなのか、systemdなのかが見えにくいからです。
+## 画面を確かめる前に、どの条件を固定しますか
 
-そのため、まずGUIあり環境でWine + MT5の基本動作を潰すのが現実的です。
+比較の単位を「UbuntuかLubuntuか」だけにすると、Wineや表示方法の違いまでOSの違いに見えてしまいます。少なくとも次の条件を区別して記録します。
 
-## この記事で学べること
-
-- GUIあり環境でMT5を検証する意味
-- Lubuntu / Xubuntu / Kubuntu / Ubuntu Desktopの使い分け
-- Ubuntu Serverへ移す前に記録すべき値
-- GUI検証と本番運用を混同しない考え方
-
-## 前提知識
-
-- MT5はGUIアプリであり、画面上で初回ログインやbroker server選択が必要になることがある
-- WineはWindowsアプリをUnix-like OS上で動かす互換レイヤーだが、GUI表示先そのものを不要にするものではない
-- Ubuntu ServerではGUIがないため、GUIあり環境で潰せる問題は先に潰しておく方がよい
-
-## 本編
-
-### なぜGUIあり環境で検証するのか
-
-GUIあり環境で確認したいのは、MT5が「見える状態で」正しく起動するかです。
-
-具体的には、次を確認します。
-
-- `terminal64.exe`がWine上で起動するか
-- WineのMono / Gecko / font関連ダイアログが出るか
-- broker serverを選べるか
-- demo accountでログインできるか
-- Market Watchに対象symbolが見えるか
-- 自動売買許可やterminal設定を確認できるか
-- MT5 terminalのパスを記録できるか
-- Wine prefixがどこに作られたか分かるか
-
-これらは、headlessなUbuntu Server上で一度に確認しようとすると手間が増えます。
-
-### Lubuntuで見ること
-
-Lubuntuは軽量GUIとして検証に向きます。LXQtベースで、低リソース環境でも扱いやすいです。
-
-MT5専用の検証用途では、過剰なデスクトップ機能よりも「軽く画面が出る」ことが重要です。VPSや仮想マシンでMT5の初回ログインだけ確認したい場合、Lubuntuは候補になります。
-
-デメリットは、GUIとしての補助機能が最小限になりやすいことです。作業中に設定UIやファイル操作を多用するなら、XubuntuやUbuntu Desktopの方が楽な場面もあります。
-
-### Xubuntuで見ること
-
-XubuntuはXfceベースで、軽さと操作性のバランスが良い環境です。
-
-MT5のインストール、ファイル探索、Wine prefixの確認、terminal pathの記録など、GUI上での確認作業がしやすいです。
-
-Lubuntuより少しリッチで、Ubuntu Desktopより軽い中間候補として使えます。
-
-### Kubuntuで見ること
-
-KubuntuはKDE Plasmaベースで、設定UIやデスクトップ操作が豊富です。
-
-MT5以外にも画面上で調査や作業を行うなら便利です。ただし、MT5専用サーバーの検証環境として見ると、機能が多すぎる場合があります。
-
-本番運用の軽量性よりも、GUI上での調査効率を重視するときの候補です。
-
-### Ubuntu Desktopで見ること
-
-Ubuntu Desktopは標準的な情報量が多く、トラブル時に検索しやすいです。
-
-WineやMT5の初期検証では、最も無難な環境です。ただし、低リソースVPSで長期常駐させる構成としては重くなりやすいため、本番候補とは分けて考えます。
-
-### GUI検証で記録する項目
-
-| 項目 | 確認内容 |
+| 記録する条件 | 区別したい差分 |
 |---|---|
-| MT5起動 | `terminal64.exe`がWine上で起動するか |
-| login状態 | 再起動後もログイン状態が維持されるか |
-| Market Watch | 対象symbolが見えるか |
-| terminal path | Pythonから指定するpathを確認 |
-| Wine prefix | どのprefixにMT5が入っているか |
-| run user | どのLinuxユーザーで入れたか |
-| font | 文字化けや表示崩れがないか |
-| 再起動 | OS再起動後に状態が復元されるか |
+| OSの版とアーキテクチャ | 同じflavorでも、別リリースや別アーキテクチャを比較していないか |
+| デスクトップとセッションの種類 | デスクトップの名前とX11・Waylandを混ぜていないか |
+| Wineの版と設定 | Wineの更新や表示ドライバーの違いが含まれていないか |
+| 対象のMT5とWine prefix | 同じ実行ファイル・設定の組み合わせを見ているか |
+| 解像度、拡大率、表示の確認方法 | ローカル表示と遠隔表示など、観測条件が違っていないか |
+| 起動のしかた | 対話的なセッションからの起動か、サービスからの起動か |
 
-## 図解
+prefixや実行ファイルの詳しい整理は[WineとMT5の導入](/tech-note/articles/linux/mt5-ubuntu/04-wine-mt5-installation/)へ分けます。比較記録では、説明用の識別子を使い、環境全体の一覧や個人のホームディレクトリをそのまま貼る必要はありません。
 
-```mermaid
-flowchart TD
-  A["GUI flavor"] --> B["Wine install"]
-  B --> C["MT5 first launch"]
-  C --> D["login / server selection"]
-  D --> E["terminal path record"]
-  E --> F["Wine prefix record"]
-  F --> G["Move design to Ubuntu Server"]
+## 環境変数から表示経路を断定できますか
+
+`XDG_SESSION_TYPE`はセッションの種類を示す情報です。個々のプロセスがどの表示ドライバーを使い、接続に成功したかを報告する値ではありません。[pam_systemdの環境変数](https://github.com/systemd/systemd/blob/v255/man/pam_systemd.xml)
+
+次の`session-hints.sh`は、セッションの種類と表示関連の環境変数に空でない値があるかを表示します。Bashの組み込み機能だけを使い、パスの値そのものは表示せず、表示サーバーや認証ファイルにも接続しません。
+
+```bash file=session-hints.sh
+#!/usr/bin/env bash
+set -eu
+
+case "${XDG_SESSION_TYPE-}" in
+  x11|wayland|tty) session_kind="$XDG_SESSION_TYPE" ;;
+  '') session_kind=unset ;;
+  *) session_kind=other ;;
+esac
+
+presence() {
+  if [ -n "$1" ]; then
+    printf '%s' nonempty
+  else
+    printf '%s' empty-or-unset
+  fi
+}
+
+printf 'session_kind=%s\n' "$session_kind"
+printf 'DISPLAY=%s\n' "$(presence "${DISPLAY-}")"
+printf 'WAYLAND_DISPLAY=%s\n' "$(presence "${WAYLAND_DISPLAY-}")"
+printf 'XAUTHORITY=%s\n' "$(presence "${XAUTHORITY-}")"
 ```
 
-GUIあり環境の役割は、本番環境そのものになることではなく、Serverへ移す前にMT5固有の不確定要素を減らすことです。
+`nonempty`は文字列が空でないこと、`empty-or-unset`は空か未設定であることを意味します。ファイルの存在、認証情報の正しさ、サーバーへの到達性は検査していません。
 
-## CLI・設定例
-
-GUIで確認した値はCLIでも控えます。
-
-```bash
-$ echo "$USER"
-$ echo "$HOME"
-$ echo "$WINEPREFIX"
-$ find "$HOME" -iname "terminal64.exe" 2>/dev/null
-$ ps aux | grep -i terminal64.exe
-```
-
-`find`の結果にはbroker名やインストール先名が含まれることがあります。公開記事に出す場合は必要に応じてマスクします。
-
-## 内部動作
-
-GUIあり環境では、display layerが最初から存在します。
+説明用に`XDG_SESSION_TYPE=wayland`、`DISPLAY=:87`、`WAYLAND_DISPLAY=synthetic-wayland`を与え、`XAUTHORITY`を未設定にすると、期待する出力は次です。この値は実環境から採取したものではありません。Bash 3.2.57でこの例を含む5つの合成入力を確認し、未設定・X11・Wayland・未知のセッション名について出力が期待値と一致しました。
 
 ```text
-desktop session
-↓
-DISPLAY
-↓
-Wine
-↓
-MT5 terminal
-↓
-manual verification
+session_kind=wayland
+DISPLAY=nonempty
+WAYLAND_DISPLAY=nonempty
+XAUTHORITY=empty-or-unset
 ```
 
-Ubuntu Serverへ移すと、この`desktop session`がなくなります。つまり、Server移行時に壊れる場合は、MT5そのものよりもDISPLAYや起動ユーザーの問題を疑います。
+ここから「WineがWaylandへ接続した」とは結論できません。Waylandセッションの中でも、X11アプリはXwaylandを通じて表示できます。[WaylandのX11アプリ対応](https://wayland.freedesktop.org/docs/book/Xwayland.html)
 
-## まとめ
+また、Wine 10.0の仕様ではX11とWaylandの両方が利用できるときにX11ドライバーが優先されます。この版付きの説明からも、セッション名だけでアプリの経路を決められないことが分かります。[Wine 10.0のリリースノート](https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md)
 
-- GUIあり環境は、MT5の初回ログイン、表示、Wine prefix、terminal path確認に向く。
-- Lubuntuは軽量検証、Xubuntuはバランス、KubuntuはGUI作業重視、Ubuntu Desktopは情報量重視。
-- GUI検証を本番推奨と混同しない。
-- Ubuntu Serverへ移す前に、run user、WINEPREFIX、terminal path、login状態を記録する。
+X11認証についても、`XAUTHORITY`が空でないことだけで認証成功とは判断できません。未設定時の扱いも含め、[Wayland・X11・Xauthorityの整理](/tech-note/articles/linux/mt5-ubuntu/03-wayland-x11-xauthority/)で接続と認証を分けます。
 
-## 参考文献
+## GUIで観測できる範囲はどこまでですか
 
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
-- [Ubuntu: Ubuntu flavors](https://ubuntu.com/desktop/flavors)
-- [Xubuntu official site](https://xubuntu.org/)
+次の表は結果の報告ではなく、観測項目と判断の範囲を対応させたものです。まだ試していない項目には「未確認」と残します。
+
+| 観測項目 | 確認すること | その結果に含めないこと |
+|---|---|---|
+| ウィンドウの表示 | 表示されるか、描画が欠けないか、サイズを変えられるか | API接続や継続稼働 |
+| 文字の表示 | メニューやダイアログの文字が読めるか | 別の解像度・拡大率・言語での表示 |
+| 入力とフォーカス | メニューの選択、ウィンドウ間のフォーカスが扱えるか | 無人での起動や復旧 |
+| 起動時のダイアログ | 何が表示され、処理がそこで止まっていないか | 追加処理を自動化できること |
+| 終了操作 | 対象のウィンドウを通常の操作で閉じられるか | すべての関連プロセスの終了 |
+
+MetaQuotesの導入手順にはWineのMonoやGeckoの確認ダイアログも登場します。ただし、毎回すべての環境で同じダイアログが出るという意味ではありません。表示された場合は、どの段階で何が必要になったかを記録します。[MetaTrader 5のLinux導入ガイド](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
+
+## 表示できた結果を、別の構成へどう引き継ぎますか
+
+引き継ぐのは、確認した条件と、その条件で観測した結果です。たとえば「同じWineの版・prefixで、ある対話セッションからウィンドウを表示できた」という記録なら、サービスからの起動へ変えた時点で、起動主体やセッションへの接続が再確認の対象になります。
+
+そこで表示されなくなっても、原因を直ちに`DISPLAY`だけへ決めません。表示経路、実行ユーザー、prefix、対象の実行ファイルなど、変更された条件を一つずつ確認します。環境変数の有無を出すコードは、その比較の一部に使えますが、原因を自動判定するものではありません。
+
+Python連携はterminalとのプロセス間通信を使うため、GUI表示とは別の確認です。[Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
+
+接続条件は[Python連携の記事](/tech-note/articles/linux/mt5-ubuntu/05-mt5-python-api-integration/)へ、対話セッションから離れた起動は[headless設計](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design/)と[systemdでの管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation/)へ進みます。

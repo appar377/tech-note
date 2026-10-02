@@ -1,6 +1,6 @@
 ---
-title: "with_lock、save、copyWith――短いメソッド名の裏にある複雑な動作"
-description: "便利なAPIは複雑さを削除するのではなく、通常経路から隠す。障害調査では、戻り値、状態変更、I/O、ライフサイクル、例外、並行性の6点で抽象化を開く。"
+title: "copyWithやwith_lockは、名前だけでどこまで分かるのか"
+description: "copyWithのnullと省略を小さなDart例で比べ、戻り値・状態変更・I/O・寿命・失敗・並行実行からAPIの契約を確認します。"
 date: 2026-07-20
 tags:
   - "Abstraction"
@@ -14,122 +14,111 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/framework-api-abstraction-leaks.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`copyWith(note: null)` を呼んだのに、メモが消えない。メソッド名から「渡した値で置き換える」と考えても、実装が省略とnullを同じ意味にしていれば、その操作は表現できません。
 
-`with_lock`は囲むだけ、`save`は保存するだけ、`copyWith`はコピーするだけに見える。しかし実際にはreload、I/O、transaction、instance生成、null semanticsなどの副作用が隠れる。
+APIを調べるときは、入力から戻り値までの間に何が起きるかを確認します。ここではDart 3.11.5向けの小さな例で契約の読み方を確かめ、Railsや保存・通信のAPIへ調査の視点を広げます。コードは説明用です。Dart 3.11.5で実行し、出力の全項目を期待値と照合しました。
 
-便利なAPIは複雑さを削除するのではなく、通常経路から隠す。障害調査では、戻り値、状態変更、I/O、ライフサイクル、例外、並行性の6点で抽象化を開く。
+## copyWithのnullは、削除ですか、変更なしですか？
 
-## この記事で学べること
+`copyWith` はDart言語が動作を一律に決める特別な構文ではありません。手書きのメソッドや、採用した生成ツールの実装を読む必要があります。
 
-- `with_lock`: transaction/row lock/reload
-- Repository `save`: create/update/network
-- `copyWith`: 新instanceとnull semantics
-- `deleteAll`: 保存領域の広すぎる削除
-- `CancelToken`: client側だけのcancel
-- Scope名: Relation/件数
+次の `LegacyDraft` は、引数がnullなら既存の値を使います。`ArticleDraft` は用途を分け、名前の変更、メモの置換、メモの削除をそれぞれ明示した設計例です。このコード全体を `api_contract.dart` として実行できます。
 
-## 前提知識
+```dart file="api_contract.dart"
+import 'dart:convert';
 
-- Rails、Dart、Swiftのいずれかで、状態や副作用の扱いに触れたこと
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+final class LegacyDraft {
+  final String title;
+  final String? note;
+  LegacyDraft(this.title, this.note);
 
-## 図解
+  LegacyDraft copyWith({String? title, String? note}) =>
+      LegacyDraft(title ?? this.title, note ?? this.note);
+}
 
-![with_lock、save、copyWith――短いメソッド名の裏にある複雑な動作](/images/articles/framework-api-abstraction-leaks.png)
+final class ArticleDraft {
+  final String title;
+  final String? note;
+  ArticleDraft(this.title, this.note);
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+  ArticleDraft rename(String title) => ArticleDraft(title, note);
+  ArticleDraft replaceNote(String note) => ArticleDraft(title, note);
+  ArticleDraft clearNote() => ArticleDraft(title, null);
+}
+
+void main() {
+  final legacy = LegacyDraft('Intro', 'review later');
+  final draft = ArticleDraft('Intro', 'review later');
+  final renamed = draft.rename('Revised');
+  final replaced = draft.replaceNote('ready');
+  final cleared = draft.clearNote();
+
+  print(jsonEncode({
+    'legacy_omitted_note': legacy.copyWith().note,
+    'legacy_explicit_null': legacy.copyWith(note: null).note,
+    'rename_keeps_note': {'title': renamed.title, 'note': renamed.note},
+    'replace_note': replaced.note,
+    'clear_note': cleared.note,
+    'clear_twice': cleared.clearNote().note,
+    'original_note': draft.note,
+    'new_instance': !identical(draft, cleared),
+  }));
+}
 ```
 
-## 実装コード例
+実行結果から、代表的な操作と値の変化を抜き出すと次のようになります。
 
-```text
-with_lock -> reload と行ロック
-save      -> create / update / validation / callback / transaction
-copyWith  -> 新しい値オブジェクトの生成と null の扱い
-```
-
-## 本編
-
-### 発生した状況
-
-`with_lock`は囲むだけ、`save`は保存するだけ、`copyWith`はコピーするだけに見える。しかし実際にはreload、I/O、transaction、instance生成、null semanticsなどの副作用が隠れる。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、便利なAPIは複雑さを削除するのではなく、通常経路から隠す。障害調査では、戻り値、状態変更、I/O、ライフサイクル、例外、並行性の6点で抽象化を開く。 という観点で見る必要がありました。
-
-### 観測したこと
-
-- 各APIを1つずつ最小コードで示す
-- 副作用チェックリストのMarkdown表
-- wrapper APIで契約を狭める例
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
+| 操作 | 期待する結果 |
 | --- | --- |
-| 高レベルAPI | 生産性／障害時に内部理解が必要 |
-| 低レベル直接操作 | 制御／重複と誤用 |
+| `legacy.copyWith()` | noteは `review later` のまま |
+| `legacy.copyWith(note: null)` | やはり `review later` のまま |
+| `draft.rename('Revised')` | titleだけ変わり、noteは残る |
+| `draft.replaceNote('ready')` | noteが `ready` になる |
+| `draft.clearNote()` | 返された別インスタンスのnoteがnullになる |
+| 元の `draft.note` | `review later` のまま |
 
-## 内部動作
+省略可能なnullable引数の既定値はnullです。そして `??` は左辺がnullなら右辺を使います。この2つを組み合わせた `LegacyDraft` の実装では、省略と明示的なnullを区別できません。[Dart: Named parameters](https://dart.dev/language/functions#named-parameters)、[Conditional expressions](https://dart.dev/language/operators#conditional-expressions)
 
-複数の言語やフレームワークを横断すると、同じ名前の概念でも意味が変わります。構文を暗記するより、実行時に何が保持され、いつ評価され、どこで副作用が出るかを追う方が、保守時の判断に効きます。
+この例の修正は、2つしかない属性に必要な操作を絞ったものです。属性が多いモデルや部分更新の入力では、`copyWith` を残し、未指定とnullを別に表現する設計も選べます。[DartのcopyWithで未指定とnullを分ける](/tech-note/articles/flutter/dart/dart-copywith-sentinel-pattern/)では、その設計を扱います。
 
-- 抽象化漏れは必ずしも設計欠陥ではない
-- 内部実装依存と公開契約を区別する
+## 戻り値が正しければ、契約を確認したことになりますか？
 
-```text
-syntax
-  -> state
-  -> lifecycle
-  -> boundary
-  -> execution model
-```
+値の変化と、変更される対象も確認します。この例では新しい `ArticleDraft` を返し、元のインスタンスを変更しません。文字列の属性だけを扱うため、内側の可変オブジェクトを共有する問題は含めていません。一般の `copyWith` が深いコピーを行う、あるいは常に別インスタンスを返すと保証した例ではありません。
 
-## 調査手順
+同じ確認を実際のAPIへ当てはめると、調べる対象は次のようになります。これらは一次資料による説明であり、下のフレームワーク動作を今回のDart CLI例で再現したわけではありません。
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+| API | 名前だけでは決められない点 | 確認先 |
+| --- | --- | --- |
+| Rails `with_lock` | transaction内で、ブロックの前にロックを伴うreloadが入る。未保存変更のある永続化済みインスタンスには制約がある | [Rails 8.1.3 Pessimistic Locking](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html) |
+| Rails `save` | 新規作成か更新か、validationやcallbackで保存が止まるか、falseと例外のどちらを扱うか | [Rails 8.1.3 Persistence](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-save) |
+| 自作Repositoryの `save` | DB保存、HTTP通信、作成と更新のどれを含むか。契約はそのRepositoryが決める | [Repositoryの保存操作を設計する](/tech-note/articles/flutter/architecture/repository-save-create-update-design/) |
+| `FlutterSecureStorage.deleteAll` | 選択した保存領域の複数キーが対象になる。ログアウトで消したい1キーと範囲が合うか | [flutter_secure_storage 10.3.1](https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#usage) |
+| Dio `CancelToken` | 同じtokenを共有する要求がまとめてキャンセルされる。サーバーの更新取り消しは別の契約として考える | [Dio 5.9.2 Cancellation](https://pub.dev/packages/dio/versions/5.9.2#cancellation) |
+| Railsのscope | 返すのは通常、合成できるRelation。名前から単一行や真偽値を期待しない | [Rails 8.1.3 Named Scopes](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Named/ClassMethods.html#method-i-scope) |
 
-- 抽象化漏れは必ずしも設計欠陥ではない
-- 内部実装依存と公開契約を区別する
+例えば `with_lock` の後にインスタンスの保存差分を調べるコードなら、ロックの排他性だけでなくreloadの影響も調べる必要があります。[with_lockで保存差分が失われる例](/tech-note/articles/rails/active_record/with-lock-dirty-tracking-after-commit/)が、その具体例です。
 
-## 再発防止テスト
+`CancelToken` の公開契約はDioの要求の中断です。そこから、既にサーバーで始まった処理の取り消しまで期待することはできません。保存結果の再確認や、業務上の取消操作は別に設計します。[CancelTokenの所有と寿命](/tech-note/articles/flutter/architecture/dio-cancel-token-lifecycle/)で詳しく扱います。
 
-```text
-given: 状態と境界を明示する
-when: 実行モデルに沿って処理を進める
-then: 期待した副作用だけが発生する
-```
+## どこまで内部実装を読む必要がありますか？
 
-## 一般化できる設計原則
+まず公開ドキュメントで、呼び出し側が依存してよい契約を確認します。次に採用版のソースや生成コードを読み、分からない挙動を絞ります。ソースに見つけた処理順やキャッシュ方法が、将来の版でも約束されるとは限りません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+レビューでは、APIの名前を分類するより、次の問いへ具体的に答えます。
 
-## まとめ
+| 見る対象 | `ArticleDraft` での答え | 保存や通信のAPIなら追加する問い |
+| --- | --- | --- |
+| 入力と戻り値 | 変更操作を明示し、新しい値を返す | 未指定・空・null・失敗の表現は何か |
+| 状態変更 | 元のdraftは変更しない | 同じインスタンス、DB、キャッシュのどれが変わるか |
+| I/O | 行わない | 呼び出した時点で外部処理が始まるか |
+| 寿命 | 返した値を呼び出し側が保持する | token、接続、購読は誰が終了させるか |
+| 失敗 | この例にはvalidationや外部失敗を含めない | 例外の時点で何が変更済みか |
+| 並行実行 | この同期例では扱わない | 重複実行、キャンセル、再試行を誰が調整するか |
 
-API名から動作を推測せず、状態と境界を観測する習慣を持つ。
+分からない点が残ったら、その点だけを動かす最小例を用意します。今回なら「nullを渡す」と「省略する」を並べ、元の値と戻り値を別々に確認します。外部APIなら、同じ方法で成功と失敗の境界を限定して調べます。
 
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- フレームワークを使わない方がよいという結論にしない
-- 内部実装の偶然を公開契約として扱わない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+高水準のAPIを使うこと自体を問題にする必要はありません。呼び出し側が必要とする契約が広すぎるなら、今回の `clearNote` のように、用途に合う操作へ絞って公開できます。状態がいつ読み直されるかの追い方は、[状態・評価時点・境界からコードを読む](/tech-note/articles/architecture/execution-model/execution-model-over-syntax/)へ続きます。

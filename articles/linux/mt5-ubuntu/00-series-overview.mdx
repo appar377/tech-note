@@ -1,6 +1,6 @@
 ---
-title: Ubuntu系LinuxでMT5自動売買サーバーを構築するまでの全体像
-description: Ubuntu系Linux上でMetaTrader 5を動かし、Wine、display server、X11認証、Python API、systemdをどう接続するかをシリーズ全体の地図として整理する。
+title: Ubuntu系LinuxでMT5を動かす前に、どの層を分けて考えるか
+description: Ubuntu、デスクトップ、表示経路、Wine、MT5、Python連携を分けて整理し、必要な確認から9本の記事を選べる入口です。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -18,165 +18,90 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-overview.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+MT5をUbuntu系Linuxで扱うときは、OSを選ぶことと、画面を表示すること、Pythonから接続することを分けて考えると、次に確かめる対象が明確になります。
 
-MetaTrader 5はWindows前提の色が強いGUIアプリです。Ubuntu系LinuxでMT5を動かす場合、公式ドキュメントでもWineを使う構成が案内されています。
+MetaQuotesはLinuxへの導入方法としてWineを使う手順を案内しています。ただし、その手順の存在だけで、任意のデスクトップ、CPUアーキテクチャ、Python環境、常駐方法の組み合わせまで動作が保証されるわけではありません。[MetaTrader 5のLinux導入ガイド](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-この記事シリーズでは、単にMT5をインストールする手順ではなく、Ubuntu系Linux上でMT5をサーバー運用へ寄せるときに問題になりやすい境界を整理します。
+このシリーズは実行環境の構成と確認方法を扱います。以下は公開資料を基にした設計の整理であり、特定の環境での導入・GUI操作・API接続・連続稼働の実証報告ではありません。
 
-中心になるのは、次の整合性です。
+## 最初に分けておくのは、どの層ですか
 
-- Wine
-- display server
-- Wayland / X11 / XAuthority
-- MT5 terminal
-- Python API
-- systemd
-- ログと復旧
+「Ubuntuで動く」という言葉には、複数の条件が含まれます。確認する対象を次のように分けます。
 
-> [!WARNING]
-> このシリーズは投資助言ではありません。売買ロジック、収益性、実口座での運用成績は扱いません。broker名、口座番号、server名、passwordも記載しません。
+| 層 | 決めること・記録すること | それだけでは分からないこと |
+|---|---|---|
+| OSとアーキテクチャ | Ubuntuのリリース、パッケージのアーキテクチャ | Windows向けバイナリとの互換性 |
+| デスクトップ | GNOME、LXQt、Xfce、Plasmaなど、人が操作する環境 | 個々のアプリが使う表示経路 |
+| 表示経路 | X11、Xwayland、WineのWayland対応など | WineやMT5がその経路へ接続できるか |
+| WineとMT5 | Wineの版、prefix、対象の実行ファイル、実行ユーザー | Pythonとの接続や再起動後の復元 |
+| Python連携 | PythonのOS・版・アーキテクチャと配布物、接続するterminal | サービスとしての起動順序や復旧 |
+| 常駐管理 | 起動するプロセス、環境、終了・再起動の扱い | アプリ側の正常性や継続稼働 |
 
-## この記事で学べること
+これは確認対象の分割です。すべての環境が同じ一本の起動順序になる、という意味ではありません。たとえばX11で使う認証情報を、Waylandのすべての構成に共通する必須条件として扱うことはできません。
 
-- Ubuntu系LinuxでMT5を扱うときの全体アーキテクチャ
-- GUIあり検証環境とUbuntu Server本番構成を分ける理由
-- Wine、display layer、X11認証、Python API、systemdの境界
-- シリーズをどの順番で読めばよいか
+## デスクトップがWaylandなら、WineもWaylandですか
 
-## 前提知識
+デスクトップの種類やセッション名だけでは決まりません。Wayland上では、XwaylandというXサーバーを通じてX11アプリを表示できます。アプリからはX11への接続でも、その先はWayland compositorにつながる構成です。[WaylandのX11アプリ対応](https://wayland.freedesktop.org/docs/book/Xwayland.html)
 
-- Linuxの基本的なCLI操作を知っている
-- systemd serviceと`journalctl`の役割を聞いたことがある
-- Pythonで外部APIやプロセスを扱った経験がある
-- MT5がGUIアプリであり、terminalが起動している状態を前提にするAPIがあることを理解している
+Wineにも版による違いがあります。Wine 10.0のリリースノートではWaylandドライバーが既定で有効になり、両方を利用できる場合にはX11ドライバーが優先されると説明されています。これはWine 10.0の仕様例であり、MT5との組み合わせを検証した結果ではありません。[Wine 10.0のリリースノート](https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md)
 
-## 本編
+そのため「GUIあり」「Waylandセッション」「X11を利用するWine」を別々に記録します。具体的な接続と認証は、[Wayland・X11・Xauthorityの整理](/tech-note/articles/linux/mt5-ubuntu/03-wayland-x11-xauthority/)へ進んでください。
 
-### 背景
+## Ubuntuの情報は、どこまで確認できますか
 
-MT5をVPSで動かすなら、Windows VPSを使うのが最も素直な選択です。MT5本体もPython連携もWindowsを前提にした情報が多く、環境差分も少なくなります。
+まずOSのリリースを、対象のLinuxにある`/etc/os-release`から読み取れます。`ID`と`VERSION_ID`はOSと版の識別に使われます。`VERSION_ID`や`VARIANT_ID`は省略されることもあるため、項目がないだけで異常と判断しません。[os-releaseの仕様](https://github.com/systemd/systemd/blob/v255/man/os-release.xml)
 
-それでもUbuntu系Linuxで試す理由はあります。
+次のコードを`read-release.sh`として保存します。引数で指定したファイルから3項目の行を表示するだけで、内容をシェルとして評価しません。引数を省略すると終了し、ホストのファイルを自動では選びません。
 
-- SSH、systemd、journaldなどLinuxの運用資産を使いたい
-- bot本体や周辺処理をLinux側で管理したい
-- GUIは必要なときだけ確認し、普段はサーバーとして常駐させたい
-- Windows VPSではなく既存のLinux VPS運用に寄せたい
+```bash file=read-release.sh
+#!/usr/bin/env bash
+set -eu
 
-ただし、Linuxで動かす場合は「インストールできたか」だけでは不十分です。MT5はGUIアプリなので、headlessなUbuntu Serverでは表示先が必要になります。また、Python APIはMT5 terminalとの接続を前提にするため、Pythonがどこで動くかも重要です。
+if [ "$#" -ne 1 ]; then
+  printf '%s\n' 'usage: read-release.sh PATH_TO_OS_RELEASE' >&2
+  exit 2
+fi
 
-### 試したOSの切り方
-
-OSごとに記事を完全分割すると、Wine、MT5、Python API、systemdの説明が重複します。
-
-そのため、このシリーズでは次のように分けます。
-
-| No | テーマ | 役割 |
-|---:|---|---|
-| 00 | 全体像 | 背景、ゴール、アーキテクチャ |
-| 01 | OS選定 | Ubuntu系flavorとServerの比較 |
-| 02 | GUI検証 | Lubuntu / Xubuntu / Kubuntu / Ubuntu Desktopで検証する意味 |
-| 03 | Wayland / X11 / XAuthority | display serverとX11認証の切り分け |
-| 04 | headless設計 | Ubuntu ServerでDISPLAYをどう用意するか |
-| 05 | Wine + MT5 | prefix、terminal path、初回ログイン |
-| 06 | Python API | MetaTrader5 package、initialize、bridge構成 |
-| 07 | systemd | display、MT5、botの起動順序とログ |
-| 08 | まとめ | 最終構成、メリット、デメリット、失敗集 |
-
-### シリーズ全体の主張
-
-UbuntuでMT5サーバーを作るときに難しいのは、MT5のインストールそのものではありません。
-
-難しいのは、次の状態を同じ文脈に揃えることです。
-
-- MT5を入れたユーザー
-- MT5を入れたWine prefix
-- MT5 terminalの実行パス
-- MT5が描画するDISPLAY
-- X11アプリが接続するときのXAUTHORITY
-- Python APIが参照するterminal
-- systemdが起動するユーザーと環境変数
-
-手動起動では動いても、systemdでは動かないことがあります。その場合、Pythonコードの問題に見えて、実際には`DISPLAY`、`XAUTHORITY`、`WINEPREFIX`、`HOME`、`PATH`の差分だった、という切り分けが必要になります。
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["Ubuntu Server / VPS"] --> B["display layer"]
-  B --> C["X11 / Xvfb / VNC"]
-  C --> D["XAUTHORITY / access control"]
-  D --> E["Wine"]
-  E --> F["MetaTrader 5 terminal"]
-  F --> H["Python API / worker"]
-  H --> I["bot process"]
-  A --> G["systemd"]
-  G --> B
-  G --> E
-  G --> I
-  G --> J["journald / application logs"]
+sed -n -e '/^ID=/p' -e '/^VERSION_ID=/p' -e '/^VARIANT_ID=/p' < "$1"
 ```
 
-この図で重要なのは、MT5だけが独立しているわけではないことです。MT5はWine上で動き、Wineはdisplay layerを必要とし、Python APIはMT5 terminalの状態に依存し、systemdはそれらを正しい順序で起動する必要があります。
+読者が対象のUbuntuで確認するときの呼び出しは`bash read-release.sh /etc/os-release`です。こちらでは実環境に対する実行は行っていません。合成のos-releaseファイル2種類と引数省略を使い、行の選択結果と引数がない場合の終了をBash 3.2.57で確認しました。実機のOS情報は取得していません。
 
-## CLI・設定例
-
-このシリーズで確認対象になる値は、最初からメモしておきます。
-
-```bash
-$ uname -a
-$ lsb_release -a
-$ wine --version
-$ echo "$DISPLAY"
-$ echo "$XDG_SESSION_TYPE"
-$ echo "$XAUTHORITY"
-$ echo "$WINEPREFIX"
-$ ps aux | grep -i terminal64.exe
-$ systemctl status mt5.service
-$ journalctl -u mt5.service -f
-```
-
-実環境の値を記事に出す場合は、broker名、口座番号、server名、passwordが含まれないように必ずマスクします。
-
-## 内部動作
-
-MT5をUbuntu Serverで常駐させると、内部的には次の順に依存します。
+たとえば、説明用ファイルに`ID=ubuntu`と`VERSION_ID="24.04"`があれば、期待する表示は次です。
 
 ```text
-systemd
-↓
-display service
-↓
-X11 authentication / XAUTHORITY
-↓
-Wine process
-↓
-MT5 terminal64.exe
-↓
-Python API / bridge
-↓
-bot
-↓
-logs / health check
+ID=ubuntu
+VERSION_ID="24.04"
 ```
 
-上流が壊れると下流も壊れます。たとえばdisplay layerが起動していなければ、Wine上のMT5はGUIを表示できません。MT5が起動していなければ、Pythonの`initialize()`は失敗しやすくなります。
+この表示から、利用中のデスクトップ、Wineの版、Pythonの互換性は判断できません。また、仮想マシンやコンテナーの中で読む場合は、その環境のOS情報を見ていることにも注意します。
 
-## まとめ
+## Pythonが入っていれば、MT5へ接続できますか
 
-- Ubuntu系LinuxでMT5を運用する本質は、インストール手順ではなく実行環境の整合性にある。
-- GUIあり環境は初回ログイン、表示、broker接続、terminal path確認に向いている。
-- 本番構成ではUbuntu Serverに必要最小限のX11-compatible display layerを足し、MT5とbotをsystemdで管理する設計が現実的。
-- このシリーズでは、投資判断ではなくLinuxサーバー運用としての切り分けを扱う。
+MetaTrader5パッケージは、terminalとのプロセス間通信を使う連携機能です。通常のHTTPクライアントをLinuxに置く話と同じには扱えません。[Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
 
-## 参考文献
+確認した配布物の例では、MetaTrader5 5.0.6231にWindows x86-64向けのwheelがあります。LinuxのPythonとWindows向けのPythonでは配布物の適合条件が異なるため、OSを決めた後にPythonの実行場所・版・アーキテクチャも確認します。[5.0.6231の配布ファイル](https://pypi.org/project/metatrader5/5.0.6231/#files)
 
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
-- [MQL5 Reference: Python Integration](https://www.mql5.com/en/docs/python_metatrader5)
-- [MQL5 Reference: initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
-- [Ubuntu: Ubuntu flavors](https://ubuntu.com/desktop/flavors)
-- [Wayland](https://wayland.freedesktop.org/)
-- [X.Org: Xsecurity manual page](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html)
+また、公式APIの`initialize()`は必要に応じてterminalを起動する場合があります。「必ず先に人が画面から起動する」という固定手順でもありません。接続先と起動の条件は、[Python連携の記事](/tech-note/articles/linux/mt5-ubuntu/05-mt5-python-api-integration/)で扱います。[initializeの仕様](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
+
+## どの記事から読むとよいですか
+
+OSの候補を決める段階なら選定へ、画面が出ない理由を整理したいなら表示経路へ進めます。表示経路とheadless設計は、目的に応じて読み分けてください。
+
+| 記事 | 答える問い |
+|---|---|
+| この全体像 | どの層を分けて考えるか |
+| [OS選定](/tech-note/articles/linux/mt5-ubuntu/01-os-selection/) | デスクトップと保守条件からどう候補を選ぶか |
+| [GUI確認](/tech-note/articles/linux/mt5-ubuntu/02-gui-flavors-validation/) | 画面で何を観測し、何を別の確認に残すか |
+| [Wayland・X11・Xauthority](/tech-note/articles/linux/mt5-ubuntu/03-wayland-x11-xauthority/) | 表示への接続と認証をどう分けるか |
+| [headless設計](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design/) | デスクトップへログインしない構成で表示先をどう用意するか |
+| [WineとMT5の導入](/tech-note/articles/linux/mt5-ubuntu/04-wine-mt5-installation/) | prefixや実行ファイルをどう区別するか |
+| [Python連携](/tech-note/articles/linux/mt5-ubuntu/05-mt5-python-api-integration/) | Pythonとterminalの接続条件は何か |
+| [systemdでの管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation/) | 起動主体と環境をどう定義するか |
+| [構成と問題の切り分け](/tech-note/articles/linux/mt5-ubuntu/07-final-architecture-troubleshooting/) | 不具合をどの境界から調べるか |
+
+画面の表示、Python接続、再起動後の復元は、それぞれ別の確認です。確認できた範囲を一つずつ残すと、構成を変えたときにも、引き継げる結果と再確認する条件を区別できます。

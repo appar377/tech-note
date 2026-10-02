@@ -1,6 +1,6 @@
 ---
-title: GitでSquash Merge後に発生する謎のコンフリクトを仕組みから理解する
-description: Squash Merge後に同じfeatureブランチでgit rebase mainするとコンフリクトが起きる理由を、Gitのコミット構造から整理する。
+title: Squash後の再merge・rebaseが競合する条件を確かめる
+description: 同じファイル内容でも祖先関係は同じになりません。Squash後の競合例と、追加コミットだけをrebase --ontoで移す条件を整理します。
 date: 2026-06-26
 tags:
   - Git
@@ -14,312 +14,177 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/git-squash-rebase-conflict.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+Squashで変更を取り込んでも、元のブランチ先端が取り込み先の祖先になるわけではありません。そのブランチで作業を続けると、次のmergeやrebaseで、取り込み済みに見える行が競合することがあります。
 
-Squash Merge後に同じfeatureブランチで開発を続けると、`git rebase main` で「既に取り込んだはずの変更」が再びコンフリクトすることがあります。
+ただし、squashしたら必ず競合するわけでもありません。ファイルの内容が同じか、履歴としてつながっているか、どの差分をもう一度適用するかを分けて見る必要があります。
 
-この記事では、Gitが差分の内容ではなくコミットグラフを基準に履歴を扱う、という内部構造から原因を整理します。
+## Squashで記録されるもの、記録されないもの
 
-## この記事で学べること
+説明用に、1行のファイルを`draft`から`review`、さらに`ready`へ変更する2コミット`D`、`E`を作ります。それをまとめて`main`へ入れたコミットを`S`とします。
 
-- Squash Mergeで元コミットとは別のコミットが作られること
-- GitがコミットIDと親子関係で履歴を判断すること
-- なぜ `D E F` が再適用されてコンフリクトするのか
-- `git rebase --onto` で再適用範囲を制御する考え方
-
-## 前提知識
-
-- Pull RequestをSquash Mergeしたことがある
-- `git rebase main` を使ったことがある
-- commit hashがコミットを識別するIDであることを知っている
-
-## 図解
-
-```mermaid
-gitGraph
-  commit id: "A"
-  commit id: "B"
-  commit id: "C"
-  branch feature
-  checkout feature
-  commit id: "D"
-  commit id: "E"
-  commit id: "F"
-  checkout main
-  commit id: "S"
+```text
+A──S          main
+ ╲
+  D──E        feature、squashed-tip
 ```
 
-## Gitコマンド例
+この例では`S`と`E`のファイル内容は一致します。しかし`S`の親は`A`だけで、`E`への親子関係はありません。`git merge --squash`はindexとworking treeへマージ結果を用意しますが、それ自体ではコミットせず、通常のmergeで使う`MERGE_HEAD`も記録しません。その後に作るコミットには、元ブランチを第2の親として残さない仕組みです。[git-mergeの--squash](https://git-scm.com/docs/git-merge/2.34.0#Documentation/git-merge.txt---squash)
 
-```bash
+以下は説明用のファイルだけを扱う再現例です。Git 2.46.0とmacOSの `/bin/bash` で実行し、記載した状態を確認しました。再現コードはGit 2.34以上を前提にしますが、その全バージョンで動作を確認したものではありません。
+
+この記事の`bash`ブロックを上から順に一つの`example.sh`へ保存し、`/bin/bash example.sh`で実行する構成です。端末へ断片だけ貼り付けたり、`source`で読み込んだりしないでください。最初に環境を分け、新しい一時ディレクトリ内にリポジトリを作ります。既存のGit設定を変更せず、このリポジトリにだけ説明用の名前・メールアドレスと署名無効を設定します。remoteは作らず、通信もしません。
+
+`expect_status`は終了コードが期待どおりか調べる関数です。`test`が失敗するとスクリプトはそこで止まります。出力の`REPO`が再現用リポジトリの場所です。
+
+```bash file=setup.sh
+set -eu
+
+# Save all blocks as one file and run it with /bin/bash, not by sourcing it.
+if [ "${1:-}" != "--isolated" ]; then
+  exec env -i PATH="$PATH" TMPDIR="${TMPDIR:-/tmp}" LC_ALL=C \
+    GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 \
+    GIT_TERMINAL_PROMPT=0 GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true \
+    /bin/bash "$0" --isolated
+fi
+
+demo_root=$(mktemp -d "${TMPDIR%/}/git-note.XXXXXX")
+mkdir "$demo_root/repo" "$demo_root/empty-template" "$demo_root/empty-hooks"
+cd "$demo_root/repo"
+git --version
+git init -q -b main --template="$demo_root/empty-template"
+git config --local user.name 'Git Example'
+git config --local user.email 'git-example@example.invalid'
+git config --local commit.gpgSign false
+git config --local tag.gpgSign false
+git config --local core.hooksPath "$demo_root/empty-hooks"
+git config --local core.autocrlf false
+git config --local gc.auto 0
+git config --local maintenance.auto false
+git config --local rerere.enabled false
+printf 'REPO %s\n' "$demo_root/repo"
+
+expect_status() {
+  expected_status=$1
+  shift
+  if "$@"; then actual_status=0; else actual_status=$?; fi
+  if [ "$actual_status" -ne "$expected_status" ]; then
+    printf 'Expected status %s, got %s\n' "$expected_status" "$actual_status" >&2
+    exit 1
+  fi
+}
+```
+
+最初のブロックでは、内容の一致を`git diff`、祖先関係を`git merge-base --is-ancestor`で別々に確認します。後者は祖先なら0、祖先でなければ1を返します。[git-merge-base](https://git-scm.com/docs/git-merge-base#Documentation/git-merge-base.txt---is-ancestor)
+
+```bash file=squash-merge-rebase-conflict/01-squash.sh
+printf 'state=draft\n' > state.txt
+git add state.txt
+git commit -qm 'A'
+git tag base
+git switch -c feature
+printf 'state=review\n' > state.txt
+git commit -qam 'D'
+printf 'state=ready\n' > state.txt
+git commit -qam 'E'
+git tag squashed-tip
+
+git switch main
+git merge -s ort --squash feature
+test "$(git rev-parse HEAD)" = "$(git rev-parse base)"
+test ! -f "$(git rev-parse --git-path MERGE_HEAD)"
+git commit -qm 'S'
+git diff --quiet main squashed-tip
+expect_status 1 git merge-base --is-ancestor squashed-tip main
+test "$(git merge-base main feature)" = "$(git rev-parse base)"
+printf 'CHECK squash=same_tree_but_original_tip_not_ancestor\n'
+
+# With identical changes on both sides, this merge does not conflict.
+git switch -c merge-probe main
+git merge -s ort --no-ff -m 'Clean merge probe' feature
+git diff --quiet main merge-probe
+git merge-base --is-ancestor feature merge-probe
+printf 'CHECK same_snapshot_merge=clean\n'
+git switch main
+```
+
+期待値は「内容は同じ、`E`は`main`の祖先ではない」です。また、比較用の`merge-probe`では、内容が同じ両側を通常のmergeで結びます。この時点では競合せず、`main`と同じファイル内容のまま、`feature`へたどれる履歴になります。祖先でないことだけでは、競合の発生までは決まりません。
+
+## 最終結果が同じでも、途中の差分を適用すると競合する
+
+次に`feature`へ、別ファイルを追加する`G`を積みます。`main`は`S`のままです。ここで単純に`rebase main`をすると、例では最初の`D`で止まることを期待しています。
+
+```bash file=squash-merge-rebase-conflict/02-rebase-conflict.sh
 git switch feature
-git rebase main
-git rebase --onto main F feature
+printf 'additional work\n' > extra.txt
+git add extra.txt
+git commit -qm 'G'
+git tag continued-tip
+
+expect_status 1 git rebase --merge -s ort --no-fork-point main
+test "$(git diff --name-only --diff-filter=U)" = state.txt
+test "$(git show -s --format=%s REBASE_HEAD)" = D
+printf 'CHECK ordinary_rebase=conflict_on_D_in_state.txt\n'
+git rebase --abort
+test "$(git rev-parse feature)" = "$(git rev-parse continued-tip)"
+test -z "$(git status --porcelain)"
 ```
 
-## 内部動作
+`D`が表すのは`draft`から`review`への変更です。ところが載せ替え先には、`S`によって`ready`が入っています。途中段階の`review`を適用するときに、同じ1行をどちらにするか決められず競合する、という例です。`REBASE_HEAD`のコミットメッセージが`D`、未解決ファイルが`state.txt`かを調べています。
 
-```text
-git rebase main
-↓
-merge base以降のコミットを列挙
-↓
-mainにないコミットを順番に再適用
-↓
-同じ変更内容でも別コミットなら再適用対象になる
-↓
-同じ行を変更していればコンフリクト
+ここを「ハッシュが違えばすべて再適用する」と一般化してはいけません。rebaseには、上流に同等のパッチがあるコミットを省略したり、適用後に空になるコミットを落としたりする処理があります。まとめた`S`の差分と、中間段階の`D`の差分が同じとは限らない点が、この例の要点です。[git-rebaseの説明](https://git-scm.com/docs/git-rebase/2.34.0#_description)、[空コミットの扱い](https://git-scm.com/docs/git-rebase/2.34.0#Documentation/git-rebase.txt---emptydropkeepask)
+
+例は競合状態を確認したら`git rebase --abort`で元の`feature`へ戻します。内容を確かめずに`--skip`すると、そのコミットの変更を取り込まないことになるため、競合回避の一般的な手順にはしていません。
+
+## 同じブランチを再mergeしても競合するのか
+
+今度は`main`だけで`ready`を`shipping`へ進め、`T`を作ります。`feature`側の`state.txt`は`ready`のままです。
+
+```bash file=squash-merge-rebase-conflict/03-merge-conflict.sh
+git switch main
+printf 'state=shipping\n' > state.txt
+git commit -qam 'T'
+main_before_merge=$(git rev-parse main)
+
+expect_status 1 git merge -s ort --no-ff -m 'Merge old feature' feature
+test "$(git diff --name-only --diff-filter=U)" = state.txt
+test "$(git merge-base main feature)" = "$(git rev-parse base)"
+printf 'CHECK continued_branch_merge=conflict_in_state.txt\n'
+git merge --abort
+test "$(git rev-parse main)" = "$main_before_merge"
+test -z "$(git status --porcelain)"
 ```
 
-## 本編
+この時点でも、`main`と`feature`の共通祖先は`A`です。`A`の`draft`から見ると、`main`は`shipping`へ、`feature`は`ready`へ同じ行を変更しています。最初のsquashで`ready`を取り込んだという出来事は、`feature`を親として結ぶ履歴になっていません。そのため、この例の再mergeも`state.txt`で競合します。
 
-Gitで開発していると、次のような経験はありませんか？
+これは最初の`merge-probe`との違いです。そこで両側は同じ`ready`でしたが、ここでは共通祖先からの変更先が異なります。GitHubの資料でも、squash後に同じheadブランチを使い続けると、次のPRに以前のコミットが含まれたり、競合を繰り返し解消する必要が生じたりすると説明されています。[長く使うブランチのsquash](https://docs.github.com/en/pull-requests/reference/pull-request-merges#squashing-and-merging-a-long-running-branch)
 
-- featureブランチをSquash Mergeした
-- その後、同じfeatureブランチで開発を続けた
-- `git rebase main` したら大量のコンフリクトが発生した
+## 追加分だけを載せ替えるには、どの境界を指定するか
 
-「さっきmainにマージした変更なのに、なぜもう一度コンフリクトするの？」
+この例で移したいのは、squash対象の先端`E`より後の`G`だけです。`squashed-tip`は、squash直前に記録しておいた`E`を指します。元の`feature`を残し、説明用の新しいブランチ`rescued`で操作します。
 
-この記事では、この現象を **Gitの内部構造** から理解していきます。
-
-## 前提
-
-まず、次のようなブランチ構成を考えます。
-
-```text
-main
-
-A ── B ── C
-
-feature
-
-          D ── E ── F
+```bash file=squash-merge-rebase-conflict/04-onto.sh
+# Keep feature unchanged; rewrite only this local explanation branch.
+git switch -c rescued feature
+git rebase --merge -s ort --no-fork-point --onto main squashed-tip rescued
+git merge-base --is-ancestor main rescued
+test "$(git rev-list --count main..rescued)" = 1
+test "$(git log --format=%s main..rescued)" = G
+test "$(cat state.txt)" = 'state=shipping'
+test "$(cat extra.txt)" = 'additional work'
+test "$(git rev-parse feature)" = "$(git rev-parse continued-tip)"
+test -z "$(git status --porcelain)"
+printf 'CHECK onto=only_G_replayed_main_and_feature_preserved\n'
 ```
 
-featureブランチでは、次の3つのコミットを積みました。
+`--onto main squashed-tip rescued`では、載せ替え先が`main`、対象範囲の境界が`squashed-tip`、操作するブランチが`rescued`です。この直線状の例では`E`を含めず、その後の`G`だけを適用します。期待する結果は、`main`の`shipping`を保ち、新規ファイルを追加した1コミットが上に載る状態です。[git-rebaseの--ontoの例](https://git-scm.com/docs/git-rebase/2.34.0#_description)
 
-- D
-- E
-- F
+実際の履歴では、この境界を`merge-base`の結果で置き換えられるとは限りません。今回の`merge-base`は`A`を返すため、`D`と`E`まで選んでしまいます。どのコミットまでがsquashの対象だったかを確認する必要があります。
 
-## Squash Mergeするとどうなる？
+また、`--onto`は競合を消す保証ではありません。追加分の`G`が`main`の変更とぶつかれば競合しますし、境界を誤れば必要な変更を外してしまいます。レビュー時にsquashの内容を修正した場合も、元の`E`と取り込み後の内容が同じとは限りません。例のように元ブランチを残したコピーで範囲と最終差分を確認してから、共有履歴をどう扱うか決めます。
 
-GitHubで **Squash and Merge** を選択すると、以下のようになります。
-
-```text
-main
-
-A ── B ── C ── S
-```
-
-ここで重要なのは、以下の関係です。
-
-```text
-S = D + E + F
-```
-
-つまり、D、E、Fがそのまま取り込まれるわけではありません。
-
-**3つの変更内容をまとめた新しいコミットSが作られます。**
-
-## Gitは「内容」ではなく「コミット」を見ている
-
-ここが一番重要です。
-
-Gitは「この変更内容は同じか？」を見ているわけではありません。
-
-Gitが管理しているのは、主に以下です。
-
-- コミット
-- 親コミット
-- Tree
-- Blob
-
-つまり、以下の `D` と `S` は変更内容が同じでも **別のコミット** として扱われます。
-
-```text
-D
-
-hash = 111111
-```
-
-```text
-S
-
-hash = 999999
-```
-
-ハッシュが違うため、Gitからすると以下のように見えます。
-
-```text
-Dはまだmainに存在しない
-```
-
-## そのままfeatureで開発を続ける
-
-featureブランチでさらに `G`、`H` を積みます。
-
-```text
-feature
-
-D ── E ── F ── G ── H
-```
-
-一方mainは以下です。
-
-```text
-main
-
-A ── B ── C ── S
-```
-
-## Rebaseすると何が起きる？
-
-ここで以下を実行します。
-
-```bash
-git rebase main
-```
-
-Gitは内部で「mainに存在しないコミットを適用しよう」と考えます。
-
-しかしGitから見ると、以下のすべてがfeature側に存在しているように見えます。
-
-```text
-D
-E
-F
-G
-H
-```
-
-なぜなら、mainには `S` しか無いからです。
-
-つまり、`D` は存在しません。
-
-## コンフリクトが発生する理由
-
-Gitは `D` を適用します。
-
-しかしmainには、`S` によって同じ変更内容が既に入っています。
-
-すると、同じ場所を変更していると判断され、コンフリクトになります。
-
-つまり、原因は以下です。
-
-```text
-内容が同じ
-
-≠
-
-コミットが同じ
-```
-
-## git rebase --ontoとは？
-
-そこで登場するのが、以下のコマンドです。
-
-```bash
-git rebase --onto
-```
-
-例えば以下のように使います。
-
-```bash
-git rebase --onto main F feature
-```
-
-一見すると難しそうですが、実は以下の意味です。
-
-```text
-git rebase --onto <新しい親> <ここまで除外> <対象ブランチ>
-```
-
-つまり、以下を表しています。
-
-```text
-mainへ
-
-Fまでは適用せず
-
-G,Hだけを載せ替える
-```
-
-図にすると、リベース前は以下です。
-
-```text
-feature
-
-D ── E ── F ── G ── H
-```
-
-リベース後は以下になります。
-
-```text
-main
-
-A ── B ── C ── S ── G' ── H'
-```
-
-リベース後の `G'`、`H'` は新しく作られたコミットです。
-
-## なぜこれでコンフリクトしないの？
-
-通常のRebaseでは、以下すべてを適用します。
-
-```text
-D
-E
-F
-G
-H
-```
-
-一方、`--onto` を使うと以下だけが対象になります。
-
-```text
-G
-H
-```
-
-つまり、既にSquashされた変更をもう一度適用しないため、不要なコンフリクトを避けられるのです。
-
-## そもそもRebaseとは？
-
-Rebaseは「コミットを移動する」コマンドではありません。
-
-実際には、以下の処理をしています。
-
-1. コミットを取り出す
-2. 新しい親コミットの上で順番に適用する
-3. 新しいコミットを作る
-
-そのため、リベース後は `G` ではなく `G'` になります。
-
-つまり、コミットハッシュは必ず変わります。
-
-## まとめ
-
-Squash Merge後にRebaseでコンフリクトするのは、以下の仕組みがあるからです。
-
-- Gitが変更内容ではなく **コミットの親子関係** を管理している
-- Squash Mergeでは元のコミットD、E、Fではなく、新しいコミットSが作られる
-- GitはD、E、Fがまだmainに存在しないと判断する
-- その結果、D、E、Fを再適用しようとしてコンフリクトが発生する
-
-`git rebase --onto` は、この「再適用してはいけないコミット」を対象から除外することで、Squash Merge後の不要なコンフリクトを回避できます。
-
-## おわりに
-
-Gitは「ファイルの状態」を管理しているように見えますが、実際には **コミット同士の親子関係（DAG）** を管理しています。
-
-この仕組みを理解すると、Merge、Rebase、Cherry-pickなどの動作も自然に理解できるようになります。
-
-## 参考文献
-
-- [Git Documentation: git-rebase](https://git-scm.com/docs/git-rebase)
-- [Git Documentation: git-merge](https://git-scm.com/docs/git-merge)
-- [Git Book: Git Branching - Rebasing](https://git-scm.com/book/en/v2/Git-Branching-Rebasing)
+まだ追加作業を始めていないなら、squash後の`main`から新しいブランチを作ると、取り込み済みのコミット群を引き継がずに済みます。方式自体を選ぶ観点は[GitHubの3つのマージ方式](/tech-note/articles/github/pull-request/merge-methods/)にまとめています。

@@ -1,6 +1,6 @@
 ---
-title: "Access Tokenはメモリ、Refresh TokenはSecure Storageに保存する理由"
-description: "一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせる。ただし絶対解ではなく、脅威モデル、UX、認証基盤の仕様で判断する。"
+title: "Access TokenとRefresh Tokenは、どこへ保存するか"
+description: "ネイティブFlutterでAccess Tokenをメモリ、Refresh TokenをSecure Storageへ分ける判断を、起動時の復元、更新後の保存失敗、ログアウトの例から整理します。"
 date: 2026-07-20
 tags:
   - "Flutter"
@@ -14,141 +14,180 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/access-token-memory-refresh-token-secure-storage.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+アプリを再起動してもログインを続けたいとき、Access TokenとRefresh Tokenを両方保存する必要はあるでしょうか。認証サーバーが更新トークンを発行し、起動時にAccess Tokenを取得し直せるなら、永続保存をRefresh Tokenだけに絞れます。毎回使うAccess Tokenはメモリに置きます。
 
-Access TokenとRefresh Tokenを同じストレージへ保存する実装が単純に見えたが、寿命、権限、再起動後の必要性、漏洩時の影響が異なる。メモリ保持とSecure Storageの分離を検討した。
+これはiOS・Androidで動くネイティブFlutterアプリの保存方針です。Flutter Webのブラウザー内ストレージにはそのまま当てはめません。以下の説明用コードはFlutter 3.41.9、Dart SDK 3.11.5、flutter_secure_storage 10.3.1を対象にしています。
 
-一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせる。ただし絶対解ではなく、脅威モデル、UX、認証基盤の仕様で判断する。
+## なぜ二つのトークンを分けて考えるのか
 
-## この記事で学べること
+Access Tokenは保護されたAPIにアクセスする資格情報です。Refresh Tokenは認証サーバーから新しいAccess Tokenを得るために使います。後者を通常のAPIへ送るものではありません。どちらも秘密ですが、使う相手と役割が異なります。[RFC 6749 §1.4–1.5](https://www.rfc-editor.org/rfc/rfc6749.html#section-1.4)
 
-- Access TokenとRefresh Tokenの権限・寿命
-- アプリ再起動時にAccess Tokenをrefreshで再取得する流れ
-- ログアウト時の削除範囲
-- `deleteAll()`ではなく専用キー削除を検討
-- refresh token rotation
-- 端末紛失・root/jailbreak・ログ漏洩
+メモリ保持を選ぶ理由は、アプリが永続保存する秘密を減らすためです。プロセスが終わると保持したAccess Tokenは引き継がれないので、次の起動では更新処理が必要になります。メモリに置いたこと自体でトークンが失効したり、漏えいしなくなったりするわけではありません。
 
-## 前提知識
+Refresh Tokenが発行されるとは限らず、寿命も認証基盤の設定次第です。更新できない環境や、起動時の更新通信を前提にできない要件では、この分離をそのまま採用できません。認証SDKが保存と更新を管理する場合も、先にSDKの仕様を確認します。更新トークンを発行するかはサーバー側のリスク評価で決める事項です。[RFC 9700 §4.14.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2)
 
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+## メモリと永続保存の入口を分ける
 
-## 図解
-
-![Access Tokenはメモリ、Refresh TokenはSecure Storageに保存する理由](/images/articles/access-token-memory-refresh-token-secure-storage.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+まずAccess Tokenの保持先と、Refresh Token専用の保存APIを分けます。保存APIからAccess Tokenを受け取れない形にすると、両方のトークンをまとめて永続化する処理が入り込みにくくなります。
 
 ```dart
-class TokenStore {
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+class AuthTokenHolder {
   String? _accessToken;
-  final SecureStorage secureStorage;
+  String? get accessToken => _accessToken;
 
-  TokenStore(this.secureStorage);
+  void replace(String token) => _accessToken = token;
+  void clear() => _accessToken = null;
+}
 
-  Future<void> saveTokens(TokenPair pair) async {
-    _accessToken = pair.accessToken;
-    await secureStorage.write('refresh_token', pair.refreshToken);
+abstract interface class TokenStorage {
+  Future<String?> readRefresh();
+  Future<void> writeRefresh(String token);
+  Future<void> deleteRefresh();
+}
+```
+
+この型だけで他のコードによる書き込みやログ出力まで禁止できるわけではありません。アプリ内ではトークンを書き込む経路をこの境界へ集め、レスポンス全体を別のキャッシュへ保存していないかも確認します。
+
+Secure Storageとの接続は、小さな実装に閉じ込めます。`accountNamespace`には、認証先・クライアント・アカウントの組み合わせに対応する、端末内で安定した識別子を渡す想定です。メールアドレスやトークンそのものをキーに埋め込みません。
+
+```dart
+class SecureTokenStorage implements TokenStorage {
+  SecureTokenStorage(this.secure, {required String accountNamespace})
+      : key = 'auth.v1.$accountNamespace.refresh';
+
+  final FlutterSecureStorage secure;
+  final String key;
+
+  @override
+  Future<String?> readRefresh() => secure.read(key: key);
+
+  @override
+  Future<void> writeRefresh(String token) =>
+      secure.write(key: key, value: token);
+
+  @override
+  Future<void> deleteRefresh() => secure.delete(key: key);
+}
+```
+
+`read`・`write`・`delete`は[flutter_secure_storage 10.3.1のAPI](https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#usage)を使っています。ここでは削除を一つのキーへ限定しています。同じ保存領域に複数アカウントや他機能の秘密がある場合、`deleteAll()`ではそれらも削除対象になるためです。複数アカウントを扱うアプリでは、保存キーだけでなくメモリ側の保持先もアカウントごとに分けます。
+
+実アプリで最初のプラットフォーム呼び出しを行う前には、FlutterのBindingを初期化します。OSごとの設定、バックアップ対象、読み出せる端末状態も、採用するプラグイン版に合わせて設定が必要です。[プラグインの導入・設定手順](https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#installation)
+
+## 再起動したら、いつログイン済みに戻すのか
+
+起動直後はAccess Tokenを持っていません。保存したRefresh Tokenを読み、認証サーバーへ更新を要求し、新しい資格情報の保存が終わってからAccess Tokenを利用可能にします。
+
+次の例は一つのアカウントで、ログイン・起動処理・ログアウトを順に呼ぶ最小例です。`exchange`には、認証サーバーへの通信とレスポンスの検証を行う処理を渡します。HTTP通信や期限管理はここへ含めません。
+
+```dart
+class RefreshedTokens {
+  const RefreshedTokens(this.accessToken, {this.refreshToken});
+  final String accessToken;
+  final String? refreshToken;
+}
+
+typedef RefreshExchange = Future<RefreshedTokens> Function(String refreshToken);
+
+// A sequential, single-account storage example, not a concurrent auth manager.
+class SessionTokenStore {
+  SessionTokenStore(this.holder, this.storage);
+  final AuthTokenHolder holder;
+  final TokenStorage storage;
+
+  Future<void> saveLogin({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    holder.clear();
+    await storage.writeRefresh(refreshToken);
+    holder.replace(accessToken);
+  }
+
+  Future<bool> bootstrap(RefreshExchange exchange) async {
+    holder.clear();
+    final saved = await storage.readRefresh();
+    if (saved == null) return false;
+
+    final refreshed = await exchange(saved);
+    final replacement = refreshed.refreshToken;
+    if (replacement != null) {
+      await storage.writeRefresh(replacement);
+    }
+    holder.replace(refreshed.accessToken);
+    return true;
+  }
+
+  Future<void> logoutLocally() async {
+    holder.clear();
+    await storage.deleteRefresh();
   }
 }
 ```
 
-## 本編
+`bootstrap`が`false`を返すのは、保存トークンが存在しない場合だけです。読み込み失敗や通信失敗は例外として呼び出し元へ渡します。「保存されていない」と「読めない」を同じ状態にすると、端末のロック解除後に再試行できるエラーまで、未ログインとして扱ってしまいます。
 
-### 発生した状況
+更新レスポンスに新しいRefresh Tokenが含まれたら、古いものを置き換えます。含まれない場合は既存値を保持します。この区別は[RFC 6749 §6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6)に対応しています。実際にどちらの応答になるかは認証基盤の仕様を確認します。
 
-Access TokenとRefresh Tokenを同じストレージへ保存する実装が単純に見えたが、寿命、権限、再起動後の必要性、漏洩時の影響が異なる。メモリ保持とSecure Storageの分離を検討した。
+## Rotation後の保存に失敗したらどうするか
 
-### 当初の理解・誤解
+Refresh Token Rotationでは、更新のたびに新しいトークンが発行され、以前のものが無効になります。公開クライアントのRefresh Tokenには、Rotationまたは送信者に結び付ける保護が必要です。Secure Storageへ保存するだけで、この要件を満たすわけではありません。[RFC 9700 §2.2.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.2.2)
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、一般的には短命なAccess Tokenをメモリ、長命で再発行能力を持つRefresh TokenをSecure Storageへ置くと、永続化する秘密を減らせ... という観点で見る必要がありました。
+そのため、サーバーで更新が成功しても、端末で新しいRefresh Tokenの保存に失敗すると、次回も以前のトークンで更新できるとは限りません。上の例は保存に成功するまでAccess Tokenを公開せず、失敗を呼び出し元へ返す方針です。アプリ側では復元の成功画面へ進めず、再認証などの復旧へ移します。古いトークンによる更新を無条件に繰り返しません。
 
-### 観測したこと
+ただし、保存とサーバーの更新は一つのトランザクションではありません。通信中や書き込み中の強制終了まで、このコードで解消できるわけではありません。再試行の可否は認証基盤の仕様と合わせて決めます。
 
-- `AuthTokenHolder`のメモリ実装
-- `TokenStorage`のrefresh token専用API
-- 起動時bootstrapとlogoutの例
-- Access Tokenが永続化されていないことを確認するtest
+また、この例は並行実行を制御しません。起動処理中のログアウトやアカウント切替を許すアプリでは、認証状態を所有する一か所で操作を調停し、古い処理の完了で状態を復元しない制御が別途必要です。
 
-### 修正案の比較
+## ログアウトで消すのは端末内だけか
 
-| 方針 | 見るべき点 |
-| --- | --- |
-| メモリ保持 | 永続漏洩面を減らす／再起動時refreshが必要 |
-| 永続化 | UXが単純／保存秘密と攻撃面が増える |
+`logoutLocally`は、メモリを空にしてから対象アカウントの保存キーを削除します。削除が失敗してもメモリは空になりますが、端末にRefresh Tokenが残っている可能性があります。呼び出し元は削除失敗を握りつぶさず、自動復元を止め、削除の再試行などへつなげます。この関数だけでは、その状態を次のプロセスへ記録しません。
 
-## 内部動作
+端末内から消しても、すでに流出したトークンを無効にはできません。サーバー側にも失効を要求するなら、認証基盤の失効エンドポイントを使う処理が別に必要です。失効範囲やオフライン時の扱いを、ローカル削除の成功と混同しないようにします。[RFC 7009 §2](https://www.rfc-editor.org/rfc/rfc7009.html#section-2)
 
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
+## Access Tokenを書き出していないことをどう確かめるか
 
-- OAuth/OIDCサーバーの仕様を確認する
-- Secure Storageは暗号化やOS保護を利用するが、侵害端末での完全防御ではない
-- Access Tokenをメモリだけに置けない要件もある
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- OAuth/OIDCサーバーの仕様を確認する
-- Secure Storageは暗号化やOS保護を利用するが、侵害端末での完全防御ではない
-- Access Tokenをメモリだけに置けない要件もある
-
-## 再発防止テスト
+上のクラスを`lib/storage_policy.dart`へ置いた場合、保存内容はプラグインのmockで確認できます。以下の文字列はすべて説明用の値です。`readAll()`は空のmockを使うテスト内だけで呼び、実端末の資格情報を列挙しません。
 
 ```dart
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import '../lib/storage_policy.dart';
+
 void main() {
-  test('access-token-memory-refresh-token-secure-storage', () async {
-    final subject = TestSubject();
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    expect(await subject.call(), isNotNull);
+  test('Access Tokenを永続化しない', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    const secure = FlutterSecureStorage();
+    final holder = AuthTokenHolder();
+    final tokens = SessionTokenStore(
+      holder,
+      SecureTokenStorage(secure, accountNamespace: 'account-a'),
+    );
+
+    await tokens.saveLogin(accessToken: 'access-a', refreshToken: 'refresh-a');
+
+    expect(holder.accessToken, 'access-a');
+    expect(await secure.readAll(), {'auth.v1.account-a.refresh': 'refresh-a'});
   });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
 }
 ```
 
-## 一般化できる設計原則
+保存失敗のテストでは、`TokenStorage.writeRefresh`が例外を返す実装へ差し替えます。更新APIが新しいトークンを返しても、`bootstrap`が失敗し、`holder.accessToken`が空のままであることを確認します。Access Tokenを代入してから書き込む順序では、この条件を満たせません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+## Secure Storageなら、何が守られるのか
 
-## まとめ
+iOSのKeychainは、アクセス可能なアプリや端末状態を制御します。バックグラウンド処理で必要なのか、ロック解除中だけ読めればよいのかによって、選ぶ保護クラスが変わります。[AppleのKeychain保護の説明](https://support.apple.com/guide/security/keychain-data-protection-secb0694df1a/web)
 
-トークンの保存場所は「秘密だから全部Secure Storage」ではなく、寿命と再発行能力に応じて最小化する。
+Android Keystoreも、鍵の取り出しを難しくし、利用条件を制限する仕組みです。一方、Androidの公式説明は、アプリのプロセスが侵害された場合に鍵を使われる可能性を残しています。root化・jailbreakを含む侵害端末で、保存先だけによる完全防御を想定しないことが必要です。[Android Keystoreの保護範囲](https://developer.android.com/privacy-and-security/keystore#SecurityFeatures)
 
+端末紛失への対応は、OSの保護設定とサーバー側での失効手段を合わせて考えます。さらに、トークンを読み出してHTTPクライアントへ渡した後は、`Authorization`ヘッダーや更新レスポンスをログへ出さないようにします。調査ログには値そのものではなく、読み込み・更新・削除の成否とエラー分類を残します。
 
-この記事では、次のような短絡的な一般化は避けます。
-
-- この保存戦略が全アプリの唯一解と断定しない
-- Refresh Tokenをログへ出さない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+保存方針の5テストで、Access Tokenが保存領域へ入らないこと、更新トークンの置換、読み込みと保存の失敗、対象キーだけのログアウトを確認しました。プラグインのメモリ上のmockで確かめられるのは、アプリの呼び出しと状態遷移です。実機の暗号化、バックアップ復元、ロック中の読み出し、サーバー側の失効は、それぞれ別の検証が必要です。

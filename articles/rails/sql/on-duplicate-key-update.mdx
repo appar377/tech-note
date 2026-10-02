@@ -1,6 +1,6 @@
 ---
-title: ON DUPLICATE KEY UPDATEでUPSERTする
-description: MySQLで重複キー時にINSERTではなくUPDATEへ切り替えるUPSERTパターンを整理する。
+title: "ON DUPLICATE KEY UPDATEの衝突条件と再実行を確かめる"
+description: "MySQLのUPSERTでどのunique制約が更新を起こすかを確認し、代入と加算の再実行、PostgreSQL ON CONFLICTとの差を整理します。"
 date: 2026-06-22
 tags:
   - SQL
@@ -13,107 +13,155 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-upsert.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+同じデータを再投入するとき、「既存なら更新する」と書くだけでは処理の結果は決まりません。どのDB制約への衝突を扱うのか、更新式が代入なのか加算なのかで、変わる行も再実行時の値も変わります。
 
-`ON DUPLICATE KEY UPDATE` は、MySQLでINSERT時にPRIMARY KEYやUNIQUE KEYの重複が起きた場合、INSERTではなくUPDATEへ切り替えるUPSERT構文です。
+構文の説明はMySQL 8.4 LTSの公式資料を基準にします。掲載SQLは説明用のデータを使い、MySQL 9.3.0とPostgreSQL 17.10で実行しました。8.4での実行は確認していません。
 
-Railsのデータ移行では、同じMigrationを複数回流しても破綻しにくい処理を作るときに役立ちます。
+## 更新へ切り替わる条件は、どこにありますか
 
-## この記事で学べること
+MySQLの`ON DUPLICATE KEY UPDATE`は、INSERTしようとする値がPRIMARY KEYまたはUNIQUE indexに衝突すると既存行を更新します。SQL内に「このunique indexだけを対象にする」という競合対象の指定はありません。業務上同じデータだと思っていても、その一致をDB制約にしていなければ重複判定には使われません。[MySQL 8.4の仕様](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)
 
-- UPSERTの考え方
-- MySQLの `ON DUPLICATE KEY UPDATE` の基本形
-- 衝突キーがどのように決まるか
-- Railsではどの選択肢があるか
+まず、SKUを主キーにした一時テーブルを使います。以降のMySQL用SQLは同じ接続で実行する前提です。
 
-## 前提知識
-
-- PRIMARY KEYとUNIQUE KEYの違いを知っている
-- RailsでMigrationを書いたことがある
-- `INSERT` と `UPDATE` の基本構文を知っている
-
-## 図解
-
-```mermaid
-flowchart TD
-  A[INSERT request] --> B{unique key exists?}
-  B -- no --> C[INSERT]
-  B -- yes --> D[UPDATE]
+```sql file=duplicate_key/mysql_setup.sql
+CREATE TEMPORARY TABLE upsert_stock (
+  sku varchar(16) PRIMARY KEY,
+  quantity integer NOT NULL
+) ENGINE = InnoDB;
 ```
 
-## 実装コード例
+存在しなければ在庫5で作り、存在すれば5へ置き換えるSQLです。
 
-```ruby
-execute(<<~SQL)
-  INSERT INTO user_scores (user_id, score, updated_at)
-  VALUES (1, 120, NOW())
-  ON DUPLICATE KEY UPDATE
-    score = VALUES(score),
-    updated_at = VALUES(updated_at)
-SQL
+```sql file=duplicate_key/mysql_assign.sql
+INSERT INTO upsert_stock (sku, quantity)
+VALUES ('A', 5) AS incoming
+ON DUPLICATE KEY UPDATE quantity = incoming.quantity;
 ```
 
-## 内部動作
+`incoming`は、挿入しようとした新しい行を参照するaliasです。以前よく使われた`VALUES(quantity)`による参照はMySQL 8.4で非推奨とされているため、この稿は行aliasを使います。ここでいう非推奨は、INSERTの値リストを表す`VALUES (...)`自体のことではありません。[新しい行の参照方法](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)
 
-```text
-INSERT
-↓
-UNIQUE INDEXを確認
-↓
-重複なし: 新規行を追加
-↓
-重複あり: 対象行をUPDATE
+確認用のSELECTです。
+
+```sql file=duplicate_key/mysql_read.sql
+SELECT sku, quantity
+FROM upsert_stock
+ORDER BY sku;
 ```
 
-## 本編
+空のテーブルへ`mysql_assign.sql`を実行した後はAが5、同じSQLをもう一度実行してもAが5であることを期待します。この表には、ほかの列やtriggerはありません。
 
-## UPSERTとは
+## UPSERTなら、何度実行しても同じでしょうか
 
-UPSERTは、存在しなければINSERTし、存在すればUPDATEする処理です。MySQLでは `ON DUPLICATE KEY UPDATE` を使います。
+更新を加算に変えると、再実行は値を変えます。先ほどのAが5の状態から、次を一度ずつ実行します。
 
-## 基本形
-
-```sql title="upsert.sql"
-INSERT INTO user_scores (user_id, score, updated_at)
-VALUES (1, 120, NOW())
-ON DUPLICATE KEY UPDATE
-  score = VALUES(score),
-  updated_at = VALUES(updated_at);
+```sql file=duplicate_key/mysql_add.sql
+INSERT INTO upsert_stock (sku, quantity)
+VALUES ('A', 2) AS incoming
+ON DUPLICATE KEY UPDATE quantity = upsert_stock.quantity + incoming.quantity;
 ```
 
-`user_id` に一意制約がある場合、同じ `user_id` の行がすでにあればUPDATEに切り替わります。
+1回目の期待値は7、2回目は9です。INSERTとUPDATEを一つの文にしても、同じイベントの二重適用を自動で防げるわけではありません。
 
-## 注意点
+代入の例も、入力値が同じで、今回のようにquantityだけを扱う範囲で値が変わらないという確認です。更新時刻、trigger、ほかの副作用まで含めた再実行の安全性は別に確認します。また、古い入力をあとから代入すれば新しい値を上書きし得るため、履歴の順序を守る仕組みもUPSERTという構文だけでは決まりません。
 
-> [!IMPORTANT]
-> 重複判定はUNIQUE INDEXまたはPRIMARY KEYに依存します。アプリケーション上の「同じはず」では発火しません。
+## unique制約が二つあると、どの行を更新しますか
 
-```mermaid
-sequenceDiagram
-  participant App
-  participant DB
-  App->>DB: INSERT
-  alt unique key exists
-    DB-->>DB: UPDATE
-  else no duplicate
-    DB-->>DB: INSERT
-  end
-  DB-->>App: result
+次のテーブルには、主キーのexternal_keyと、別のunique列codeがあります。
+
+```sql file=duplicate_key/mysql_keys_setup.sql
+CREATE TEMPORARY TABLE upsert_keys (
+  external_key varchar(16) PRIMARY KEY,
+  code varchar(16) NOT NULL UNIQUE,
+  label varchar(32) NOT NULL
+) ENGINE = InnoDB;
+
+INSERT INTO upsert_keys (external_key, code, label) VALUES
+  ('A', 'X', 'old A'),
+  ('B', 'Y', 'old B');
 ```
 
-## ActiveRecordの選択肢
+external_keyがCの新しいデータを入れたいと考えて、codeにXを渡します。
 
-Railsには `upsert_all` もあります。生SQLを使うのは、式や複雑な更新条件が必要なときに限定すると扱いやすくなります。
+```sql file=duplicate_key/mysql_keys_upsert.sql
+INSERT INTO upsert_keys (external_key, code, label)
+VALUES ('C', 'X', 'incoming') AS proposed
+ON DUPLICATE KEY UPDATE label = proposed.label;
+```
+```sql file=duplicate_key/mysql_keys_read.sql
+SELECT external_key, code, label
+FROM upsert_keys
+ORDER BY external_key;
+```
 
-## まとめ
+Cという主キーは未登録でも、codeのXはAの行にあります。その衝突を受けて、Aのlabelがincomingへ変わるのがこのSQLの期待結果です。external_keyを更新式に含めていないので、Aのままです。
 
-`ON DUPLICATE KEY UPDATE` は、UNIQUE制約を基準にINSERTとUPDATEを切り替えるMySQLのUPSERT構文です。
+| external_key | code | labelの期待値 |
+| --- | --- | --- |
+| A | X | incoming |
+| B | Y | old B |
 
-Railsで使う場合は、制約の設計と再実行時の安全性をセットで確認することが重要です。
+この例は衝突する既存行が一つですが、複数のunique制約がそれぞれ別の行を指す入力も作れます。MySQLの公式資料は、複数のunique indexを持つテーブルでのこの構文の利用を避けるよう勧めています。業務上の更新対象がexternal_keyだけなら、別のunique列の衝突まで更新として受け入れる設計でよいかを確認します。[複数unique制約への注意](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)
 
-## 参考文献
+## PostgreSQLのON CONFLICTへ置き換えると同じですか
 
-- [MySQL Reference Manual: INSERT ... ON DUPLICATE KEY UPDATE Statement](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)
-- [Ruby on Rails API: upsert_all](https://api.rubyonrails.org/classes/ActiveRecord/Persistence/ClassMethods.html#method-i-upsert_all)
+PostgreSQLで更新を指定する`ON CONFLICT ... DO UPDATE`は、対象とするunique制約を列などで指定します。次の一時テーブルを、MySQLとは別のPostgreSQL接続で用意します。
+
+```sql file=duplicate_key/postgres_setup.sql
+CREATE TEMPORARY TABLE pg_upsert_stock (
+  sku varchar(16) PRIMARY KEY,
+  quantity integer NOT NULL
+);
+
+CREATE TEMPORARY TABLE pg_upsert_keys (
+  external_key varchar(16) PRIMARY KEY,
+  code varchar(16) NOT NULL UNIQUE,
+  label varchar(32) NOT NULL
+);
+
+INSERT INTO pg_upsert_keys (external_key, code, label) VALUES
+  ('A', 'X', 'old A'),
+  ('B', 'Y', 'old B');
+```
+
+SKUを主キーにした表で同じ代入をする場合は、次の形になります。挿入しようとした値は`EXCLUDED`で参照します。
+
+```sql file=duplicate_key/postgres_assign.sql
+INSERT INTO pg_upsert_stock (sku, quantity)
+VALUES ('A', 5)
+ON CONFLICT (sku) DO UPDATE SET quantity = EXCLUDED.quantity;
+```
+```sql file=duplicate_key/postgres_read.sql
+SELECT sku, quantity
+FROM pg_upsert_stock
+ORDER BY sku;
+```
+
+この一つの主キーへ代入する例では、初回も再実行後もAが5という期待値は一致します。しかし、二つのunique列を持つ表では違いが出ます。
+
+次は**失敗を確認するためのSQL**です。setupを完了させた同じ接続で、この文を個別に実行します。通常成功するSQLとまとめて送らないでください。
+
+```sql expected-failure file=duplicate_key/postgres_other_key_expected_failure.sql
+INSERT INTO pg_upsert_keys (external_key, code, label)
+VALUES ('C', 'X', 'incoming')
+ON CONFLICT (external_key) DO UPDATE SET label = EXCLUDED.label;
+```
+
+競合対象はexternal_keyですが、実際に重複するのはcodeのXです。そのため、この文はcodeのunique違反、SQLSTATE `23505`になることを期待します。MySQLの例のようにAのlabelを更新する結果にはなりません。例外となった文のトランザクションを終えた後で、次のSELECTを実行すると、Aはold A、Bはold Bのままという期待になります。
+
+```sql file=duplicate_key/postgres_keys_read.sql
+SELECT external_key, code, label
+FROM pg_upsert_keys
+ORDER BY external_key;
+```
+
+この比較は、PostgreSQLのDO UPDATEへexternal_keyを指定した場合のものです。DO NOTHINGには競合対象を省略する形もあります。構文名だけで移植せず、処理したい衝突と残すエラーを確認します。[PostgreSQL 17のON CONFLICT](https://www.postgresql.org/docs/17/sql-insert.html)
+
+## Railsのupsert_allでもDBの違いは残ります
+
+Rails 8.1.3の`upsert_all`はモデルを生成せず、モデルのvalidationやcallbackも実行しません。また、`unique_by`の対象として公式APIが示すのはPostgreSQLとSQLiteです。MySQLでも同じ引数で任意の衝突対象を指定できる、と考えて移植しないようにします。[Railsのupsert_all](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all)
+
+再投入の確認では、単に例外が出なかったことだけでなく、どの行が変わったかを再取得します。値を上書きしない補完処理が目的なら、[不足行だけを追加するINSERT SELECTの例](/tech-note/articles/rails/sql/raw-sql-summary/)のように、その契約を別に表現できます。

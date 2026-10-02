@@ -1,6 +1,6 @@
 ---
-title: "S3にはあるがDBにはない、DBにはあるがS3にはない――整合性修復処理の設計"
-description: "外部ストレージとの整合性修復は、一度だけ成功するスクリプトではなく、観測可能・冪等・段階的・再実行可能なバッチとして設計する。検出と削除を分離し、Dry Runと安全期間を持たせる。"
+title: "S3とDBの不整合を、削除せずに照合する"
+description: "S3の全ページ一覧とDB参照を照合し、欠損候補・未参照候補・サイズ差・確認不能を読み取り専用で返します。HEADの403、途中失敗、照合中の更新を区別するRuby実装です。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,137 +13,254 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/s3-db-consistency-reconciliation.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+DBに保存した画像のキーを開くと404になり、逆にS3にはどのレコードからも参照されないキーが残っている。こうした状態を見つけても、その場でDBやファイルを削除してよいとは限りません。権限不足で確認できない場合も、照合中にアップロードが進んだ場合もあります。
 
-S3オブジェクトとDBレコードを突き合わせ、孤児ファイルと欠損レコードを検出・削除する保守処理が必要になった。単純な差集合だけでは、ページネーション、論理削除、競合、誤削除、再実行時の安全性が不足する。
+まずは、何を読み取れたかが分かるレポートを作ります。ここではS3の一覧を最後まで取得し、DBの参照先をHEADで確認して、サイズ一致・サイズ差・欠損候補・未参照候補・確認不能を返す、小さな読み取り専用の実装を扱います。
 
-外部ストレージとの整合性修復は、一度だけ成功するスクリプトではなく、観測可能・冪等・段階的・再実行可能なバッチとして設計する。検出と削除を分離し、Dry Runと安全期間を持たせる。
+対象環境はRuby 3.4.4、Active Record 8.1.3、pg gem 1.6.3、PostgreSQL 17.10、aws-sdk-s3 1.224.0です。S3の応答はSDKのstubで再現します。キー名とサイズは説明用の合成データです。
 
-## この記事で学べること
+## 何を「ある」「ない」と判定するか
 
-- DB側をS3キーで索引化し、S3側キー集合と比較する基本
-- 論理削除済みレコードを含めるかの判断
-- S3 ListObjectsのページネーション
-- 孤児ファイルと欠損レコードの定義
-- 検出と削除を同じループで即実行しない理由
-- アップロード中・削除中との競合
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![S3にはあるがDBにはない、DBにはあるがS3にはない――整合性修復処理の設計](/images/articles/s3-db-consistency-reconciliation.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+この例では、一つの汎用S3バケットにある`uploads/`配下を照合します。`reconcile_assets`はそのバケットの参照を管理する専用テーブルで、`storage_key`が一意、`byte_size`が期待するバイト数です。
 
 ```ruby
-class StorageConsistencyScanner
-  def call
-    s3_keys = storage_client.list_keys(prefix: "uploads/")
-    db_keys = ImageRecord.pluck(:storage_key)
-
-    orphan_keys = s3_keys - db_keys
-    missing_keys = db_keys - s3_keys
-
-    StorageIssue.insert_all(issue_rows(orphan_keys, missing_keys))
+class CreateReconcileAssets < ActiveRecord::Migration[8.1]
+  def change
+    create_table :reconcile_assets do |t|
+      t.string :storage_key, null: false
+      t.bigint :byte_size, null: false
+      t.datetime :deleted_at
+    end
+    add_index :reconcile_assets, :storage_key, unique: true
+    add_check_constraint :reconcile_assets, "byte_size >= 0",
+                         name: "reconcile_assets_nonnegative_size"
   end
 end
 ```
 
-## 本編
+`deleted_at`が入っていても、復元に使う可能性がある間は参照として数えます。この例には論理削除のdefault scopeを定義せず、読み取りにも`unscoped`を使います。[Railsのunscoped](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Default/ClassMethods.html#method-i-unscoped)は他のscopeも外すため、テナントの条件をdefault scopeで管理するモデルへそのまま移すことはできません。
 
-### 発生した状況
+結果には、次の区別を残します。
 
-S3オブジェクトとDBレコードを突き合わせ、孤児ファイルと欠損レコードを検出・削除する保守処理が必要になった。単純な差集合だけでは、ページネーション、論理削除、競合、誤削除、再実行時の安全性が不足する。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、外部ストレージとの整合性修復は、一度だけ成功するスクリプトではなく、観測可能・冪等・段階的・再実行可能なバッチとして設計する。検出と削除を分離し、Dry Run... という観点で見る必要がありました。
-
-### 観測したこと
-
-- `Set`の差集合を使う最小例
-- S3クライアントをFake化したテスト
-- Dry Run結果の構造化ログ例
-- 削除対象が閾値を超えたら停止するガード
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
+| 状態 | このレポートが示すこと |
 | --- | --- |
-| 即時削除 | コスト削減が早い／誤削除の影響が大きい |
-| 隔離後削除 | 回復可能／一時的な保管コストと運用が増える |
+| `size_match` | DB参照があり、HEAD時点のバイト数が一致した |
+| `size_mismatch` | DB参照があり、HEAD時点のバイト数が異なった |
+| `missing_candidate` | DB参照先へのHEADが404だった |
+| `unreferenced_candidate` | LISTで見つけたキーが、先に取得したDB参照集合になかった |
+| `unverifiable` | HEADの403、その他のサービスエラー、通信失敗で確認できなかった |
 
-## 内部動作
+HEADで対象が見つからないとき、`s3:ListBucket`権限があれば404、なければ403が返る場合があります。したがって403は「存在しない」へ変換しません。[HeadObjectの権限とエラー仕様](https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html)に沿って、確認不能として残します。
 
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+404も、その時点で現在のオブジェクトを確認できなかったという記録です。バージョニングされたバケットの過去バージョンまで存在しないとは判断しません。このコードはversion IDを指定せず、現在の状態だけを見ます。
 
-- S3一覧APIはページングを考慮する
-- DBとS3を同一ACIDトランザクションには含められない
-- 現在のS3整合性仕様を古い知識で断定せず、公式仕様または利用環境を確認する
+## 一覧を最後まで取得してから、DB参照先を確認する
 
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
+処理の順序は、DB参照の読み取り、LISTの全ページ取得、DB参照先ごとのHEADです。LISTに出なかったDBキーにもHEADを送ります。一覧を読んだ後にオブジェクトが作られた可能性があるためです。
 
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- S3一覧APIはページングを考慮する
-- DBとS3を同一ACIDトランザクションには含められない
-- 現在のS3整合性仕様を古い知識で断定せず、公式仕様または利用環境を確認する
-
-## 再発防止テスト
+[ListObjectsV2](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)は一度に最大1,000件を返します。`is_truncated`がtrueなら`next_continuation_token`を次の要求へ渡します。子階層を含むキーを列挙するため、ここでは`delimiter`を指定しません。
 
 ```ruby
-RSpec.describe "s3-db-consistency-reconciliation" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+require "aws-sdk-s3"
+require "set"
 
-    expect(result).to be_present
+class ReconcileAsset < ActiveRecord::Base
+  self.table_name = "reconcile_assets"
+end
+
+class StorageReconciler
+  class IncompleteListing < StandardError; end
+
+  def initialize(s3:, bucket:, prefix:, max_pages: 100)
+    raise ArgumentError, "bucket is required" unless bucket.is_a?(String) && !bucket.empty?
+    unless prefix.is_a?(String) && !prefix.empty? && prefix.end_with?("/")
+      raise ArgumentError, "prefix must end with /"
+    end
+    unless max_pages.is_a?(Integer) && max_pages.positive?
+      raise ArgumentError, "max_pages must be positive"
+    end
+
+    @s3, @bucket, @prefix, @max_pages = s3, bucket, prefix, max_pages
+  end
+
+  def call
+    references = ReconcileAsset.unscoped
+      .pluck(:storage_key, :byte_size, :deleted_at)
+      .select { |key, _size, _deleted_at| key.start_with?(@prefix) }
+    db_keys = references.map(&:first).to_set
+    listed = list_keys
+    findings = references.map do |key, size, deleted_at|
+      inspect_reference(key, size).merge(
+        key: key, listed: listed.include?(key), deleted_reference: !deleted_at.nil?
+      )
+    end
+    (listed - db_keys).each do |key|
+      findings << {key: key, status: :unreferenced_candidate, listed: true}
+    end
+    report(true, findings.sort_by { |finding| finding[:key] }, nil)
+  rescue IncompleteListing => error
+    report(false, [], error.message)
+  end
+
+  private
+
+  def report(listing_complete, findings, scan_error)
+    {read_only: true, snapshot: false, listing_complete: listing_complete,
+     findings: findings, scan_error: scan_error}
+  end
+
+  def list_keys
+    keys = Set.new
+    tokens = Set.new
+    token = nil
+    @max_pages.times do
+      params = {bucket: @bucket, prefix: @prefix, max_keys: 1000}
+      params[:continuation_token] = token if token
+      page = @s3.list_objects_v2(**params)
+      page.contents.each { |object| keys.add(object.key) }
+      return keys unless page.is_truncated
+
+      token = page.next_continuation_token
+      if token.nil? || token.empty? || !tokens.add?(token)
+        raise IncompleteListing, "invalid_continuation_token"
+      end
+    end
+    raise IncompleteListing, "page_limit"
+  rescue Aws::S3::Errors::ServiceError
+    raise IncompleteListing, "list_service_error", cause: nil
+  rescue Seahorse::Client::NetworkingError
+    raise IncompleteListing, "list_network_error", cause: nil
+  end
+
+  def inspect_reference(key, expected_size)
+    head = @s3.head_object(bucket: @bucket, key: key)
+    {status: head.content_length == expected_size ? :size_match : :size_mismatch,
+     expected_size: expected_size, observed_size: head.content_length}
+  rescue Aws::S3::Errors::ServiceError => error
+    status = error.context.http_response.status_code
+    {status: status == 404 ? :missing_candidate : :unverifiable,
+     expected_size: expected_size, reason: "http_#{status}"}
+  rescue Seahorse::Client::NetworkingError
+    {status: :unverifiable, expected_size: expected_size, reason: "network_error"}
   end
 end
 ```
 
-## 一般化できる設計原則
+この実装はDBやS3を書き換えません。`listed - db_keys`の差集合は、未参照の**候補**を作るためにだけ使います。DB参照先はLISTとの一致にかかわらずHEADで確認し、`listed`にも一覧で見つかったかどうかを残します。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+LISTが途中で失敗したら、そこまでの集合を捨て、`listing_complete: false`と空の`findings`を返します。これは「問題が0件」という意味ではありません。通信失敗とサービスエラーのほか、継続トークンの欠落・繰り返し、ページ上限にも未完了の理由を付けます。再実行時は最初のページから読み直します。
 
-## まとめ
+一覧を取得できても、個別のHEADがすべて成功したとは限りません。`listing_complete: true`のレポートにも`unverifiable`は含まれます。DBの読み取り失敗や想定外のプログラム上の例外は握りつぶさず、呼び出し元へ送出します。
 
-整合性修復は「正しい集合を計算する処理」ではなく、「間違えても戻せる運用」を含む、と結論づける。
+## レポートを実際にどう読むか
 
+次は専用のテストDBで試す例です。先にテーブルとクラスを用意した状態で実行します。AWSクライアントにはstubと偽の認証情報を明示します。[SDKのstubbing](https://docs.aws.amazon.com/sdk-for-ruby/v3/developer-guide/stubbing.html)を有効にするとネットワーク通信は行われません。
 
-この記事では、次のような短絡的な一般化は避けます。
+```ruby
+ReconcileAsset.delete_all
+ReconcileAsset.create!(storage_key: "uploads/a", byte_size: 10)
+ReconcileAsset.create!(storage_key: "uploads/b", byte_size: 20)
 
-- 本番でいきなり削除するコードを完成形にしない
-- S3一覧を1回で全件取れる前提にしない
+s3 = Aws::S3::Client.new(
+  stub_responses: true, region: "us-east-1",
+  credentials: Aws::Credentials.new("fake-access-key", "fake-secret-key")
+)
+s3.stub_responses(:list_objects_v2,
+  is_truncated: false,
+  contents: [{key: "uploads/a"}, {key: "uploads/extra"}]
+)
+s3.stub_responses(:head_object, lambda { |context|
+  if context.params[:key] == "uploads/a"
+    {content_length: 10}
+  else
+    {status_code: 404, headers: {}, body: ""}
+  end
+})
 
-## 参考文献
+report = StorageReconciler.new(
+  s3: s3, bucket: "example-assets", prefix: "uploads/"
+).call
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+p report[:findings].map { |row| [row[:key], row[:status]] }
+# => [["uploads/a", :size_match],
+#     ["uploads/b", :missing_candidate],
+#     ["uploads/extra", :unreferenced_candidate]]
+```
+
+`uploads/b`はHEADの404による欠損候補、`uploads/extra`は読み取ったDB集合に参照がなかった候補です。どちらも削除対象として確定していません。
+
+監視へ渡すときは、たとえば一覧の完了状態と分類別の件数を出せます。キーをすべて一般ログへ出す必要はありません。
+
+```ruby
+require "json"
+summary = JSON.generate(
+  read_only: report[:read_only], snapshot: report[:snapshot],
+  listing_complete: report[:listing_complete], scan_error: report[:scan_error],
+  counts: report[:findings].map { |row| row[:status] }.tally
+)
+JSON.parse(summary)
+# => {"read_only" => true, "snapshot" => false, "listing_complete" => true,
+#     "scan_error" => nil, "counts" => {"size_match" => 1, "missing_candidate" => 1, "unreferenced_candidate" => 1}}
+```
+
+件数だけでなく`listing_complete`と`scan_error`も一緒に見ると、一覧失敗を「異常なし」と取り違えずに済みます。個別候補のレポートは調査に必要な範囲で保存します。
+
+## 403を欠損にしないことを、stubで固定する
+
+以下は、前のクラス定義とRSpecを読み込んだテストDBで使う例です。各例の前に担当テーブルを空にします。HTTPステータスをstubへ渡し、403を欠損候補へ分類しないことを確認します。
+
+```ruby
+RSpec.describe StorageReconciler do
+  before { ReconcileAsset.delete_all }
+
+  it "HEADの403を確認不能として返す" do
+    ReconcileAsset.create!(storage_key: "uploads/private", byte_size: 10)
+    s3 = Aws::S3::Client.new(
+      stub_responses: true, region: "us-east-1",
+      credentials: Aws::Credentials.new("fake-access-key", "fake-secret-key")
+    )
+    s3.stub_responses(:list_objects_v2, is_truncated: false, contents: [])
+    s3.stub_responses(:head_object, status_code: 403, headers: {}, body: "")
+
+    report = described_class.new(
+      s3: s3, bucket: "example-assets", prefix: "uploads/"
+    ).call
+
+    expect(report[:listing_complete]).to eq(true)
+    expect(report[:findings].first).to include(
+      status: :unverifiable, reason: "http_403", listed: false
+    )
+  end
+end
+```
+
+同じ考え方で、二ページ目のキーを拾えること、途中のLIST失敗では候補を返さないこと、失敗後に先頭から再実行できることも確認します。SDKのstubが検証するのは、この入力に対する分類と要求の組み立てです。実際のIAM設定やバケットの状態は検証していません。
+
+## 強い整合性があっても、照合全体は一時点の状態にならない
+
+S3では、成功したPUTやDELETEに続くGET・LISTなどに強い整合性があります。[S3の整合性モデル](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel)が保証するこの性質から、DBの読み取り、複数ページのLIST、複数のHEADがまとめて一つのsnapshotになるとは言えません。
+
+この実装でも、次の順序は起こり得ます。
+
+1. DB参照を読み終える。この時点では`uploads/new`がない。
+2. 別の処理がS3へ`uploads/new`を置き、DB参照も追加する。
+3. LISTが`uploads/new`を返す。
+4. 先に読んだDB集合にはないため、未参照候補になる。
+
+レポート生成時にはDBとS3がそろっていても、候補が出ます。これは複数の読み取り時点を組み合わせた結果です。そのため戻り値には常に`snapshot: false`を付けています。二ページ目まで読む間の追加・削除も含め、照合中の更新を止める機能はありません。
+
+候補を修復へ渡す段階では、アップロード・削除の処理状態、別テーブルの参照、保持期間を調べ、DBとS3を再確認する必要があります。一定時間が経過したことだけでは削除の根拠になりません。隔離やタグ付け、二段階削除、件数による停止条件は別の変更処理として設計します。このレポートには、それらを実行する機能は含めていません。保存処理側の失敗と再実行は[DBトランザクションとS3の境界](/tech-note/articles/rails/data/db-s3-transaction-boundary/)で扱います。
+
+## サイズ一致で確認できる範囲
+
+`size_match`は、期待するバイト数とHEADの`Content-Length`が一致した状態です。同じ長さの別データは検出できず、内容の完全性を保証しません。
+
+[ETagの公式仕様](https://docs.aws.amazon.com/AmazonS3/latest/API/API_Object.html)では、multipart uploadや暗号化方式によってETagはオブジェクト全体のMD5にならないことが示されています。このコードはETagをMD5として比較しません。内容まで調べるなら、DB側に保存する値と[S3のchecksum](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html)のアルゴリズム・対象範囲・バージョンをそろえる設計が必要です。
+
+また、DB参照とS3キーをメモリ上に集め、DB参照の数だけHEADを呼びます。ページングは一覧の取りこぼしを防ぐためのもので、大規模データを少ないメモリで処理する実装ではありません。既定の100ページ上限も、この例の走査を打ち切る条件であり、性能測定から導いた推奨値ではありません。
+
+実行単位ごとの再開位置、S3 Inventory、複数バケット、過去バージョン、checksum照合は対象外です。まず対象を限定し、読み取れた事実と確認不能を分けたレポートを残すところまでを扱っています。

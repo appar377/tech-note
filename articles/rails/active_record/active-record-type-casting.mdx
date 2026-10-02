@@ -1,6 +1,6 @@
 ---
-title: "type_for_attribute(:price).castから理解するActive Recordの型変換"
-description: "Active Recordの型システムは、ユーザー入力をRuby値へ変換する`cast`、DB表現へ変換する`serialize`、DB値をRubyへ戻す`deserialize`を分けて扱う。"
+title: "Active Recordで文字列が数値になるのはいつか"
+description: "属性を読むときのcast、保存時のserialize、DBからのdeserializeを説明用モデルで確認します。before_type_cast、空白・真偽値・小数・日付の境界、検証との違いも扱います。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,137 +13,202 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/active-record-type-casting.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+フォームから受け取った`"42"`を整数カラムへ代入すると、属性を読んだときには整数の`42`が返ります。Active Recordは、属性に対応する型オブジェクトを使って入力をRubyの値へ変換しています。ただし「代入した瞬間に、元の文字列が失われる」という仕組みではありません。
 
-HTTPパラメータは文字列なのに、モデルへ代入すると整数や日付として扱える。`type_for_attribute(:price).cast`を見たことで、型変換がどの層で起きるかを理解する必要が出てきた。
+変換前の値と、属性から返る値を並べると、この境界が見えます。さらに保存・読み出しを分けて考えると、`cast`、`serialize`、`deserialize`の役割も整理できます。
 
-Active Recordの型システムは、ユーザー入力をRuby値へ変換する`cast`、DB表現へ変換する`serialize`、DB値をRubyへ戻す`deserialize`を分けて扱う。
+以下はRuby 3.4.4、Active Record 8.1.3、sqlite3 gem 2.9.5、SQLite 3.53.2で確認した説明用の例です。`typed_products`テーブルには`quantity: integer`、`price: decimal(10, 2)`、`active: boolean`、`published_on: date`、`code: string`があるものとします。架空の商品に使う値で、実サービスのデータではありません。
 
-## この記事で学べること
+## まず、元の入力と属性から返る値を比べる
 
-- HTTPパラメータが基本的に文字列であること
-- モデル属性へ代入したときの型変換
-- `type_for_attribute`が返すTypeオブジェクト
-- `cast`、`serialize`、`deserialize`の責務
-- 空文字、nil、真偽値、decimal、dateの例
-- 浮動小数点を金額に使う危険性
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![type_for_attribute(:price).castから理解するActive Recordの型変換](/images/articles/active-record-type-casting.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+`type_for_attribute`は、そのモデルで属性に適用される型を返します。カラムの型を推測して変換を書く前に、モデルが持つ型を確かめます。
 
 ```ruby
-class Product < ApplicationRecord
-  def self.cast_price(value)
-    type_for_attribute("price").cast(value)
+class TypedProduct < ActiveRecord::Base
+  self.table_name = "typed_products"
+end
+
+quantity_type = TypedProduct.type_for_attribute("quantity")
+quantity_type.type       # => :integer
+quantity_type.cast("42") # => 42
+
+product = TypedProduct.new(quantity: "42")
+product.quantity                  # => 42
+product.quantity_before_type_cast # => "42"
+product.read_attribute_for_database(:quantity) # => 42
+```
+
+`quantity`と`quantity_before_type_cast`は、同じ属性を別の段階から読んでいます。前者は型変換後の値、後者は変換前の値です。入力が整数の`43`なら、変換前の値も整数です。
+
+```ruby
+product.quantity = 43
+product.quantity                  # => 43
+product.quantity_before_type_cast # => 43
+```
+
+Rails 8.1.3の[属性の実装](https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/attribute.rb)では、入力値を保持し、属性値が必要になったときに型変換します。setterを呼ぶたびに、すべての変換が即座に終わると考えない方が追いやすくなります。
+
+`before_type_cast`は入力の調査に役立ちますが、保存後や再読込後にも最初のフォーム文字列を履歴として残す機能ではありません。DBから読んだ属性では、型変換前のDB側の値が対象になります。[BeforeTypeCastの実装とAPI説明](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/before_type_cast.rb)で区別できます。
+
+## cast、serialize、deserializeは何を受け取るのか
+
+三つのメソッドは、変換の向きが異なります。
+
+- **`cast`**は、setterなどから渡された入力を、モデルの属性として扱うRuby値へ変換します。
+- **`serialize`**は、Ruby値をDBへ渡せる表現へ変換します。戻り値がSQLの文字列になるとは限りません。
+- **`deserialize`**は、DBから受け取った値を、属性として扱うRuby値へ変換します。
+
+これは[ActiveModel::Type::Valueの公開API](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Value.html)で定義される役割です。基底クラスの`deserialize`は`cast`を呼びますが、各型が必要に応じて上書きします。三つとも同じ処理だと決めつけず、対象の型を確認します。
+
+`price`は整数ではなくdecimalカラムなので、Ruby側では`BigDecimal`になります。`scale: 2`の設定も型へ渡されています。
+
+```ruby
+price_type = TypedProduct.type_for_attribute("price")
+[price_type.type, price_type.precision, price_type.scale]
+# => [:decimal, 10, 2]
+
+ruby_value = price_type.cast("1000.506")
+ruby_value.class     # => BigDecimal
+ruby_value.to_s("F") # => "1000.51"
+
+database_value = price_type.serialize(ruby_value)
+database_value.class # => BigDecimal
+price_type.deserialize(database_value).to_s("F") # => "1000.51"
+```
+
+ここでは`serialize`の戻り値も`BigDecimal`です。SQLへのバインドやアダプタの処理まで、この一メソッドだけで完了するわけではありません。また、上の往復は型オブジェクト内だけで行っており、DBへの保存テストとは別です。
+
+[8.1.3のDecimal実装](https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/type/decimal.rb)では、小数へ変換した後に`scale`による丸めを適用します。最初から`"1000.506"`のような文字列や`BigDecimal`を渡せば、途中で`Float`へ変換する必要はありません。先にFloatへ変換して生じた丸めを、後からBigDecimalにするだけで元へ戻せるわけではありません。
+
+金額などを扱う場合も、decimalを選ぶことに加え、何桁でどのように丸めるかを決めます。この例の`decimal(10, 2)`を、あらゆる通貨や計算に適した設定とはしていません。
+
+## 空文字、空白、falseらしい文字列は同じ扱いではない
+
+`quantity`、`price`、`published_on`の型では、`nil`、空文字`""`、空白だけの`"   "`は、この例では`nil`になります。booleanは空文字と空白だけの文字列で結果が異なります。
+
+```ruby
+boolean_type = TypedProduct.type_for_attribute("active")
+boolean_type.cast(nil)       # => nil
+boolean_type.cast("")        # => nil
+boolean_type.cast("false")   # => false
+boolean_type.cast("0")       # => false
+boolean_type.cast("False")   # => true
+boolean_type.cast("   ")     # => true
+boolean_type.cast("unknown") # => true
+```
+
+boolean型は、任意の単語から自然言語としての真偽を読み取るわけではありません。[BooleanのAPI](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Boolean.html)にあるfalse値の集合に含まれるかどうかで変換します。`"FALSE"`はfalse値に含まれますが、`"False"`は含まれません。「入力をtrimすれば解決する」と一律に処理せず、APIが受け付ける値を先に決めます。
+
+日付では、存在しない日付が例外ではなく`nil`になる場合があります。
+
+```ruby
+date_type = TypedProduct.type_for_attribute("published_on")
+date_type.cast("2026-10-02") == Date.new(2026, 10, 2) # => true
+date_type.cast("2026-02-30") # => nil
+
+product = TypedProduct.new(published_on: "2026-02-30")
+product.published_on                  # => nil
+product.published_on_before_type_cast # => "2026-02-30"
+```
+
+[Dateの実装](https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/type/date.rb)には、ISO形式以外を解析する経路もあります。型変換に成功しただけで「指定した日付書式を厳密に満たした」とは判断できません。日付が必須か、どの表記を受け入れるかは入力側の契約とvalidationで決めます。
+
+## 数値へ変換できたことと、入力が正しいことを分ける
+
+整数型は文字列の`to_i`を使うため、数値以外の文字が混じっていても数値を返す場合があります。[IntegerのAPI](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Integer.html)に沿って、次の入力を比較します。
+
+```ruby
+quantity_type = TypedProduct.type_for_attribute("quantity")
+quantity_type.cast("42items")     # => 42
+quantity_type.cast("not-a-number") # => 0
+```
+
+これを「42個という入力として受け付けてよい」「不正な入力は0でよい」と解釈するのは、アプリ側の判断です。ここでは数量を省略可能な非負整数とし、文字列全体が数値として妥当かも検証します。先ほどのモデルに次のvalidationを追加します。
+
+```ruby
+class TypedProduct < ActiveRecord::Base
+  validates :quantity,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+    allow_nil: true
+end
+
+product = TypedProduct.new(quantity: "42items")
+product.quantity # => 42
+product.valid?   # => false
+product.errors.attribute_names.include?(:quantity) # => true
+```
+
+Active Recordで使う[numericality validator](https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/validations/numericality.rb)は、ユーザーから代入された値について、変換前の入力を参照する処理を持っています。そのため、属性を読むと42になっていても、この入力を拒否できます。入力を自分で`to_i`してから代入すると、`"42items"`だったという情報をvalidationへ渡せなくなります。
+
+ここでの`allow_nil: true`は、省略を許すための例のルールです。必須入力なら別のルールが必要です。また、Ruby側のvalidationとDB制約は役割が異なり、validationを通らない書き込み経路までこの宣言だけで制限することはできません。
+
+## カスタム型では、保存後の読み出しと変更検知まで考える
+
+説明用の商品コードを「前後の空白を除去した大文字の文字列」として扱います。この型は文字列と`nil`だけを受け、変換後の文字列を凍結します。商品コードの存在確認や文字種・長さの検証は含めません。
+
+```ruby
+class ProductCodeType < ActiveModel::Type::Value
+  def type
+    :string
+  end
+
+  def cast(value)
+    return if value.nil?
+    raise TypeError, "code must be a String" unless value.is_a?(String)
+
+    value.strip.upcase.freeze
+  end
+
+  def serialize(value)
+    cast(value)
   end
 end
 
-Product.cast_price("1000")   #=> 1000
-Product.cast_price("1000.5") #=> 1000
-Product.cast_price(nil)      #=> nil
-
-Product.new(price: "1000").price #=> 1000
+class TypedProduct < ActiveRecord::Base
+  attribute :code, ProductCodeType.new
+end
 ```
 
-## 本編
-
-### 発生した状況
-
-HTTPパラメータは文字列なのに、モデルへ代入すると整数や日付として扱える。`type_for_attribute(:price).cast`を見たことで、型変換がどの層で起きるかを理解する必要が出てきた。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Active Recordの型システムは、ユーザー入力をRuby値へ変換する`cast`、DB表現へ変換する`serialize`、DB値をRubyへ戻す`de... という観点で見る必要がありました。
-
-### 観測したこと
-
-- `User.type_for_attribute(:age).cast('42')`
-- decimal/date/booleanのコンソール例
-- カスタム`ActiveModel::Type::Value`の小さな例
-- 境界値のRSpec
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| モデルへ代入して任せる | 一貫性／モデル生成が必要 |
-| Type APIを直接使う | モデル外でも再利用／内部API依存を意識 |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- 変換結果はカラム型・利用バージョン・アダプタで確認する
-- `cast`は入力値の妥当性検証と同義ではない
-- decimalはFloatではなくDecimal系型を意識する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- 変換結果はカラム型・利用バージョン・アダプタで確認する
-- `cast`は入力値の妥当性検証と同義ではない
-- decimalはFloatではなくDecimal系型を意識する
-
-## 再発防止テスト
+`deserialize`は基底クラスから継承し、`cast`を通します。したがって、DBから読み出した文字列にも同じ正規化が適用されます。`serialize`にも同じ処理を定義し、保存する値をそろえています。[Attributes API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Attributes/ClassMethods.html)は、このように型オブジェクトを`attribute`へ渡す方法を提供しています。
 
 ```ruby
-RSpec.describe "active-record-type-casting" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+code_type = TypedProduct.type_for_attribute("code")
+ruby_value = code_type.cast(" ab-12 ")
+ruby_value        # => "AB-12"
+ruby_value.frozen? # => true
+code_type.deserialize(code_type.serialize(ruby_value)) # => "AB-12"
+```
 
-    expect(result).to be_present
+凍結したのは、`product.code << "X"`のような破壊的変更を許さず、`product.code = " cd-34 "`と再代入してもらうためです。`ActiveModel::Type::Value`の`changed_in_place?`は標準でfalseを返します。変更可能な独自オブジェクトを返す型なら、[変更検知のAPI](https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Value.html#method-i-changed_in_place-3F)まで実装する必要があります。
+
+この例は型変換の境界を示すため、文字列以外を`TypeError`にしています。利用者の入力ミスをフォームに表示したい場合は、許容する入力とエラーの返し方を別途設計します。
+
+## 型の往復とDBの往復を、別のテストにする
+
+`deserialize(serialize(value))`だけでは、アダプタやDBを経由した保存を確認したことにはなりません。説明用のSQLite環境では、保存・再読込と、再代入した属性の変更検知までRSpecへ落とし込みます。
+
+```ruby
+RSpec.describe TypedProduct do
+  it "正規化したコードを保存し、再代入による変更を検知する" do
+    product = described_class.create!(code: " ab-12 ").reload
+    expect(product.code).to eq("AB-12")
+    expect(product.will_save_change_to_code?).to be(false)
+    expect { product.code << "X" }.to raise_error(FrozenError)
+
+    product.code = " cd-34 "
+    expect(product.will_save_change_to_code?).to be(true)
+    product.save!
+    expect(product.reload.code).to eq("CD-34")
   end
 end
 ```
 
-## 一般化できる設計原則
+RSpec 3.13.0の8例で、型付き代入と元入力、小数のscaleとDB往復、空値、boolean、無効日付、変換とvalidationの差、カスタム型の往復、変更検知が期待どおりになることを確認しました。PostgreSQLやMySQLのprecision制約、アダプタ固有の型、実際のHTTP要求は対象に含めません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+Strong Parametersについては公式資料だけを確認しています。[ActionController::Parameters](https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html)の`permit`や`expect`は、代入してよいキーや構造を制限する仕組みです。`quantity`を許可しても、モデルの整数型や業務上の数量検証を代わりに定義するわけではありません。JSONなどでは数値や真偽値が入力に含まれるので、HTTP入力を常に文字列と仮定もしません。
 
-## まとめ
-
-型変換は魔法ではなく境界変換のパイプラインであり、変換と検証を分けて設計する、とまとめる。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- castすれば不正入力が安全になると書かない
-- 全DBアダプタで完全に同じ挙動と断定しない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+値が想定と違ったときは、元入力、そのモデルの型、型変換後の属性、DBへ渡す表現の順に確認します。「何かの数値になった」と「受け付けてよい数量になった」を区別できる状態にしておくと、修正すべき場所を絞れます。

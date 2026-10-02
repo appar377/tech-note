@@ -1,6 +1,6 @@
 ---
-title: MT5がUbuntuで起動しない原因をWayland / X11 / XAuthorityから切り分ける
-description: Ubuntu上でWine経由のMT5が起動しないときに、Wayland、X11、XWayland、DISPLAY、XAUTHORITY、xauth、xhost、systemd実行環境をどう切り分けるかを整理する。
+title: Wineアプリの表示先を切り分ける：Wayland・X11・Xauthority
+description: Wine経由のMT5で画面が開かない場面を、表示経路、接続先、X11認証、実行ユーザーの違いに分けて整理します。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -17,273 +17,71 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-wayland-x11-xauthority.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+Wine経由のMT5でウィンドウが開かないとき、まず分けたいのは「接続先がない」と「接続先から拒否される」です。どちらも画面が出ない原因になり得ますが、環境変数を足す操作と接続許可を変える操作では影響が違います。
 
-Ubuntu系LinuxでWine経由のMT5を動かすとき、エラーの原因をすぐにWineやMT5へ寄せて考えたくなります。
+さらに、Waylandのセッションで起動したアプリが、Waylandへ直接接続しているとは限りません。対象プロセスの経路を確かめてから、その経路に必要な値を読みます。この記事は仕様に基づく切り分け方で、LinuxやMT5での障害を再現した記録ではありません。
 
-しかしGUIアプリであるMT5は、Wineの上で動くだけではありません。画面を表示するためにdisplay serverへ接続します。ここで`DISPLAY`がない、X11の認証cookieが合わない、手動起動とsystemd起動で実行ユーザーが違う、といった問題があると、MT5以前の層で失敗します。
+## Waylandのセッションなら、X11は関係ないのか
 
-この記事では、Wayland、X11/Xorg、XWayland、XAuthority、`xauth`、`xhost`、`DISPLAY`の違いを整理し、Ubuntu上でMT5 / Wine / systemdのトラブルをdisplay layer側から切り分けます。
+| 対象アプリの経路 | 接続先 | 主に確認するもの |
+| --- | --- | --- |
+| X11クライアント → Xorg / Xvfbなど | X server | `DISPLAY`、X11側の認証・接続制御 |
+| X11クライアント → XWayland → compositor | XWaylandというX server | クライアント側はX11。XWaylandとcompositorの関係も確認 |
+| native Waylandクライアント → compositor | Wayland socket | `WAYLAND_DISPLAY`、runtime directoryなど |
 
-> [!WARNING]
-> Waylandは認証システムではありません。WaylandはX11を置き換えるためのdisplay protocol / compositor architectureです。一方、XAuthorityや`xhost`はX11側の接続認証・access controlに関係します。
+XWaylandはWaylandクライアントとして動くX serverです。X11アプリからはX serverへの接続に見えるため、Waylandセッション内でもX11の接続条件が関わります。[Wayland: X11 Application Support](https://wayland.freedesktop.org/docs/book/Xwayland.html)
 
-## この記事で学べること
+Wineの経路も版と構成に依存します。Wine 10.0のリリースノートではWayland driverが既定で有効になり、両方が利用可能な場合はX11 driverが優先すると説明されています。この記載をすべてのWine版へ広げたり、対象アプリの実際の経路を環境変数だけで確定したりはしません。[Wine 10.0: Wayland driver](https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md#wayland-driver)
 
-- Wayland、X11、Xorg、XWaylandの役割の違い
-- `DISPLAY`、`XAUTHORITY`、`.Xauthority`、`xauth`、`xhost`の関係
-- `No protocol specified`や`cannot open display`をどう切り分けるか
-- 手動起動では動くのにsystemdでは動かない理由
-- Ubuntu ServerでMT5を動かす前にdisplay layerをどう設計するか
+たとえば説明用の環境に`XDG_SESSION_TYPE=wayland`と`DISPLAY=:77`が両方あっても矛盾ではありません。前者はセッションに関する情報、後者はX11接続先です。デスクトップ名やセッション名から各プロセスの経路を推定しすぎない点は、[GUI環境の観察](/tech-note/articles/linux/mt5-ubuntu/02-gui-flavors-validation)と共通します。
 
-## 前提知識
+## DISPLAYとXAUTHORITYはそれぞれ何を指定するのか
 
-- MT5はGUIアプリであり、Wine経由でも表示先のdisplayが必要になる
-- Ubuntu Desktopや各flavorでは、Wayland session、X11 session、XWayland経由のX11アプリが混ざることがある
-- Ubuntu Serverでは通常GUI sessionがないため、XvfbやVNCなどのdisplay layerを自分で用意する必要がある
-- systemd serviceは、ログイン中のshellと同じ環境変数を自動では引き継がない
+`DISPLAY`は接続先を指定します。X11の基本形は`hostname:displaynumber.screennumber`です。たとえば`:77`はローカルのdisplay 77を指定する表現であり、77番のサーバーを起動する命令ではありません。[X.Org: Display Names](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/X.7.html)
 
-## 本編
+Cookie認証を使うX11接続では、接続先の指定に加え、サーバーが受け入れる認証情報が必要です。`XAUTHORITY`はクライアントが参照する認証用ファイルの場所を指します。ファイル名が常に`.Xauthority`であるとは限りません。[X.Org: Xsecurity](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html)
 
-### MT5の問題に見えてdisplay layerの問題だったケース
+| 状態 | そこから言えること | まだ言えないこと |
+| --- | --- | --- |
+| `DISPLAY`に値がある | 接続先の指定がある | サーバーが存在し、到達できる |
+| `XAUTHORITY`が未設定 | 明示的な上書きがない | Cookie認証が不可能である |
+| 認証用ファイルを読める | そのプロセスがファイルへアクセスできる | 対象displayに合うエントリがあり、サーバーが受け入れる |
+| X11接続が成功する | その時点で接続が受け入れられた | MT5の描画・入力・常駐も成功する |
 
-Ubuntu上でMT5が起動しないとき、原因候補は複数あります。
+`XAUTHORITY`が未設定なら、X11の標準的な仕組みではホームディレクトリの`.Xauthority`が参照先になります。したがって「未設定だから直す」とは限りません。逆に、別セッションのファイルを明示して失敗することも考えられます。[X.Org: xauth — Environment](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xauth.1.html)
 
-- Wine prefixが違う
-- `terminal64.exe`のpathが違う
-- broker loginが済んでいない
-- fontや依存DLLが足りない
-- Python APIが別terminalを探している
-- display serverへ接続できていない
-- X11認証が通っていない
+`xauth`は認証用ファイルを扱うツールです。`list`は秘密のCookie値も出力するため、公開ログへ貼る診断例にはしません。ファイルの存在や所有者だけの確認と、内容の取り扱いを分けます。なお、`xauth`は通常のファイル操作ではX serverへ接続せず、`generate`は接続する操作です。ファイルを読めたことを接続テストの成功と見なさないようにします。[X.Org: xauth](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xauth.1.html)
 
-この中で見落としやすいのがdisplay layerです。たとえば、手動で`wine terminal64.exe`を実行すると起動するのに、`systemd`から起動すると失敗する場合、MT5やWineではなく環境変数とX11認証の差分が原因かもしれません。
+## native WaylandにXauthorityを渡せば直るのか
 
-### Wayland / X11 / Xorg / XWaylandの整理
+native Waylandの接続では、X11のCookieファイルを指定しても接続先は作られません。libwayland-clientの`wl_display_connect`では、指定名や`WAYLAND_DISPLAY`などから接続先が決まります。相対名のsocketは`XDG_RUNTIME_DIR`を基準にし、絶対パスや既存file descriptorを使う場合もあります。[Wayland Client API: wl_display_connect](https://wayland.freedesktop.org/docs/html/apb.html)
 
-まず用語を分けます。
+`XDG_RUNTIME_DIR`はユーザーごとのruntime fileやsocketを置く場所です。所有者や権限、ログイン状態と結びつく寿命が仕様に含まれます。別ユーザーのディレクトリ名をコピーして環境変数へ入れるだけでは、そのセッションへのアクセスが成立するとは言えません。[XDG Base Directory Specification](https://specifications.freedesktop.org/basedir/latest/)
 
-| 用語 | 役割 | MT5 / Wineとの関係 |
-|---|---|---|
-| Wayland | display protocol / compositor architecture | native Wayland appはcompositorへ接続する |
-| X11 | 古典的なwindow system protocol | Wineやlegacy GUI appの切り分けで重要 |
-| Xorg | X11 server実装の一つ | X11 sessionでGUI appが接続する先 |
-| XWayland | Wayland上でX11 appを動かす互換レイヤ | Wayland session上でWineがX11 appとして動く場合に関係する |
-| Xvfb | virtual framebuffer X server | headless serverでGUI appを動かす候補 |
-| VNC | remote GUI session | GUI確認用のdisplay sessionとして使える |
+ここでも、socketの指定、socketへのアクセス、必要なプロトコル機能の対応を分けて確認します。Wineのdriverを切り替える操作は、表示経路そのものを変えるため、元の条件を記録せずに行う切り分けには向きません。
 
-Wayland sessionだからすべてのアプリがWayland nativeで動くわけではありません。Wineや古いGUIアプリは、XWayland経由でX11アプリとして動くことがあります。
+## 手動起動とサービス起動で何を比べるか
 
-そのため、現象としては「Wayland環境で動かない」に見えても、実際にはXWayland上のX11接続やX11 access controlの問題である可能性があります。
-
-### X11認証の整理
-
-X11では、アプリがX serverへ接続します。このとき、接続先と接続権限が必要です。
-
-| 用語 | 役割 | 詰まり方 |
-|---|---|---|
-| `DISPLAY` | 接続先displayを示す | 未設定・別displayでGUIが開かない |
-| `XAUTHORITY` | X11 auth fileの場所を示す | systemd / sudo / suで変わる |
-| `.Xauthority` | auth cookieを持つfile | 実行ユーザーが読めない、cookieが違う |
-| `xauth` | auth cookieを確認・追加する | 正しいdisplayのcookieが必要 |
-| `xhost` | X serverのaccess controlを変更する | 広げすぎると危険 |
-| MIT-MAGIC-COOKIE-1 | X11のcookie-based auth | cookie不一致で接続拒否される |
+同じ実行ファイルでも、呼び出すユーザーとプロセスに渡る環境が違えば、別の表示先やprefixを使う可能性があります。比較するのは、その起動方法で対象プロセスへ実際に渡す値です。
 
-`DISPLAY`は「どこへ接続するか」です。`XAUTHORITY`は「接続してよいことを証明するcookieがどこにあるか」です。
-
-この2つが揃っていないと、Wineは起動してもGUIアプリとしてのMT5は表示先へ接続できません。
-
-### 症状別の切り分け
-
-| 症状 | 原因候補 | 確認するもの |
-|---|---|---|
-| `cannot open display` | `DISPLAY`未設定、display service未起動 | `echo "$DISPLAY"`, `ps aux` |
-| `No protocol specified` | X11 auth不一致 | `echo "$XAUTHORITY"`, `xauth list` |
-| `Invalid MIT-MAGIC-COOKIE-1 key` | cookie不一致 | `.Xauthority`の所有者と内容 |
-| 手動では動くがsystemdでは動かない | service環境にdisplay情報がない | unit file, `systemctl show` |
-| VNCでは動くがSSHでは動かない | 接続しているdisplay sessionが違う | `DISPLAY`, VNCのdisplay番号 |
-| `sudo`すると動かない | rootがユーザーのcookieを持っていない | `whoami`, `XAUTHORITY` |
+| 比較する項目 | 切り分ける差 |
+| --- | --- |
+| 実行ユーザー | 認証用ファイル、socket、prefixへアクセスする主体 |
+| `DISPLAY`またはWayland接続先 | 手動時と同じ表示経路を選んでいるか |
+| X11認証用ファイルの参照元 | 明示値・既定値・セッション管理側の設定のどれか |
+| `WINEPREFIX` | 同じWine側の状態を使っているか |
+| 起動元の環境の組み立て方 | シェル、system manager、user managerの差 |
 
-特に`sudo wine ...`で一時的に試すと、Wine prefixもX11 cookieも別ユーザーの文脈になります。MT5用のWine prefixをrootで作ってしまうと、後から一般ユーザーやsystemd専用ユーザーで動かすときに切り分けが難しくなります。
+systemdのsystem serviceは、ログイン中のシェルの環境をそのままコピーする仕組みではありません。一方、user managerから起動するサービスには、そのmanagerが持つ環境が継承される場合があります。「systemdには常にDISPLAYがない」と固定せず、どのmanagerから起動するかを含めます。[systemd v258: systemd.exec](https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml)
 
-### 安全な設計方針
+SSHでもX11 forwardingが設定されていれば`DISPLAY`が用意されることがあります。その値を適当な`:0`へ置き換えると、転送先の指定まで変えてしまいます。[OpenSSH: DISPLAY](https://man.openbsd.org/ssh.1#DISPLAY)
 
-MT5 / Wineをサーバー運用へ寄せるなら、次の方針にします。
+`cannot open display`のようなメッセージだけで、到達不能と認証失敗を一意に決めることはできません。接続先の指定、サーバーやsocketの存在、アクセスするユーザー、認証方式の対応を順に分けて確認します。Linux上の診断や実接続は本稿では未実行です。
 
-- MT5専用ユーザーでWineとMT5を動かす
-- rootでWine prefixを作らない
-- `DISPLAY`を明示する
-- X11を使うなら`XAUTHORITY`も明示する
-- systemd unitに`User`、`Environment`、`WorkingDirectory`を明記する
-- `xhost +`を恒久運用に使わない
-- 必要な場合でも`xhost +SI:localuser:<user>`のように範囲を絞る
-- VNCをpublicに直接晒さない
-- SSH tunnelやfirewallを前提にする
-
-`xhost +`は原因切り分けのために一時的に使われることがありますが、誰でも接続できる方向へaccess controlを緩めます。恒久的な解決策として記事や運用手順に残すべきではありません。
-
-### 悪い切り分けと良い切り分け
-
-悪い切り分けは、MT5が起動しない理由を最初からWineだけに寄せることです。
-
-```text
-MT5が起動しない
-↓
-Wineの問題だと決めつける
-↓
-Wine再インストール
-↓
-prefixが増えてさらに分からなくなる
-```
-
-良い切り分けでは、まずGUIアプリとして最低限必要なdisplay layerを見ます。
-
-```text
-MT5が起動しない
-↓
-DISPLAYがあるか
-↓
-X serverが存在するか
-↓
-XAUTHORITYが正しいか
-↓
-同じuser / same WINEPREFIXか
-↓
-それでも失敗する場合にWine / MT5を見る
-```
-
-### 選択肢ごとのメリット・デメリット
-
-| 選択肢 | メリット | デメリット |
-|---|---|---|
-| Wayland session | 現代的なdesktop構成として自然 | legacy GUI appや自動化の切り分けが難しいことがある |
-| X11 / Xorg session | `DISPLAY`やX11 access controlを追いやすい | access controlを緩めると危険 |
-| XWayland | Wayland上でX11 appを動かせる | 問題発生時にWayland層とX11層を分けて見る必要がある |
-| Xvfb | headless serverで再現性を作りやすい | 実画面での操作確認には向かない場合がある |
-| VNC | MT5の画面を直接確認しやすい | 公開設定を誤ると危険、session差分が出やすい |
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["Wine / MT5 terminal"] --> B{"どこへ描画するか"}
-  B --> C["DISPLAY=:0 / :1"]
-  C --> D{"X11として接続するか"}
-  D --> E["Xorg / Xvfb / VNC"]
-  D --> F["XWayland"]
-  F --> G["Wayland compositor"]
-  E --> H{"X11 access control"}
-  H --> I["XAUTHORITY / .Xauthority"]
-  H --> J["xhost"]
-  I --> K["MT5 window"]
-  J --> K
-```
-
-この図では、MT5 / Wineが直接WaylandやX11のどちらかだけを見るのではなく、環境によってXWaylandやX11 access controlを経由することを表しています。
-
-## CLI・設定例
-
-まず、現在のsessionとdisplay関連の値を確認します。
-
-```bash
-$ echo "$XDG_SESSION_TYPE"
-$ loginctl show-session "$XDG_SESSION_ID" -p Type
-$ echo "$DISPLAY"
-$ echo "$WAYLAND_DISPLAY"
-$ echo "$XAUTHORITY"
-```
-
-X11 auth fileとcookieを確認します。
-
-```bash
-$ xauth list
-$ ls -la ~/.Xauthority
-```
-
-display serverやcompositorのプロセスを確認します。
-
-```bash
-$ ps aux | grep -E 'Xorg|Xwayland|Xvfb|wayland|weston|kwin|mutter' | grep -v grep
-```
-
-systemd serviceから起動している場合は、service側の環境を確認します。
-
-```bash
-$ systemctl status mt5.service
-$ journalctl -u mt5.service -n 200 --no-pager
-$ systemctl show mt5.service | grep -E 'User=|Environment=|ExecStart=|WorkingDirectory='
-```
-
-unit fileでは、最低限次のような値を明示します。
-
-```ini
-[Service]
-User=mt5
-WorkingDirectory=/home/mt5
-Environment=DISPLAY=:1
-Environment=XAUTHORITY=/home/mt5/.Xauthority
-Environment=WINEPREFIX=/home/mt5/.wine-mt5
-```
-
-`xhost`を使う場合は、全許可ではなく対象ユーザーを絞ります。
-
-```bash
-$ xhost +SI:localuser:mt5
-$ xhost
-```
-
-これはあくまで検証や限定的な運用の例です。恒久的には、X serverを誰が起動し、どのcookieをどのserviceが参照するかを明示する設計に寄せます。
-
-## 内部動作
-
-Wine経由でMT5を起動すると、概念的には次の順に依存します。
-
-```text
-systemd or login shell
-↓
-environment variables
-  DISPLAY
-  XAUTHORITY
-  WINEPREFIX
-↓
-Wine process
-↓
-MT5 terminal64.exe
-↓
-X11-compatible display
-↓
-X11 access control
-↓
-window is shown
-```
-
-手動起動では、ログイン済みdesktop sessionが`DISPLAY`や`XAUTHORITY`を持っています。一方、systemd serviceはその値を自動では持ちません。
-
-そのため、同じコマンドに見えても、実際には次の差分が出ます。
-
-| 実行方法 | 実行ユーザー | `DISPLAY` | `XAUTHORITY` | `WINEPREFIX` |
-|---|---|---|---|---|
-| desktop terminal | ログインユーザー | ある | ある | ユーザーのprefix |
-| SSH shell | SSHユーザー | ないことが多い | ないことが多い | ユーザーのprefix |
-| `sudo` | root | あってもcookieが違う | root側になる | rootのprefix |
-| systemd service | unitの`User` | 明示しないとない | 明示しないとない | 明示しないと変わる |
-
-MT5 / Wineの失敗に見えるものでも、実際にはこの表のどこかがズレているだけ、ということがあります。
-
-## まとめ
-
-- Waylandは認証システムではなく、X11を置き換えるためのdisplay protocol / compositor architecture。
-- XAuthority、`.Xauthority`、`xauth`、`xhost`、MIT-MAGIC-COOKIE-1はX11側の接続認証・access controlとして考える。
-- MT5 / Wineが起動しないときは、Wine再インストールの前に`DISPLAY`、`XAUTHORITY`、実行ユーザー、`WINEPREFIX`を確認する。
-- systemd化では、ログインshellとserviceの環境差分を前提にしてunit fileへ明示する。
-- `xhost +`を恒久解にせず、専用ユーザー、X11 auth、firewall、SSH tunnelを含めて設計する。
-
-## 参考文献
-
-- [Wayland](https://wayland.freedesktop.org/)
-- [Wayland Book: X11 Application Support](https://wayland.freedesktop.org/docs/book/Xwayland.html)
-- [X.Org: Xsecurity manual page](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html)
-- [X.Org: xhost manual page](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xhost.1.html)
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
+接続を通すために`xhost +`を使うと、X serverのアクセス制御を無効にします。対象ユーザーに限定する形式も、Cookie認証を修復する操作ではなく、別の接続許可を追加する操作です。ここでは許可を広げるコマンドを対処例にしません。[X.Org: xhost](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xhost.1.html)
+
+常設の表示先を用意する設計は[Ubuntu Serverのheadless構成](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design)、サービスの具体的な起動環境は[systemd管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation)へ分けます。

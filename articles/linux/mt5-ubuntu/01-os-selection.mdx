@@ -1,6 +1,6 @@
 ---
-title: MT5用サーバーにUbuntu / Lubuntu / Xubuntu / Kubuntu / Ubuntu Serverを試した比較
-description: MT5をUbuntu系Linuxで動かす前提で、GUIありflavorとUbuntu Serverを検証環境・本番環境の観点から比較する。
+title: MT5用のUbuntu環境は、デスクトップと保守条件からどう選ぶか
+description: Ubuntu Desktop、Lubuntu、Xubuntu、Kubuntu、Ubuntu Serverを、表示の確認方法・アーキテクチャ・保守期間から比較します。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -15,150 +15,74 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-os-selection.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+MT5用にUbuntu系Linuxを選ぶなら、最初に決めたいのは「画面をどう確認するか」と「選んだ構成をいつまで保守するか」です。デスクトップの名前だけで、MT5の互換性や常駐時の安定性を決めることはできません。
 
-MT5をUbuntu系Linuxで動かす場合、OS選定は「普段使いしやすいか」だけでは決められません。
+MetaQuotesのLinux導入ガイドはWineを利用する手順を案内しています。この案内と、各Ubuntu flavorで同じ結果になるかという確認は分けて扱います。[MetaTrader 5のLinux導入ガイド](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-MT5はGUIアプリです。そのため、初回検証ではGUIがある環境の方が楽です。一方、本番運用ではGUIを常時持つことがリソースや復旧性の面で不利になることがあります。
+この記事は候補を絞るための比較です。各OSへMT5を導入して測った使用メモリ、速度、安定性の順位は示していません。
 
-この記事では、Ubuntu Desktop、Lubuntu、Xubuntu、Kubuntu、Ubuntu Serverを、MT5サーバー用途の観点で比較します。
+## デスクトップが違うと、何を選び直すことになりますか
 
-## この記事で学べること
+Ubuntuのflavorは、デスクトップや既定のアプリ、設定などを組み合わせた選択肢です。LubuntuはLXQt、XubuntuはXfce、KubuntuはKDE Plasmaを提供します。[Ubuntu flavors](https://ubuntu.com/desktop/flavors)
 
-- Ubuntu系flavorの違いをMT5用途で見る観点
-- GUIあり検証環境とUbuntu Server本番環境を分ける理由
-- Lubuntu、Xubuntu、Kubuntu、Ubuntu Desktop、Ubuntu Serverの向き不向き
-- OS選定で見るべきメリット・デメリット
+表の最後の列は、選定時に答えておきたい問いです。MT5での動作評価ではありません。
 
-## 前提知識
+| 候補 | 主に使う操作環境 | 選定前に確かめること |
+|---|---|---|
+| Ubuntu Desktop | GNOME。24.04 LTSではGNOME 46 | 利用するリリースのセッションと、必要な画面操作を扱えるか |
+| Lubuntu | LXQt | 必要な画面設定や遠隔確認の方法を用意できるか |
+| Xubuntu | Xfce | 日常の確認作業を、このデスクトップで説明・再現できるか |
+| Kubuntu | KDE Plasma | 利用するリリースでの表示・拡大率・入力の設定を把握できるか |
+| Ubuntu Serverにデスクトップを追加しない構成 | シェル中心。GUI表示の経路は別途設計 | Wineが使う表示先と、問題発生時に画面を確認する方法を用意できるか |
 
-- MT5はLinuxネイティブアプリではなく、Linux上ではWine経由で動かす前提がある
-- LubuntuやKubuntuなどはUbuntuをベースにしたflavorで、主にデスクトップ環境が異なる
-- Ubuntu ServerはGUIなし運用が基本で、GUIアプリを動かすには追加設計が必要
+Ubuntu Desktop 24.04のデスクトップ版と既定アプリの構成は、[24.04 LTSリリースノート](https://discourse.ubuntu.com/t/ubuntu-24-04-lts-noble-numbat-release-notes/39890)で確認できます。Ubuntu Serverは必要に応じてソフトウェアを追加していく構成として説明されており、ここでは「デスクトップを追加しない」という選択を比較対象にしています。[Ubuntu Serverの基本導入](https://ubuntu.com/server/docs/tutorial/basic-installation/)
 
-## 本編
+GUIが必要なら、設定や障害時の確認を自分で説明できるデスクトップを候補にできます。一方、デスクトップを置かない構成を選ぶなら、表示先を誰が起動し、どう確認するかまで選定条件に含めます。
 
-### 比較の前提
+## 「Ubuntuが入る」と「必要なバイナリが動く」は同じですか
 
-MT5用途でOSを見るときの軸は、一般的なデスクトップ用途とは少し違います。
+Ubuntuが対応するCPUアーキテクチャと、MT5・Wine・Pythonの組み合わせが必要とする条件は、別々に確認します。たとえばUbuntu Serverにはamd64やarm64などの選択肢がありますが、それだけで同じWindows向け配布物を使えるとは判断できません。[Ubuntu Serverの対応アーキテクチャ](https://ubuntu.com/server/docs/tutorial/basic-installation/)
 
-見るべき軸は次です。
+対象のUbuntuで、dpkgが扱う基本のパッケージアーキテクチャを読むコマンドは次です。これは読者向けの参考例であり、この記事では実行していません。
 
-- Wineを扱いやすいか
-- MT5の初回ログインや表示確認がしやすいか
-- 低リソースVPSで動かしやすいか
-- リモート操作がしやすいか
-- systemdで常駐運用へ寄せやすいか
-- 障害時に切り分けやすいか
+```bash file=reader-only/package-architecture.sh
+#!/usr/bin/env bash
+set -eu
 
-### 比較表
-
-| OS | 位置付け | メリット | デメリット | MT5用途での評価 |
-|---|---|---|---|---|
-| Ubuntu Desktop | 標準GUI検証 | 情報量が多い、GUIが最初からある | VPS用途では重めになりやすい | 初期検証向き |
-| Lubuntu | 軽量GUI検証 | LXQtで軽量、低リソース環境に向く | 機能は最小限 | GUI検証向き |
-| Xubuntu | バランス型GUI検証 | Xfceで軽量かつ扱いやすい | Serverよりは重い | 検証・軽量運用向き |
-| Kubuntu | 高機能GUI検証 | KDE Plasmaで操作性が高い | MT5専用サーバーには過剰になりやすい | 作業環境向き |
-| Ubuntu Server | 本番候補 | 軽量、SSH管理、systemd運用向き | GUIがないためdisplay設計が必要 | 本番向き |
-
-### Ubuntu Desktop
-
-Ubuntu Desktopは情報量が多く、WineやMT5のGUI確認を始めやすい環境です。
-
-初回検証で、MT5の画面、broker server選択、ログイン状態、フォント表示、Wineのダイアログを確認するには楽です。
-
-ただし、本番VPSでMT5だけを常駐させる目的なら、デスクトップ環境全体は重くなりがちです。
-
-### Lubuntu
-
-Ubuntu公式のflavor説明では、LubuntuはLXQtデスクトップ環境を提供する軽量なflavorとして説明されています。
-
-MT5用途では、軽量GUIとして初回検証に向いています。低リソースVPSや仮想環境で、MT5の画面確認をしたい場合に扱いやすい候補です。
-
-デメリットは、最低限のGUIであるため、細かい設定作業やデバッグ時の補助機能はUbuntu DesktopやKubuntuほど豊富ではないことです。
-
-### Xubuntu
-
-XubuntuはXfceベースの軽量デスクトップです。軽さと操作性のバランスが良く、ファイル操作や設定変更もしやすい位置付けです。
-
-Lubuntuより少しリッチで、Ubuntu Desktopより軽い検証環境として使いやすいです。
-
-ただし、本番サーバーとして見れば、やはりUbuntu Serverよりは余計なGUI要素を持ちます。
-
-### Kubuntu
-
-KubuntuはKDE Plasmaを使うflavorです。Ubuntu公式でもKubuntuはKDEとPlasma desktopを組み合わせたflavorとして説明されています。
-
-設定UIが豊富で、GUI上の作業はしやすいです。MT5の画面確認、ファイル操作、設定変更をGUI中心で行いたい場合は便利です。
-
-一方、MT5専用サーバーとしては高機能すぎる可能性があります。検証や作業環境としてはよくても、低リソースVPSの常駐先としては優先度が下がります。
-
-### Ubuntu Server
-
-Ubuntu Serverは本番候補です。
-
-SSH、systemd、journald、firewallなど、サーバー運用に必要な部品と相性が良く、余計なGUIを持たない分だけ軽量にできます。
-
-ただし、MT5はGUIアプリです。Ubuntu Server単体では表示先がないため、Xvfb、VNC、軽量desktopなどのdisplay layerをどう用意するかが設計課題になります。
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["OS selection"] --> B["GUI validation"]
-  A --> C["Server operation"]
-  B --> D["Ubuntu Desktop"]
-  B --> E["Lubuntu / Xubuntu"]
-  B --> F["Kubuntu"]
-  C --> G["Ubuntu Server"]
-  G --> H["display layer"]
-  H --> I["Wine + MT5"]
+# 読者が対象の Ubuntu で使う参考例。合成入力のチェックからは実行しません。
+dpkg --print-architecture
 ```
 
-## CLI・設定例
+`dpkg --print-architecture`はパッケージのアーキテクチャを表示する操作です。CPU全体の機能やWineの互換性を診断するコマンドではありません。[dpkgのマニュアル](https://manpages.debian.org/bookworm/dpkg/dpkg.1.en.html)
 
-OS選定時には、体感だけでなく基本情報を記録します。
+Python連携まで使う予定なら、OS選定の時点で配布物も確認します。例としてMetaTrader5 5.0.6231には、CPython 3.12・Windows x86-64向けの`cp312-cp312-win_amd64`というwheelがあります。この配布条件を、LinuxのPythonにもそのまま適用することはできません。[5.0.6231の配布ファイル](https://pypi.org/project/metatrader5/5.0.6231/#files)
 
-```bash
-$ lsb_release -a
-$ free -h
-$ df -h
-$ systemctl get-default
-$ ps aux | grep -E "Xorg|Xvfb|vnc|wine|terminal64"
-```
+ここで確認するのは配布物との条件の一致です。特定のCPU上でWineとMT5を組み合わせた実動作は、さらに別の確認として残ります。
 
-MT5検証では、OS名だけでなく、どのユーザーでWine prefixを作ったかも記録します。
+## LTSなら、すべて同じ期間保守されますか
 
-## 内部動作
+Ubuntu本体の保守期間と、flavorが公表する保守期間は、同じ表だけでは判断できません。また、外部から追加するWineなどまでUbuntuの期間で一括して扱わないようにします。
 
-OSの違いがMT5に影響するポイントは、MT5本体のロジックではなく周辺レイヤーです。
+違いを読む例として24.04 LTSを見ると、Ubuntuの標準セキュリティ保守は2029年5月までで、LTSの標準保守の対象はMainのパッケージです。一方、Lubuntu 24.04 LTSは2027年4月までの3年間を公表しています。これは24.04の保守条件の比較であり、24.04を最新の候補やMT5で検証済みの版として勧めるものではありません。[Ubuntuのリリースと保守期間](https://ubuntu.com/about/release-cycle)、[Lubuntu 24.04.1の告知](https://lubuntu.me/noble-1-released/)
 
-```text
-Ubuntu flavor
-↓
-desktop environment / display server
-↓
-Wine
-↓
-MT5 terminal
-↓
-Python API / systemd operation
-```
+候補のリリースごとに、少なくともOSの期限、flavorの期限、追加パッケージの提供元を確認します。更新後にGUI表示とPython連携を再確認できるかも、保守を続けるための条件になります。
 
-GUIありflavorではdisplayが最初から用意されます。Ubuntu Serverではdisplayを自分で用意します。この差が、MT5をheadlessで動かすときの難しさになります。
+## 軽さを比べたいときは、何をそろえますか
 
-## まとめ
+デスクトップの一般的な紹介から、そのままMT5環境の使用メモリの順位を作ることはできません。比較するなら、割り当てるCPU・メモリ、OSとWineの版、MT5の条件、表示解像度、遠隔表示の方式を記録します。
 
-- OS選定は「軽いOSはどれか」だけで決めない。
-- GUIあり環境は初回ログイン、表示、Wineダイアログ、terminal path確認に向く。
-- Ubuntu Serverは本番候補だが、MT5用にdisplay layerを設計する必要がある。
-- 検証はLubuntu / Xubuntu / Ubuntu Desktop、本番はUbuntu Server + 必要最小限のdisplay layerという切り方が現実的。
+さらに、測る時点を「デスクトップへログインした直後」「対象アプリを表示している間」などに分けます。OSだけで消費する量と、同じ作業を載せたときの量を混ぜると、flavorを変えた効果を読み取りにくくなるためです。
 
-## 参考文献
+この記事ではこの測定を行っていません。必要な操作を実現できる候補が複数残ったときに、実際の条件をそろえて比較するための観点です。
 
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
-- [Ubuntu: Ubuntu flavors](https://ubuntu.com/desktop/flavors)
-- [Xubuntu official site](https://xubuntu.org/)
-- [Ubuntu Server download](https://ubuntu.com/download/server)
+## GUIありとServerのどちらから始めますか
+
+画面上の状態を人が確認する必要があり、その確認方法をすぐ説明できるなら、使い慣れたGUI環境を候補にできます。その後に必ずUbuntu Serverへ移す、という前提を置く必要はありません。
+
+デスクトップへのログインを前提にしない構成が必要なら、Ubuntu Serverを含む候補で表示先と復旧方法を設計します。GUIを減らすこと自体は、アプリの自動復旧を保証しません。
+
+候補を選んだら、[GUI確認で観測すること](/tech-note/articles/linux/mt5-ubuntu/02-gui-flavors-validation/)へ進みます。デスクトップを使わない構成の検討は、[headless設計](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design/)で扱います。

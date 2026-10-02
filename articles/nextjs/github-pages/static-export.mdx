@@ -1,6 +1,6 @@
 ---
-title: Next.jsをGitHub Pagesへ静的Exportする
-description: App RouterのNext.jsサイトをGitHub Pagesで配信するためのoutput export、basePath、Actions設定を整理する。
+title: "Next.jsをGitHub Pagesへ出すとき、静的exportとパスをどうそろえるか"
+description: "App Routerの最小例で、静的に生成できる処理、basePath、slugとdraftの除外、outの確認、GitHub Actionsへの引き渡しを整理します。"
 date: 2026-06-25
 tags:
   - Next.js
@@ -13,121 +13,246 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/nextjs-github-pages.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+GitHub PagesへNext.jsのサイトを置くとき、配信するのはNode.jsサーバーではなく、ビルドで生成したHTML・CSS・JavaScriptです。まずページをビルド時に確定できるかを確認し、その後で公開URLのprefixとActionsをそろえます。[GitHub Pagesの仕組み](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages)
 
-Next.js App RouterのサイトをGitHub Pagesへ公開するには、サーバー実行を前提にせず、`next build` で静的HTMLを生成できる構成にする必要があります。
+以下はNext.js 16.2.9のApp Routerを対象に、公開ノート1件と下書き1件から静的ファイルを作る説明用の例です。外部API、認証、MDX処理は含めず、どのURLを出力するかを追える大きさにしています。
 
-この記事では、`output: "export"`、`basePath`、GitHub Actionsの流れを、GitHub Pages向けの実装として整理します。
+## output: exportを付ければ、どの機能も使えますか？
 
-## この記事で学べること
+`output: "export"`を指定すると、`next build`が静的配信に必要なファイルを既定の`out/`へ出力します。Server Componentもビルド時に実行できます。「Server Componentという名前だからPagesでは使えない」という判断にはなりません。[Next.js: Static Exports](https://nextjs.org/docs/app/guides/static-exports)
 
-- Next.jsの静的Exportで生成されるもの
-- GitHub Pagesで必要になる `basePath`
-- 静的Exportで避けるべきNext.js機能
-- GitHub ActionsからPagesへデプロイする流れ
+一方、訪問者のリクエストを受けて動くNext.jsサーバーはPages上にはありません。
 
-## 前提知識
+| 必要な処理 | この構成での扱い |
+| --- | --- |
+| ローカル記事を読んでHTMLを作る | ビルド時に実行する |
+| 検索やタブ切り替え | ブラウザ側のJavaScriptで実行できる |
+| cookieを読んで利用者ごとのHTMLを返す | 静的exportの範囲外 |
+| Server Actions、ISR、Next.jsのredirects/rewrites/Proxy | 静的exportでは利用できない |
+| Route Handler | リクエストに依存せず静的に生成できるGET応答に限る |
+| `next/image`の既定の最適化 | 専用サーバーが必要。無効化するかcustom loaderを選ぶ |
 
-- Next.js App Routerの基本的なルーティングを知っている
-- GitHub Pagesが静的ファイル配信であることを知っている
-- GitHub ActionsでCIを実行したことがある
+Client Componentもビルド時にHTML化されます。`"use client"`を付けた直後の処理なら`window`を読んでよい、とは限りません。ブラウザだけのAPIは、たとえば`useEffect`やイベント処理の中で使います。[Static ExportsのBrowser APIsと制限](https://nextjs.org/docs/app/guides/static-exports#browser-apis)
 
-## 図解
+## /tech-note/配下へ置くとき、どのパスを変えますか？
 
-```mermaid
-flowchart TD
-  A[MDX articles] --> B[next build]
-  B --> C[out directory]
-  C --> D[upload-pages-artifact]
-  D --> E[deploy-pages]
-  E --> F[GitHub Pages]
+Project Pagesの既定URLは`https://<owner>.github.io/<repositoryname>/`です。この例ではリポジトリ名を`tech-note`として、`basePath`を`/tech-note`にします。ユーザーサイトや独自ドメインの構成では、実際の配信位置に合わせて判断します。[GitHub Pagesのサイト種別](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#types-of-github-pages-sites)
+
+空の作業ディレクトリに、次のファイルを置く想定です。依存関係の版をそろえるため、`package.json`も示します。
+
+```json file=next-workbench/package.json
+{
+  "name": "static-export-example",
+  "private": true,
+  "scripts": { "build": "next build --webpack" },
+  "dependencies": {
+    "next": "16.2.9",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  }
+}
 ```
 
-## 実装コード例
-
-```ts title="next.config.ts"
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+```js file=next-workbench/next.config.mjs
+const nextConfig = {
   output: "export",
   basePath: "/tech-note",
   trailingSlash: true,
-  images: {
-    unoptimized: true,
-  },
+  images: { unoptimized: true },
+  experimental:
+    process.env.TECH_NOTE_SERIAL_BUILD === "1" ? { cpus: 1 } : undefined,
 };
 
 export default nextConfig;
 ```
 
-## 内部動作
+`TECH_NOTE_SERIAL_BUILD=1`のときだけworker数を1にする設定は、小規模なローカル確認用です。公開URLを決める設定ではありません。Tech Noteの設定も同じ環境変数でこの指定を有効にしています。
 
-```text
-next build
-↓
-App Routerの各routeをSSG
-↓
-HTML / RSC payload / JS / CSSを生成
-↓
-out/に静的ファイルとして出力
-↓
-GitHub Pagesがそのまま配信
+`basePath`はビルド時に組み込まれます。配信先のprefixを変えるときは再ビルドが必要です。`assetPrefix`は主にCDN上の`_next/static`向けで、サブパス配信の代わりにはしません。[basePath](https://nextjs.org/docs/app/api-reference/config/next-config-js/basePath), [assetPrefix](https://nextjs.org/docs/app/api-reference/config/next-config-js/assetPrefix)
+
+ルートレイアウトとトップページを追加します。
+
+```jsx file=next-workbench/app/layout.jsx
+export default function RootLayout({ children }) {
+  return (
+    <html lang="ja">
+      <body>{children}</body>
+    </html>
+  );
+}
 ```
 
-## 本編
+```jsx file=next-workbench/app/page.jsx
+import Link from "next/link";
 
-## GitHub Pagesで配信する前提
-
-GitHub Pagesは静的ファイルを配信する仕組みです。Next.jsで使う場合は、Node.jsサーバーが必要な機能を避け、ビルド時にHTML/CSS/JSを生成します。
-
-```ts title="next.config.ts"
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  output: "export",
-  basePath: "/tech-note",
-  trailingSlash: true,
-  images: {
-    unoptimized: true,
-  },
-};
-
-export default nextConfig;
+export default function HomePage() {
+  return (
+    <main>
+      <h1>説明用ノート</h1>
+      <Link href="/notes/alpha">公開ノートを読む</Link>
+      <p><a href="/tech-note/sample.txt">説明用ファイル</a></p>
+    </main>
+  );
+}
 ```
 
-## 避ける機能
+`Link`へ渡すアプリ内のパスには、通常`/tech-note`を重ねて付けません。Next.jsが`basePath`を適用します。一方、生の`a`要素や`public`内のファイルのURLは、その処理を自動では受けません。この違いが、トップページは見えるのにリンクや画像だけ壊れる原因になります。
 
-- Server Actions
-- ISR
-- Request依存のRoute Handler
-- cookies / headers
-- redirects / rewrites / proxy
-- デフォルトのImage Optimization
+| 書く場所 | この例で渡す値 |
+| --- | --- |
+| `Link`の`href` | `/notes/alpha` |
+| 生の`a`の`href` | `/tech-note/sample.txt` |
+| `next/image`でpublic内の画像を参照する`src` | `/tech-note/`を含めたURL |
+| public内での保存場所 | `public/sample.txt`。`public/tech-note/`へ重ねて置かない |
 
-> [!INFO]
-> 記事サイトのMVPは、ビルド時生成とクライアント検索だけで十分成立します。
+Tech NoteのMDX本文リンクは、生の`a`要素として描画します。そのため本文内の内部リンクには`/tech-note/`を含めます。本文画像は描画側で`withBasePath`を通す実装です。すべてのパスに同じ置換をかけず、どのコンポーネントがURLを作るかを見ます。
 
-## Actionsの流れ
+## 動的なslugと下書きは、どこで除外しますか？
 
-```mermaid
-flowchart TD
-  A[mainへpush] --> B[npm ci]
-  B --> C[lint / typecheck / test]
-  C --> D[next build]
-  D --> E[outをartifact化]
-  E --> F[GitHub Pagesへdeploy]
+URLをビルド時に列挙します。以下のデータは説明用です。
+
+```js file=next-workbench/lib/notes.mjs
+const notes = [
+  { slug: "alpha", title: "公開ノート", body: "公開する本文です。", draft: false },
+  { slug: "hidden", title: "下書き", body: "PRIVATE_DRAFT_SENTINEL", draft: true },
+];
+
+export function getPublishedNotes() {
+  return notes.filter((note) => !note.draft);
+}
 ```
 
-## まとめ
+```jsx file=next-workbench/app/notes/[slug]/page.jsx
+import { notFound } from "next/navigation";
+import { getPublishedNotes } from "../../../lib/notes.mjs";
 
-- GitHub PagesではNext.jsサーバーではなく、生成済みの静的ファイルを配信する。
-- `output: "export"` で `out/` を生成する。
-- リポジトリPagesでは `basePath` を正しく設定する。
-- Server ActionsやISRなど、サーバー実行が必要な機能は使わない。
+export const dynamicParams = false;
 
-## 参考文献
+export function generateStaticParams() {
+  return getPublishedNotes().map((note) => ({ slug: note.slug }));
+}
 
-- [Next.js Documentation: Static Exports](https://nextjs.org/docs/app/guides/static-exports)
-- [GitHub Docs: Using custom workflows with GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
+export default async function NotePage({ params }) {
+  const { slug } = await params;
+  const note = getPublishedNotes().find((entry) => entry.slug === slug);
+  if (!note) notFound();
+
+  return (
+    <main>
+      <h1>{note.title}</h1>
+      <p>{note.body}</p>
+    </main>
+  );
+}
+```
+
+`generateStaticParams`には公開ノートだけを渡します。ページ本文の検索にも同じ公開条件を使い、`dynamicParams = false`で列挙していないslugを扱わない構成にします。Next.js 16の`params`はPromiseなので、ページ側では`await`しています。[generateStaticParams](https://nextjs.org/docs/app/api-reference/functions/generate-static-params)
+
+`draft: true`はNext.jsの予約済みの公開制御ではありません。この例では`getPublishedNotes`が除外しています。一覧から隠しても、ルート生成や検索用JSONへ残せば内容を配信してしまいます。
+
+Tech Noteでは、通常の`getAllArticles()`がdraftを除外し、記事の`generateStaticParams`もその一覧を使います。下書きのレビュー画面を有効にする条件は`NODE_ENV === "development"`かつ`TECH_NOTE_PREVIEW === "1"`です。これは独自の開発用previewであり、静的exportでは使えないNext.jsのDraft Modeとは別です。
+
+## build後に、何を確認しますか？
+
+`public/sample.txt`には次の説明用テキストを置きます。
+
+```text file=next-workbench/public/sample.txt
+STATIC_EXPORT_SAMPLE
+```
+
+依存関係をインストールした作業ディレクトリで`npm run build`を実行する計画です。古い手順にある`next export`は使いません。Next.js 14以降では`output: "export"`と`next build`に置き換わっています。また、このリポジトリのbuild scriptはNext.js 16の既定のTurbopackではなく、`--webpack`を明示しています。[Static Exportsの版履歴](https://nextjs.org/docs/app/guides/static-exports#version-history), [Next.jsのインストールガイド](https://nextjs.org/docs/app/getting-started/installation)
+
+| 確認対象 | この例で期待する状態 |
+| --- | --- |
+| `out/index.html` | 公開ノートへのリンクがある |
+| `out/notes/alpha/index.html` | 公開本文が入る |
+| `out/sample.txt` | publicの説明用ファイルがコピーされる |
+| HTML内のリンク・`_next`参照 | `/tech-note/`を含む |
+| `out/notes/hidden/` | 生成されない |
+| out内のファイル | `PRIVATE_DRAFT_SENTINEL`が含まれない |
+
+`basePath`を指定しても、`out/tech-note/`というフォルダを自分で作って二重に包む手順にはしません。Pagesがartifactのルートをサイトの配信位置へ対応させます。`trailingSlash: true`は、この例のような`notes/alpha/index.html`形式の出力に対応します。
+
+ローカルでは、静的ファイルを公開時と同じ`/tech-note/`配下にマウントして、直接URLを開く操作も確認します。`next start`は静的exportを配信するためのコマンドとして使いません。ビルドできたこと、リンクが解決すること、Pagesへデプロイできたことは、それぞれ別の確認です。
+
+## GitHub Actionsは何を渡してPagesへ公開しますか？
+
+以下はTech Noteにあるworkflowの構成です。Node 22で依存関係をそろえ、lint・型検査・テスト・buildを済ませてから`out`をartifactにします。Next.js 16ではbuildがlintを自動実行しないため、別stepにしています。
+
+```yaml file=workflow/pages.current.yml
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+このworkflowを自分のリポジトリへ導入する場合は、Pagesの公開元をGitHub Actionsに設定します。deploy jobには`pages: write`と`id-token: write`、公開用environmentが必要で、`needs: build`でartifactを作るjobの完了を待ちます。[GitHub: custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages), [公開元の設定](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
+
+上の小さい再現用packageにはlint・型検査・テストのscriptを用意していないため、このworkflowをそのままコピーするだけでは動きません。自分の品質検査のscriptを用意して対応させます。workflowファイルがあることも、Actions上で公開に成功した実績を意味しません。
+
+掲載した最小例をNext.js 16.2.9 / Node.js 21.6.1 / React 19.2.4で静的buildし、公開ページのHTML、リンクとpublicファイルのパス、生成assetのbasePath、draftのroute非生成、出力全体へのdraft文字列の非混入を確認しました。workflowが指定するNode 22でのCI、GitHub ActionsとPagesへの公開は未実行です。
+
+記事をMDXで管理する場合、コンテンツの形式と公開条件の関係は[.mdxの用途と処理](/tech-note/articles/file-formats/extensions/mdx/)で説明します。

@@ -1,6 +1,6 @@
 ---
 title: "Dartのfinalとconstは何を固定しているのか"
-description: "`final`は変数への再代入を禁止し、値は実行時に決まってよい。`const`はコンパイル時定数を要求し、constオブジェクト/コレクションは不変で、同値定数のcanonicalizationも起こり得る。"
+description: "finalは変数への再代入を制限し、constはコンパイル時定数を作る。Listの変更、const constructor、late finalを短い実行例で確かめる。"
 date: 2026-07-20
 tags:
   - "Dart"
@@ -14,135 +14,96 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/dart-final-vs-const.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
+`final`を付けたListには、あとから要素を追加できます。変数への再代入を止めることと、そこから参照するオブジェクトを変更できなくすることは、別の制約だからです。
 
-## 概要
+まず、この二つを比べると違いが見えます。以下のDart標準ライブラリの例は、Dart SDK 3.11.5で確認しています。
 
-`final`も`const`も再代入できないため同じに見えたが、実行時に一度だけ決まる値と、コンパイル時に確定する定数では役割が異なる。さらに`final List`の中身は変更できるため、「変数が固定」と「オブジェクトが不変」も分ける必要があった。
-
-`final`は変数への再代入を禁止し、値は実行時に決まってよい。`const`はコンパイル時定数を要求し、constオブジェクト/コレクションは不変で、同値定数のcanonicalizationも起こり得る。
-
-## この記事で学べること
-
-- `final`の一度だけ代入
-- `late final`の初期化と二重代入エラー
-- `const`式とconst constructor
-- `final List`と`const List`
-- 参照の固定とオブジェクトの不変性
-- Flutterでconst Widgetを使う意味
-
-## 前提知識
-
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Dartのfinalとconstは何を固定しているのか](/images/articles/dart-final-vs-const.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
-
-```dart
-class AppConfig {
-  static const defaultTimeout = Duration(seconds: 10);
-
-  final List<String> enabledFeatures;
-
-  AppConfig(this.enabledFeatures);
-}
-```
-
-## 本編
-
-### 発生した状況
-
-`final`も`const`も再代入できないため同じに見えたが、実行時に一度だけ決まる値と、コンパイル時に確定する定数では役割が異なる。さらに`final List`の中身は変更できるため、「変数が固定」と「オブジェクトが不変」も分ける必要があった。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`final`は変数への再代入を禁止し、値は実行時に決まってよい。`const`はコンパイル時定数を要求し、constオブジェクト/コレクションは不変で、同値定... という観点で見る必要がありました。
-
-### 観測したこと
-
-- `final now = DateTime.now()`とconst不可の例
-- `final list = &lt;int&gt;[]; list.add(1)`
-- `const list = &lt;int&gt;[]`の変更失敗
-- const constructorを持つ小さなValue Object
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| `final` | 柔軟／深い不変性は保証しない |
-| `const` | 安全・共有可能／実行時値を使えない |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- const Widgetが常に大幅な性能改善を保証すると断定しない
-- constの可否は式全体がコンパイル時定数かで決まる
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- const Widgetが常に大幅な性能改善を保証すると断定しない
-- constの可否は式全体がコンパイル時定数かで決まる
-
-## 再発防止テスト
+## finalなListの中身は変更できる
 
 ```dart
 void main() {
-  test('dart-final-vs-const', () async {
-    final subject = TestSubject();
+  final colors = <String>['teal'];
+  colors.add('ivory');
+  print(colors); // [teal, ivory]
 
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
+  // colors = ['blue']; // 再代入はできない
 }
 ```
 
-## 一般化できる設計原則
+`final`が制限するのは、変数`colors`への代入です。このList自体は変更可能なので、`add`は成功します。フィールドをすべて`final`にしたクラスでも、そのフィールドが変更可能なListを指していれば、Listの要素まで固定されるわけではありません。[Dartの変数の説明](https://dart.dev/language/variables)でも、finalとオブジェクトの不変性は区別されています。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+値が実行時に決まることも問題ありません。`final now = DateTime.now();`は書けますが、`const now = DateTime.now();`はコンパイル時定数にならず、解析エラーになります。
 
-## まとめ
+## constなListは変更できない
 
-何を固定したいのかを、変数・参照・オブジェクト・生成時刻の4層で考える。
+```dart
+void main() {
+  const colors = <String>['teal'];
+  try {
+    colors.add('ivory');
+  } on UnsupportedError {
+    print('変更できない');
+  }
+}
+```
 
+こちらは`UnsupportedError`を捕捉します。`const`のコレクションは変更できません。`const`変数にはコンパイル時に評価できる定数式が必要で、変数への再代入もできません。
 
-この記事では、次のような短絡的な一般化は避けます。
+混同しやすいのは`final colors = const <String>['teal'];`です。この場合もListは変更できません。変数の宣言が`final`でも、右辺で作ったオブジェクトがconstだからです。
 
-- final=immutableと説明しない
-- constを付ければあらゆる再ビルドがなくなると書かない
+| 確かめたいこと | final | const |
+| --- | --- | --- |
+| 変数へ再代入できるか | できない | できない |
+| 初期値が実行時に決まってよいか | よい | コンパイル時定数が必要 |
+| 参照先のListの変更を禁止するか | finalだけでは禁止しない | constのListは変更できない |
 
-## 参考文献
+## const constructorを持つクラスでも、呼び方で変わる
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+```dart
+class Palette {
+  const Palette(this.name);
+  final String name;
+}
+
+void main() {
+  const first = Palette('teal');
+  const second = Palette('teal');
+  final runtime = Palette('teal');
+
+  print(identical(first, second)); // true
+  print(identical(first, runtime)); // false
+}
+```
+
+最初の二つはconstの文脈で生成した同じ定数なので、同一のインスタンスになります。これが定数のcanonicalizationです。最後の呼び出しにはconstの文脈がなく、通常のインスタンスを作っています。const constructorを宣言しただけで、すべての呼び出しが定数になるわけではありません。[コンストラクタの説明](https://dart.dev/language/constructors)と[identicalのAPI](https://api.dart.dev/dart-core/identical.html)で、この違いを確認できます。
+
+const constructorを持つクラスではインスタンスフィールドを`final`にする必要があります。そのうえで、constとして呼び出すときは引数なども定数式でなければなりません。
+
+## late finalは「あとで一度だけ代入する」
+
+```dart
+class DeferredLabel {
+  late final String value;
+}
+
+void main() {
+  final label = DeferredLabel();
+  label.value = 'ready';
+  print(label.value); // ready
+
+  // もう一度 label.value に代入すると、実行時エラーになる。
+}
+```
+
+`late final`は再代入を許すためのものではありません。このフィールドへの二度目の代入は実行時に失敗します。一方、ローカル変数で二度目の代入が明らかなコードは、解析段階で検出されることがあります。初期化前に読む場合も問題になるため、初期化の順序を呼び出し側に任せてよいかを考える必要があります。
+
+また、`late final value = compute();`のように初期化式を付けた場合は、初回の読み出しまで評価を遅らせます。「あとで代入する」と「初期化式を遅延評価する」は、書き方と利用目的を分けて読むと理解しやすくなります。[lateの説明](https://dart.dev/language/variables#late-variables)
+
+## Flutterでは、定数にできる範囲で使う
+
+Flutterの公式ガイドは、可能な箇所でconst constructorを使うことを勧めています。ただし、const Widgetにすればすべての再ビルドがなくなる、という意味ではありません。ここではアプリの性能計測はしていないので、改善率も示せません。[Flutterの性能ガイド](https://docs.flutter.dev/perf/best-practices)
+
+値が実行時に決まるなら`final`、式全体を定数にできるなら`const`。さらに変更可能なコレクションを持つなら、その中身を変更してよい設計かも別に確認します。これで、変数の固定とオブジェクトの不変性を同じ意味で扱わずに済みます。

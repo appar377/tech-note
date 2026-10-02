@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import type { CSSProperties } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { ThemeScript } from "@/components/theme-toggle";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl, withBasePath } from "@/lib/site";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL, absoluteUrl } from "@/lib/site";
 import "./globals.css";
+import "./reading-ui.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -61,21 +61,18 @@ export default function RootLayout({
       lang="ja"
       suppressHydrationWarning
       data-au-theme="neutral"
+      data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} h-full scroll-smooth antialiased`}
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <ThemeScript />
-        <div
-          className="site-backdrop"
-          aria-hidden="true"
-          style={
-            {
-              "--site-backdrop-image": `url("${withBasePath("/images/site/ambient-blueprint.svg")}")`,
-            } as CSSProperties
-          }
-        />
+        <a href="#main-content" className="skip-link">
+          本文へ移動
+        </a>
         <SiteHeader />
-        <main className="flex-1">{children}</main>
+        <main id="main-content" className="flex-1">
+          {children}
+        </main>
         <SiteFooter />
       </body>
     </html>

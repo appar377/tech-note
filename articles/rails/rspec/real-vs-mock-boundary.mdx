@@ -1,6 +1,6 @@
 ---
-title: "RSpecではどこまで本物を使うべきか？Railsにおけるモックと実データの使い分け"
-description: RailsのRSpecで本物のmodelやDBを使うべき場面と、外部依存をモックするべき場面を整理する。
+title: "RSpecで実DBを使う境界：一意制約・ロールバック・外部通知を分ける"
+description: "保存メソッドを呼んだことと、DBに残った状態は別です。登録処理の一意制約と全体ロールバックをPostgreSQLで確認し、外部通知は記録用fakeへ切り離す例を扱います。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,388 +14,231 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-real-vs-mock.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`create!`を呼ぶことを期待したテストが通っても、一意インデックスがあるか、途中の失敗で先のINSERTが戻るかは分かりません。そこを確認したいテストで`create!`や`transaction`を差し替えると、確かめたい処理を取り除いてしまいます。
 
-RSpecを書いていると、次のような判断が必要になります。
+一方、登録完了の通知が届くところまで毎回つなぐ必要はありません。この稿では、DBの保存と制約を実際に動かし、通知先だけをメモリ上に要求を記録するfakeへ切り離します。関心事は用語の分類ではなく、どの結果をどの境界で確かめるかです。
 
-```text
-本物のモデルを使うべきか
-instance_doubleを使うべきか
-DBに保存するべきか
-外部サービスをスタブするべきか
-```
+対象環境はRuby 3.4.4、RSpec 3.13.0、Active Record 8.1.3、pg gem 1.6.3、PostgreSQL 17.10です。通常の6例はローカルで実行し、すべて成功しました。アドレスと表示名は合成データで、実際の通知を送るクライアントは用意しません。
 
-すべて本物で動かせば実際の挙動に近くなります。
-一方で、すべて本物にするとテストが遅くなったり、失敗原因の切り分けが難しくなったりします。
+## このテストで本物にするものを決める
 
-逆に、すべてをモックするとテストは速くなりますが、実際の挙動をほとんど保証できなくなります。
+例は、複数の購読者をまとめて登録する処理です。一件でもDBへの登録に失敗したら、その呼び出しで追加した行を全部取り消します。DB登録が終わってから、各購読者について通知先へ要求を送ります。
 
-この記事では、Railsアプリケーションにおいて、どこまで本物を使い、どこからモックすべきかを整理します。
+| 確かめたいこと | この例で動かすもの |
+| --- | --- |
+| 空のaddressを入力エラーにする | 本物のモデルとpresence validation |
+| 同じaddressをDBへ二重に入れない | 本物のPostgreSQLとunique index |
+| 二件目の失敗で一件目も取り消す | 本物のActive Record transactionとDB |
+| 登録後、指定した宛先・表示名で通知を要求する | 通知先を記録用fakeへ置き換える |
+| 受信側まで通知が届く | 今回のテストでは確認しない |
 
-## この記事で学べること
-
-- Railsのテストで本物に寄せるべき対象
-- モック・スタブに寄せるべき外部依存
-- 状態確認と呼び出し確認の使い分け
-- request spec、model spec、service specの境界
-
-## 前提知識
-
-- RSpecでmodel specまたはrequest specを書いたことがある
-- FactoryBotなどでテストデータを作ったことがある
-- 外部APIを呼ぶ処理のテストに関心がある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
+以下の例は専用のテストDB向けです。DB接続と次のmigrationの反映を済ませ、example全体を別のトランザクションで囲まない構成で実行します。各exampleでは対象テーブルを空にします。
 
 ```ruby
-class OrderCheckoutService
-  def initialize(order)
-    @order = order
-  end
+require "rspec"
+require "active_record"
 
-  def call
-    PaymentClient.charge(amount: @order.total_price)
-    @order.update!(status: "paid")
-  end
-end
-
-RSpec.describe OrderCheckoutService do
-  it "外部決済だけをスタブして注文状態はDBで確認する" do
-    order = create(:order, status: "pending", total_price: 1000)
-
-    allow(PaymentClient).to receive(:charge).and_return(true)
-
-    described_class.new(order).call
-
-    expect(order.reload.status).to eq("paid")
-  end
-end
-```
-
-## 本編
-
-### 基本方針
-
-まず、基本方針は次の通りです。
-
-```text
-アプリ内部の重要なロジックは本物で動かす。
-外部サービス・時刻・ランダム・重い処理・異常系はスタブする。
-```
-
-つまり、「本物かモックか」を一律に決めるのではなく、依存対象の性質で判断します。
-
-### 本物を使った方がよいもの
-
-Railsでは、次のようなものは基本的に本物で確認した方がよいです。
-
-```text
-- ActiveRecordのvalidation
-- association
-- scope
-- DB保存
-- DB更新
-- callbackの結果
-- 業務上重要なモデルメソッド
-- request specでのAPIレスポンス
-```
-
-例えば、ユーザー名を更新する処理がある場合、次のように最終的なDB状態を見るテストは価値があります。
-
-```ruby
-RSpec.describe UserNameUpdater do
-  describe "#call" do
-    it "ユーザー名を更新する" do
-      user = create(:user, name: "Before")
-
-      described_class.new(user: user, name: "After").call
-
-      expect(user.reload.name).to eq("After")
+class CreateBoundarySubscribers < ActiveRecord::Migration[8.1]
+  def change
+    create_table :boundary_subscribers do |t|
+      t.string :address, null: false
+      t.string :display_name, null: false
     end
+    add_index :boundary_subscribers, :address, unique: true
   end
 end
 ```
 
-このテストは、内部で `update!` を呼んだかどうかではなく、結果としてユーザー名が更新されたことを確認しています。
+一意性の条件は、保存したaddressの値です。メールアドレスの正規化、形式の検査、大文字小文字の統一はこの例に含めていません。
 
-これは、実装詳細に依存しにくいテストです。
+## 保存処理を動かし、通知だけを切り離す
 
-### モックした方がよいもの
-
-一方で、次のようなものはモックやスタブを使うことが多いです。
-
-```text
-- 外部API
-- 決済処理
-- メール送信
-- Slackなどの通知
-- S3などの外部ストレージ
-- 画像変換
-- PDF生成
-- 現在時刻
-- ランダム値
-- ネットワーク通信
-```
-
-これらを本物で動かすと、テストが遅くなったり、不安定になったりします。
-
-例えば、通知処理を本当に送る必要はありません。
+モデルにはpresence validationを置きます。一意性はDBのインデックスで拒否される経路を確認したいため、ここではuniqueness validationを追加していません。後者を追加しても、それだけでDBの一意制約が作られるわけではない点は[公式Railsガイド](https://guides.rubyonrails.org/active_record_validations.html#uniqueness)にも説明されています。
 
 ```ruby
-allow(NotificationClient)
-  .to receive(:send_message)
-  .and_return(true)
-```
-
-このようにして、通知が成功した前提でアプリケーション側の処理を確認します。
-
-### 状態を見るか、呼び出しを見るか
-
-テストを書くときは、次のどちらを確認したいのかを考えます。
-
-```text
-状態を確認したいのか
-相互作用を確認したいのか
-```
-
-#### 状態を確認する例
-
-```ruby
-expect(user.reload.name).to eq("After")
-```
-
-これは、最終的な状態を確認しています。
-
-#### 相互作用を確認する例
-
-```ruby
-expect(NotificationClient)
-  .to receive(:send_message)
-  .with(user)
-```
-
-これは、通知クライアントが呼ばれたことを確認しています。
-
-どちらもテストですが、保証している内容が違います。
-
-### 悪い例：内部ロジックをすべてモックする
-
-次のようなテストは、あまり価値が高くありません。
-
-```ruby
-user = instance_double(User)
-
-allow(user)
-  .to receive(:active?)
-  .and_return(true)
-
-allow(user)
-  .to receive(:update!)
-  .and_return(true)
-
-result = described_class.new(user: user).call
-
-expect(result).to eq(true)
-```
-
-このテストでは、`user.active?` が本当に正しいかも、`user.update!` が本当に保存できるかも確認していません。
-
-つまり、アプリケーション内部の重要なロジックをすべて偽物にしてしまっています。
-
-この場合、テストは通っていても、本番で壊れる可能性があります。
-
-### 良い例：外部依存だけをスタブする
-
-例えば、決済後に注文を完了状態にする処理を考えます。
-
-```ruby
-class OrderCheckoutService
-  def initialize(order)
-    @order = order
-  end
-
-  def call
-    PaymentClient.charge(amount: order.total_price)
-
-    order.update!(status: "paid")
-  end
-
-  private
-
-  attr_reader :order
+class BoundarySubscriber < ActiveRecord::Base
+  self.table_name = "boundary_subscribers"
+  validates :address, :display_name, presence: true
 end
-```
 
-この場合、`PaymentClient` は外部APIなのでスタブします。
-一方で、`order.update!` は本物で確認します。
+class RecordingWelcomeGateway
+  attr_reader :messages
 
-```ruby
-RSpec.describe OrderCheckoutService do
-  describe "#call" do
-    it "決済成功後に注文をpaidにする" do
-      order = create(:order, status: "pending", total_price: 1000)
+  def initialize
+    @messages = []
+  end
 
-      allow(PaymentClient)
-        .to receive(:charge)
-        .with(amount: 1000)
-        .and_return(true)
+  def deliver(address:, display_name:)
+    @messages << {address: address, display_name: display_name}
+    nil
+  end
+end
 
-      described_class.new(order).call
+class RegisterBoundarySubscribers
+  def initialize(gateway:)
+    @gateway = gateway
+  end
 
-      expect(order.reload.status).to eq("paid")
+  def call(entries)
+    if BoundarySubscriber.connection.transaction_open?
+      raise ArgumentError, "call outside an existing transaction"
     end
+
+    subscribers = BoundarySubscriber.transaction do
+      entries.map do |entry|
+        BoundarySubscriber.create!(address: entry.fetch(:address), display_name: entry.fetch(:display_name))
+      end
+    end
+    subscribers.each do |subscriber|
+      @gateway.deliver(address: subscriber.address, display_name: subscriber.display_name)
+    end
+    subscribers.map(&:id)
   end
 end
 ```
 
-このテストは、次のようなバランスです。
+`RecordingWelcomeGateway`は送信しません。渡された要求を`messages`へ記録するだけです。`RegisterBoundarySubscribers`は保存の成功・失敗をDBへ任せ、通知の実際の配送だけをテストの外へ出しています。
 
-```text
-PaymentClient: 偽物
-Order: 本物
-DB更新: 本物
-```
-
-実務では、このくらいの切り分けが扱いやすいです。
-
-### request specでは本物に寄せる
-
-request specでは、なるべくアプリ内部を本物で通した方がよいです。
+外側のトランザクションを禁止しているのは、この小さな例で`transaction`ブロック終了をcommit境界にするためです。[Active Recordのネストしたtransaction](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)は、既定では外側に参加する場合があります。外側があるのに直後の通知を「commit後」と呼ばないよう、[transaction_open?](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-transaction_open-3F)で条件を確認しています。
 
 ```ruby
-RSpec.describe "Orders", type: :request do
-  describe "POST /orders/:id/checkout" do
-    it "注文を決済済みにする" do
-      order = create(:order, status: "pending")
+RSpec.describe RegisterBoundarySubscribers do
+  before { BoundarySubscriber.delete_all }
+  let(:gateway) { RecordingWelcomeGateway.new }
+  let(:service) { described_class.new(gateway: gateway) }
 
-      allow(PaymentClient)
-        .to receive(:charge)
-        .and_return(true)
-
-      post "/orders/#{order.id}/checkout"
-
-      expect(response).to have_http_status(:ok)
-      expect(order.reload.status).to eq("paid")
-    end
+  it "persists real DB rows and records only the outgoing request in a fake" do
+    entries = [
+      {address: "first@example.test", display_name: "First"},
+      {address: "second@example.test", display_name: "Second"}
+    ]
+    ids = service.call(entries)
+    expect(ids.length).to eq(2)
+    expect(BoundarySubscriber.where(id: ids).order(:address).pluck(:address, :display_name)).to eq([
+      ["first@example.test", "First"], ["second@example.test", "Second"]
+    ])
+    expect(gateway.messages).to eq(entries)
   end
 end
 ```
 
-request specでは、Controller、Routing、Params、Service、Model、DBをできるだけ本物で通します。
-ただし、外部APIだけはスタブします。
+このテストはDBを再問い合わせし、保存した二行の値を見ています。同時にfakeの記録から、通知要求の宛先と表示名を確認します。モデルのメソッドが呼ばれたことだけを見ているわけではありません。ただし、DBに残ったことと通知先へ渡したことまでが範囲で、配送成功は含みません。
 
-### model specでは本物を使うことが多い
+## 二件目の重複で、一件目も戻ることをDBで見る
 
-model specでは、基本的に本物のActiveRecordオブジェクトを使うことが多いです。
+次は、二件目が既存のaddressと重複する例です。入力の一件目は新規なので、実装がトランザクションを外していれば、その行だけ残る可能性があります。
 
 ```ruby
-RSpec.describe User, type: :model do
-  describe "#active?" do
-    it "退会していなければtrueを返す" do
-      user = build(:user, deleted_at: nil)
+RSpec.describe RegisterBoundarySubscribers do
+  before { BoundarySubscriber.delete_all }
+  let(:gateway) { RecordingWelcomeGateway.new }
+  let(:service) { described_class.new(gateway: gateway) }
 
-      expect(user).to be_active
-    end
+  it "rolls back an earlier insert on a real database uniqueness failure" do
+    existing = BoundarySubscriber.create!(address: "taken@example.test", display_name: "Existing")
+    entries = [
+      {address: "new@example.test", display_name: "New"},
+      {address: "taken@example.test", display_name: "Duplicate"}
+    ]
+    expect { service.call(entries) }.to raise_error(ActiveRecord::RecordNotUnique)
+    expect(BoundarySubscriber.pluck(:id, :address, :display_name)).to eq([
+      [existing.id, "taken@example.test", "Existing"]
+    ])
+    expect(gateway.messages).to eq([])
   end
 end
 ```
 
-モデルのメソッドやvalidationをモックしてしまうと、model specとしての価値が落ちます。
+期待しているのは、`RecordNotUnique`と、もともとの一行だけが残ることです。通知要求も0件です。[PostgreSQLのunique制約](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS)を実際に通すため、モデルをdoubleにしたテストでは確認できない範囲になります。
 
-### service specでは境界を決める
+例外を検査する位置はtransactionの外です。PostgreSQLではDBエラー後のトランザクションが利用不能になる場合があり、[Active RecordもStatementInvalidをブロック内で握りつぶさないよう説明しています](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)。ここでは処理全体の巻き戻しを終えてから結果を調べます。
 
-service specでは、依存先ごとに判断します。
+この例は逐次実行による一意制約の確認です。複数接続を競合させる負荷試験や、並行実行時のアプリケーションの再試行までは検証していません。
 
-```text
-- DB更新まで見る
-- 外部APIはスタブする
-- 重い処理はスタブする
-- 異常系はスタブで再現する
+## 保存前の入力検査と、保存中の失敗は別に確かめる
+
+presence validationだけを調べたいなら、レコードを保存する必要はありません。ただし、Active Recordは属性情報などをDBから読むことがあるので、「INSERTしない」と「DBへ全く接続しない」は同じではありません。
+
+```ruby
+RSpec.describe RegisterBoundarySubscribers do
+  before { BoundarySubscriber.delete_all }
+  let(:gateway) { RecordingWelcomeGateway.new }
+  let(:service) { described_class.new(gateway: gateway) }
+
+  it "checks presence validation without inserting a record" do
+    subscriber = BoundarySubscriber.new(address: "", display_name: "Example")
+    expect(subscriber).not_to be_valid
+    expect(subscriber.errors.of_kind?(:address, :blank)).to eq(true)
+    expect(BoundarySubscriber.count).to eq(0)
+  end
+
+  it "rolls back the batch when a later model validation fails" do
+    entries = [
+      {address: "valid@example.test", display_name: "Valid"},
+      {address: "invalid@example.test", display_name: ""}
+    ]
+    expect { service.call(entries) }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(BoundarySubscriber.count).to eq(0)
+    expect(gateway.messages).to eq([])
+  end
+end
 ```
 
-service specはモックを使いやすい場所ですが、内部ロジックまで過剰にモックしないように注意が必要です。
+最初の例は単体の入力検査、二つ目は入力検査の失敗を含めたバッチ全体のロールバックです。同じvalidationに関係していても、見ている契約が異なります。
 
-### メリット・デメリット
+逆に、保存まで確認したいのに`create!`をstubすれば、その結果からDB保存を推測できません。次は失敗確認用の別ファイル`expected_failures/stubbed_persistence_spec.rb`へ分けて実行する例です。前のモデル定義とDB接続を読み込みます。この1例を別に実行し、DBの件数が0のため失敗することを確認しました。
 
-#### 本物を使うメリット
+```ruby expected-failure
+RSpec.describe "intentional persistence boundary failure" do
+  before { BoundarySubscriber.delete_all }
 
-```text
-- 実際の挙動に近い
-- リファクタリングに強い
-- DBやvalidationの問題に気づける
+  it "cannot infer a stored row from a stubbed create! result" do
+    subscriber = BoundarySubscriber.new(id: 101, address: "stub@example.test", display_name: "Stub")
+    allow(BoundarySubscriber).to receive(:create!).and_return(subscriber)
+    service = RegisterBoundarySubscribers.new(gateway: RecordingWelcomeGateway.new)
+    service.call([{address: "stub@example.test", display_name: "Stub"}])
+    expect(BoundarySubscriber.count).to eq(1)
+  end
+end
 ```
 
-#### 本物を使うデメリット
+未保存のRubyオブジェクトにidや属性があっても、DBに行があるとは限りません。この例ではcreate!の実処理を飛ばしているため、最後のDB件数の期待を満たせません。保存メソッドを呼ぶこと自体の検証と、保存された状態の検証を分ける理由です。
 
-```text
-- 遅くなりやすい
-- 失敗原因が広くなる
-- 外部依存を含むと不安定になる
+## 通知の失敗を入れても、commit済みの行は戻らない
+
+依存先を置き換えると、通知側の失敗をテストで指定できます。ここではfakeのdeliverを例外へ差し替えます。
+
+```ruby
+RSpec.describe RegisterBoundarySubscribers do
+  before { BoundarySubscriber.delete_all }
+  let(:gateway) { RecordingWelcomeGateway.new }
+  let(:service) { described_class.new(gateway: gateway) }
+
+  it "retains committed rows when the injected delivery fails" do
+    allow(gateway).to receive(:deliver).and_raise(IOError, "synthetic delivery failure")
+    entry = {address: "saved@example.test", display_name: "Saved"}
+    expect { service.call([entry]) }.to raise_error(IOError, "synthetic delivery failure")
+    expect(BoundarySubscriber.pluck(:address, :display_name)).to eq([["saved@example.test", "Saved"]])
+    expect(gateway).to have_received(:deliver).with(**entry).once
+  end
+
+  it "refuses an outer transaction so the block exit is the commit boundary" do
+    BoundarySubscriber.transaction do
+      expect { service.call([{address: "nested@example.test", display_name: "Nested"}]) }
+        .to raise_error(ArgumentError, "call outside an existing transaction")
+    end
+    expect(BoundarySubscriber.count).to eq(0)
+    expect(gateway.messages).to eq([])
+  end
+end
 ```
 
-#### モックを使うメリット
+通知が失敗しても、保存済みの行は残ることを期待しています。この結果を「登録と通知が一緒に成功する」とは説明できません。複数宛先の途中で通知が止まるケースや、commit直後にプロセスが停止するケースも、今回の実装では救済しません。
 
-```text
-- 速い
-- 失敗原因を切り分けやすい
-- 外部依存を排除できる
-- 異常系を再現しやすい
-```
+実際に登録後の配送を再試行可能にするなら、登録と配送意図の保存、再試行、重複処理を含む別の設計が必要です。その範囲は[after_commitと外部処理の境界](/tech-note/articles/rails/active_record/after-commit-business-workflow/)で扱います。この稿は、テストでどこを本物にするかを説明するための最小例です。
 
-#### モックを使うデメリット
-
-```text
-- 実際の挙動とのズレが起きる
-- 実装詳細に依存しやすい
-- モックしすぎると保証範囲が狭くなる
-```
-
-## 図解
-
-![RSpecではどこまで本物を使うべきか？Railsにおけるモックと実データの使い分け](/images/articles/rails-rspec-real-vs-mock.png)
-
-```mermaid
-flowchart LR
-  A[テスト対象] --> B[自社DB・重要ロジック]
-  A --> C[外部API・通知・重い処理]
-  B --> D[本物で状態確認]
-  C --> E[スタブで境界を固定]
-  D --> F[実際の保存を保証]
-  E --> G[テストの安定性を確保]
-```
-
-## 内部動作
-
-Railsのテストは、すべて本物にすると遅く不安定になり、すべてモックにすると実際の挙動を保証しにくくなります。境界は「アプリ内部の重要ロジックか」「外部依存か」で切ると判断しやすくなります。ActiveRecordのvalidation、association、DB更新は本物で確認し、外部API、時刻、ランダム、ネットワークはスタブで制御します。
-
-## まとめ
-
-RSpecでは、すべて本物にする必要も、すべてモックにする必要もありません。
-
-判断基準は次の通りです。
-
-```text
-- アプリ内部の重要なロジックは本物で確認する
-- DB保存が重要ならDB状態を見る
-- 外部APIはスタブする
-- 重い処理や再現困難な異常系はスタブする
-- 呼び出し自体が仕様ならモックで確認する
-```
-
-重要なのは、テスト対象の境界を明確にすることです。
-
-```text
-このspecはどこまでを本物で見るのか
-どこから先を依存先として切り離すのか
-```
-
-この境界を意識すると、RSpecのテストはかなり書きやすくなります。
-
-## 参考文献
-
-- [RSpec Mocks](https://rspec.info/features/3-13/rspec-mocks/)
-- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
+controllerやroutingを通すrequest spec、実際の通知クライアントがプロトコルに合うかを調べるテストも、ここには含まれません。DBの契約はDBで、外部へ渡す要求は制御できる相手で確認し、残った接続部分を別のテストへ割り当てます。テストダブル自体の選び方は[Stub・Mock・Fakeの使い分け](/tech-note/articles/rails/rspec/stub-mock-fake-by-purpose/)を参照してください。

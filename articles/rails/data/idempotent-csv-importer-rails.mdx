@@ -1,6 +1,6 @@
 ---
-title: "Railsで冪等なCSVインポーターを作る――重複防止、更新、論理削除からの復活"
-description: "CSVインポートの冪等性はアプリケーションコードだけでなく、業務キーの正規化、DB一意制約、更新戦略、エラー記録、再開位置まで含めて成立する。"
+title: "同じCSVを再投入できるRailsインポーターを作る"
+description: "sourceと外部IDで同じレコードを更新し、論理削除も復活させます。CSV内の後勝ち、CP932変換、DB途中失敗時の全体ロールバックと再投入を小さな実装で確認します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -14,139 +14,229 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/idempotent-csv-importer-rails.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+CSVを途中まで取り込んだ後で失敗すると、もう一度ファイルを送ってよいか迷います。重複を作らないだけでなく、既存行をどう更新し、削除済みの行をどう扱い、失敗した変更をどこまで残すかを決めておく必要があります。
 
-同じCSVを再投入しても重複を増やさず、社員番号をキーに後勝ち更新し、論理削除済みデータを復活させる必要があった。文字コード、外部キー解決、途中失敗、コールバックの扱いも同時に問題になる。
+ここでは小さなファイルを対象に、全レコードの形式と必須値を確認してから、一つのDBトランザクションで適用します。途中のDB制約違反で失敗したら全体を取り消し、修正したファイルを先頭から再投入する契約です。
 
-CSVインポートの冪等性はアプリケーションコードだけでなく、業務キーの正規化、DB一意制約、更新戦略、エラー記録、再開位置まで含めて成立する。
+Ruby 3.4.4、Active Record 8.1.3、CSV 3.3.4、pg gem 1.6.3、PostgreSQL 17.10で確認した例です。顧客名や外部IDはすべて説明用の合成データで、実際の顧客や社員の情報ではありません。
 
-## この記事で学べること
+## 「同じレコード」と「同じ結果」を先に決める
 
-- CSVの入力契約：ヘッダー、CP932/Shift-JIS、必須列
-- 社員番号などの業務キーを正規化する
-- DB一意制約を先に置く
-- 新規作成・更新・論理削除からの復活
-- ファイル内重複の後勝ち/先勝ちルール
-- 関連店舗名を外部キーへ解決する
+ファイルには`external_id,name`の二列を、この順で入れます。取り込み元を表す`source`はファイル全体に対して引数で渡します。
 
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Railsで冪等なCSVインポーターを作る――重複防止、更新、論理削除からの復活](/images/articles/idempotent-csv-importer-rails.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+```csv
+external_id,name
+007,サンプルA
+008,サンプルB
 ```
 
-## 実装コード例
+レコードの同一性には、`source`と`external_id`の組を使います。別の取り込み元の`007`は別レコードです。また、`007`と`7`も区別します。IDを整数へ変換すると先頭の0が失われるので、CSVの数値converterは使いません。
+
+この例では、次の規則で適用します。
+
+- キーが未登録なら作成し、登録済みなら`name`を更新します。内部主キーの`id`は置き換えません。
+- CSVに現れたキーは`deleted_at: nil`にし、論理削除済みなら復活させます。
+- CSVにないレコードは変更しません。全件置き換えや、欠落行の削除はしません。
+- 同じファイルに同じキーがあれば、後に現れたレコードの値を採用します。ただし、上書きされる前のレコードも形式・必須値を検証します。
+
+`source`、`external_id`、`name`には`String#strip`を適用します。大文字と小文字、全角と半角を同一視する正規化は加えません。業務上の同一性を、便宜的な文字変換で変えないためです。
+
+この契約の冪等性は、同じCSVとsourceを再適用したときに、対象レコードの内部ID・名前・削除状態が同じ状態に落ち着くことです。SQLの実行回数やDBの採番シーケンスまで同じにするものではありません。外部IDと内部主キーの分け方は、[外部IDを主キーとして使わない設計](/tech-note/articles/rails/data/external-id-vs-primary-key/)でも扱っています。
+
+## 重複を防ぐ制約はDBにも置く
+
+次は説明用のmigrationです。論理削除されたレコードも同じキーで再利用するため、削除状態にかかわらず組全体を一意にします。
 
 ```ruby
+class CreateImportCustomers < ActiveRecord::Migration[8.1]
+  def change
+    create_table :import_customers do |t|
+      t.string :source, null: false
+      t.string :external_id, null: false
+      t.string :name, null: false
+      t.datetime :deleted_at
+      t.check_constraint "length(name) <= 80", name: "import_customers_name_length"
+    end
+    add_index :import_customers, [:source, :external_id], unique: true
+  end
+end
+```
+
+名前の80文字制限は、この例のDB側の入力条件です。後で、途中のDB制約違反を再現するためにも使います。実際の名前に適した長さを定めたものではありません。
+
+`exists?`で未登録と分かってから`create!`するだけでは、確認と作成の間に別の処理が同じキーを作れます。組み合わせの一意性は[PostgreSQLのunique制約](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS)で守ります。`null: false`も付け、欠けたキーを許しません。
+
+## 文字コードと全レコードを確認してから、upsertする
+
+この実装は1MiB以下のCSVを文字列として受け取ります。UTF-8またはCP932を明示し、不正な文字を置換せずに拒否します。UTF-8のBOMがあれば先頭だけ取り除きます。
+
+```ruby
+require "csv"
+
+class ImportCustomer < ActiveRecord::Base
+  self.table_name = "import_customers"
+end
+
 class CustomerCsvImporter
-  def import(row)
-    customer = Customer.find_or_initialize_by(external_id: row.fetch("customer_id"))
+  class InvalidImport < StandardError; end
+  class ImportFailed < StandardError; end
 
-    customer.assign_attributes(
-      name: row.fetch("name"),
-      email: row.fetch("email"),
-      discarded_at: nil,
-    )
+  HEADERS = %w[external_id name].freeze
+  MAX_BYTES = 1024 * 1024
 
-    customer.save! if customer.changed?
+  def initialize(batch_size: 100)
+    unless batch_size.is_a?(Integer) && batch_size.positive?
+      raise ArgumentError, "batch_size must be a positive integer"
+    end
+    @batch_size = batch_size
+  end
+
+  def call(bytes, source:, encoding: "UTF-8")
+    unless source.is_a?(String) && !source.strip.empty?
+      raise InvalidImport, "sourceを指定してください"
+    end
+    unless bytes.is_a?(String) && bytes.bytesize <= MAX_BYTES
+      raise InvalidImport, "CSVは1MiB以下の文字列で渡してください"
+    end
+
+    rows = parse_rows(decode(bytes, encoding), source.strip)
+    ImportCustomer.transaction do
+      rows.each_slice(@batch_size) do |batch|
+        ImportCustomer.upsert_all(
+          batch,
+          unique_by: %i[source external_id],
+          update_only: %i[name deleted_at],
+          record_timestamps: false,
+          returning: false
+        )
+      end
+    end
+    rows.length
+  rescue ActiveRecord::StatementInvalid
+    # This rescue runs after the transaction has unwound; omit raw row data.
+    raise ImportFailed, "DB処理に失敗しました", cause: nil
+  end
+
+  private
+
+  def decode(bytes, encoding)
+    input_encoding = Encoding.find(encoding)
+    unless [Encoding::UTF_8, Encoding.find("Windows-31J")].include?(input_encoding)
+      raise InvalidImport, "UTF-8またはCP932を指定してください"
+    end
+
+    input = bytes.dup.force_encoding(input_encoding)
+    raise InvalidImport, "指定した文字コードとして不正です" unless input.valid_encoding?
+
+    input.encode(Encoding::UTF_8).delete_prefix("\uFEFF")
+  rescue EncodingError, ArgumentError
+    raise InvalidImport, "文字コードを変換できません", cause: nil
+  end
+
+  def parse_rows(text, source)
+    records = CSV.parse(text)
+    unless records.shift == HEADERS
+      raise InvalidImport, "ヘッダーはexternal_id,nameの順で指定してください"
+    end
+
+    by_key = {}
+    records.each_with_index do |fields, index|
+      number = index + 1 # Logical data record number, not a physical line number.
+      raise InvalidImport, "レコード#{number}: 列数が違います" unless fields.length == 2
+
+      external_id, name = fields.map { |value| value&.strip }
+      if external_id.nil? || external_id.empty?
+        raise InvalidImport, "レコード#{number}: external_idが必須です"
+      end
+      if name.nil? || name.empty?
+        raise InvalidImport, "レコード#{number}: nameが必須です"
+      end
+      by_key[external_id] = {
+        source: source, external_id: external_id, name: name, deleted_at: nil
+      }
+    end
+    by_key.values
+  rescue CSV::MalformedCSVError
+    raise InvalidImport, "CSVの構文を確認してください", cause: nil
   end
 end
 ```
 
-## 本編
+`force_encoding`はバイト列を変換しません。「このバイト列を何の文字コードとして読むか」を指定する処理です。その後で`valid_encoding?`を確認し、`encode`でUTF-8へ変換します。[RubyのString API](https://docs.ruby-lang.org/en/3.4/String.html#method-i-encode)では、同じ文字コードへの`encode`だけでは不正なバイト列を検出しない場合がある点も説明されています。
 
-### 発生した状況
+このため、UTF-8として渡された入力にも明示的な検査を残しています。CP932はRubyのWindows-31Jとして扱い、Shift_JIS一般と無条件に同じものとは扱いません。文字コードの自動推定は行いません。
 
-同じCSVを再投入しても重複を増やさず、社員番号をキーに後勝ち更新し、論理削除済みデータを復活させる必要があった。文字コード、外部キー解決、途中失敗、コールバックの扱いも同時に問題になる。
+CSVの引用符やフィールド中のカンマは、[CSVライブラリ](https://ruby.github.io/csv/CSV.html)に解析させます。文字列を単純にカンマで分割しないようにします。エラーの「レコード番号」はヘッダーを除いた論理レコードの番号で、引用符内に改行があればファイルの物理行番号とは一致しません。
 
-### 当初の理解・誤解
+ヘッダーだけのファイルは0件として成功させます。空のファイル、列順の違い、余分な列、必須値の欠落、壊れた引用符は拒否します。名前の長さ制限など、ここで事前検証していないDB制約に違反した場合は、DB適用の段階で失敗します。利用者へ細かな位置を返したい制約は、事前検証側にも加えると扱いやすくなります。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、CSVインポートの冪等性はアプリケーションコードだけでなく、業務キーの正規化、DB一意制約、更新戦略、エラー記録、再開位置まで含めて成立する。 という観点で見る必要がありました。
+## ファイル内の後勝ちを、DBへ渡す前に確定する
 
-### 観測したこと
+`by_key[external_id] = ...`へ後から代入することで、同一ファイル内の採用値を一件に絞っています。`source`は呼び出し中に固定なので、このHash内のキーは外部IDだけで足ります。
 
-- ImportRowの値オブジェクト
-- 正規化→検証→検索/更新→結果記録のパイプライン
-- 一意制約を含むmigration
-- 同一ファイル2回実行、論理削除復活、文字コードのRSpec
+これは後勝ちの仕様を表すと同時に、同じキーを一つのSQL文へ重ねて渡すことを避けます。PostgreSQLの`ON CONFLICT DO UPDATE`は、一つの文で同じ既存行を複数回更新することを許しません。[INSERTの仕様](https://www.postgresql.org/docs/17/sql-insert.html#SQL-ON-CONFLICT)に合わせて、SQLを作る前に重複を解消します。
 
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 行単位処理 | 詳細なエラーを返しやすい／遅い |
-| 一括upsert | 高速／モデルロジックを迂回し、復活や関連解決が複雑 |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- `upsert_all`は通常のモデルバリデーション/コールバックを通さない
-- アプリケーション側の事前検索だけでは並行実行時の重複を防げない
-- 外部入力のIDを内部主キーとして直接扱わない
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- `upsert_all`は通常のモデルバリデーション/コールバックを通さない
-- アプリケーション側の事前検索だけでは並行実行時の重複を防げない
-- 外部入力のIDを内部主キーとして直接扱わない
-
-## 再発防止テスト
+`upsert_all`の`unique_by`は、用意した複合unique indexを競合判定に使います。競合した場合に変更する列は`update_only`で名前と削除日時へ絞りました。CSVのIDを内部主キーとして渡していないため、更新でも元の内部IDを使い続けます。
 
 ```ruby
-RSpec.describe "idempotent-csv-importer-rails" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+importer = CustomerCsvImporter.new
+csv = "external_id,name\n007,サンプルA\n"
+importer.call(csv, source: "catalog-a") # => 1
 
-    expect(result).to be_present
+customer = ImportCustomer.find_by!(source: "catalog-a", external_id: "007")
+original_id = customer.id
+
+importer.call(csv, source: "catalog-a") # => 1
+customer.reload.id == original_id # => true
+ImportCustomer.where(source: "catalog-a", external_id: "007").count # => 1
+```
+
+返り値は、ファイル内の重複を解消した後の適用対象件数です。「新規作成した件数」や「値が変わった件数」ではありません。
+
+[Rails 8.1.3のupsert_all API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all)が説明するとおり、モデルのvalidationとcallbackは実行されません。型変換とシリアライズは行われます。この実装では入力の検査を前段へ置き、DB制約を最後の境界にしています。既存モデルのcallbackが通知や関連データ作成を担っている場合、そのまま`save!`から置き換えることはできません。
+
+## 三つ目のDB書き込みが失敗しても、前の変更を残さない
+
+`each_slice`でSQLを分けても、それぞれを別々にコミットしているわけではありません。全バッチを一つのトランザクションで囲んでいます。次のRSpecは専用のテストDB向けで、各例の前に対象テーブルを空にします。一バッチを一行にし、三つ目の行がDBの名前長制約に違反する状況を作ります。
+
+```ruby
+RSpec.describe CustomerCsvImporter do
+  before { ImportCustomer.delete_all }
+
+  it "途中のDB制約違反を全体ロールバックし、修正版を先頭から再投入できる" do
+    existing = ImportCustomer.create!(
+      source: "catalog-a", external_id: "007", name: "元サンプル"
+    )
+    importer = described_class.new(batch_size: 1)
+    invalid = "external_id,name\n007,更新サンプル\n008,追加サンプル\n009,#{'x' * 81}\n"
+
+    expect { importer.call(invalid, source: "catalog-a") }
+      .to raise_error(described_class::ImportFailed)
+    expect(existing.reload.name).to eq("元サンプル")
+    expect(ImportCustomer.where(source: "catalog-a").count).to eq(1)
+
+    corrected = "external_id,name\n007,更新サンプル\n008,追加サンプル\n009,修正サンプル\n"
+    expect(importer.call(corrected, source: "catalog-a")).to eq(3)
+    expect(existing.reload.name).to eq("更新サンプル")
+    expect(ImportCustomer.where(source: "catalog-a").count).to eq(3)
   end
 end
 ```
 
-## 一般化できる設計原則
+一つ目の更新と二つ目の追加も取り消されるため、どの行から再開するかを記録する必要はありません。修正版を先頭から処理します。この関数は、外側で別のDBトランザクションを開いていない専用の取り込み処理から呼ぶ前提です。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+DBの例外はトランザクションの外へ出してから、値を含まない`ImportFailed`へ変換します。PostgreSQLでは、SQLエラーが起きたトランザクション内で例外を握りつぶし、次の行へ進めません。[Railsのtransaction API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)も、この扱いを説明しています。実データを扱うときは、SQLや入力行を含む例外全文を、そのまま画面や通常ログへ流さないようにします。
 
-## まとめ
+## この方式で扱う範囲と、別に設計する範囲
 
-冪等性とは「同じ入力なら同じ最終状態へ収束すること」であり、単に重複行を作らないことだけではない、と締める。
+1MiBの上限は、全ファイルをメモリへ読み込むこの例の契約です。性能測定から決めた推奨値ではありません。SQLを100行ずつに分けても、CSV全体の解析結果と重複解消用のHashはメモリに残ります。巨大なファイルや長時間のトランザクション向けの実装とはしていません。
 
+大量データを行単位で確定するなら、成功済みの範囲、ファイルの同一性、再開位置、失敗行の再処理を別途設計します。関連店舗などを名前から解決する処理も、この例には含めていません。追加する場合は未解決の参照をどう返すかを先に決め、黙って別のレコードへ結び付けないようにします。
 
-この記事では、次のような短絡的な一般化は避けます。
+同じsourceの複数ファイルを並行投入した場合、DBの一意制約は重複行を防ぎますが、どのファイルの値を最終的に採用するかまでは決めません。この例での「後勝ち」は一ファイルの中だけの規則です。並行インポートの順序や版番号による競合制御は未実装です。
 
-- CSVの値をそのまま信頼しない
-- アプリの`find_or_create_by`だけで冪等性を保証したと書かない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+RSpecの10例で、同じファイルの再投入、更新と論理削除の復活、複合キーと先頭0、ファイル内の後勝ち、ヘッダー・必須値、CP932・UTF-8 BOM、不正バイト列、DB途中失敗からの再投入、サイズ制限が期待どおりになることを確認しました。DBが変わった場合や、既存のcallbackが必要なモデルへ組み込む場合は、その前提を追加して確認します。

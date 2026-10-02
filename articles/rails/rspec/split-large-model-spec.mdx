@@ -1,6 +1,6 @@
 ---
-title: "RSpecが巨大化したとき、ファイルを分ける基準"
-description: "Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。"
+title: "model specを分割するときのファイル配置と共有定義"
+description: "同じモデルを複数のspecファイルで検証し、単独実行、共有定義の明示require、letの上書きを確認します。"
 date: 2026-07-20
 tags:
   - "RSpec"
@@ -13,137 +13,197 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/split-large-model-spec.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+入力の検証だけを直したいのに、通知や外部連携のspecまで同じファイルに並んでいる。責務ごとのまとまりができているなら、ファイルもそのまとまりで分けられます。ただし、移動先が別のspecの読み込みや準備に頼ると、全体では通るのに単独実行では失敗する構成になります。
 
-1つのModel Specにvalidation、association、callback、scope、状態遷移、外部連携が積み上がり、検索・実行・レビューが難しくなった。単純に行数で分けても責務が見えない。
+ここでは、説明用モデルの「入力の検証」と「更新可否」を別ファイルに置きます。各ファイルが必要な定義を自分で読み込み、共有するのは小さな生成helperと一つの契約に絞ります。spec内の責務や条件を整理する方法は[長いmodel specの整理](/tech-note/articles/rails/rspec/large-model-spec-refactor/)で扱います。
 
-Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。
+対象はRuby 3.4.4、Active Model 8.1.3、RSpec 3.13.0（core 3.13.6 / expectations 3.13.5 / mocks 3.13.8）です。DBやRailsアプリの起動は不要な例です。この固定構成で、通常7例の単独・全体実行と、後述する意図的な失敗を確認しています。
 
-## この記事で学べること
+## 一つのクラスを複数のファイルでdescribeしてもよいのでしょうか
 
-- 巨大化の症状：読み込みが遅い、fixtureが衝突、contextが深い
-- validations、associations、scopes、callbacks、state transitions等の分割候補
-- ファイル名と`describe`の対応
-- 共通fixtureを共有しすぎない
-- 外部API連携をモデルから分離する可能性
-- 1クラス複数Specファイルをテストランナーがどう扱うか
+RSpecは、指定したファイルや検索パターンに合うファイルを読み込み、定義されたexample groupを実行します。検証対象のクラスが同じでも、トップレベルの`RSpec.describe`ごとにgroupが作られます。片方のgroup内の`let`やhookは、もう片方へ自動で引き継がれません。[ファイル検索の仕様](https://rspec.info/features/3-13/rspec-core/command-line/pattern-option/)と[core 3.13.6のgroup生成処理](https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/example_group.rb)で確認できます。
 
-## 前提知識
+ただし、ファイルの分割はプロセスの分離ではありません。同じプロセスで読み込むRubyの定数やグローバルな設定は共有されます。ファイル名を分けるだけでは状態の分離まで保証できません。
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+今回は次の配置にします。共有定義のファイル名には`_spec.rb`を付けず、利用するspecから読み込みます。
 
-## 図解
-
-![RSpecが巨大化したとき、ファイルを分ける基準](/images/articles/split-large-model-spec.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+```text
+lib/
+  spec_files.rb
+spec/
+  support/
+    spec_files_contracts.rb
+  spec_files/
+    validation_spec.rb
+    eligibility_spec.rb
+expected_failures/
+  shared_context_override_spec.rb
 ```
 
-## 実装コード例
+Railsアプリなら`spec/models/membership/validations_spec.rb`や`scopes_spec.rb`のような配置も考えられます。入力の検証、関連の保存、検索条件、状態遷移、保存後の処理など、読者が探す振る舞いとファイル名を合わせます。private methodごとに分ける必要はありません。RSpec Railsの読み込みや`type: :model`の扱いはアプリ側の設定で決まり、この単体例のディレクトリ名にRails固有の意味は持たせていません。
 
-```ruby
-class User < ApplicationRecord
-  validates :email, presence: true
-end
+検証対象は次の定義です。`renewal_allowed?`は有効なデータに対する状態の判定として扱い、保存や外部送信の確認には使いません。
 
-# spec/models/user/validations_spec.rb
-RSpec.describe User, type: :model do
-  describe "validations" do
-    it "requires email" do
-      user = User.new(email: nil)
+```ruby file=lib/spec_files.rb
+require "active_model"
 
-      expect(user).not_to be_valid
+module SpecFiles
+  class Membership
+    include ActiveModel::Model
+
+    attr_accessor :status, :seats
+
+    validates :status, inclusion: { in: %w[active paused cancelled] }
+    validates :seats, numericality: { only_integer: true, greater_than: 0 }
+
+    def renewal_allowed?
+      status == "active"
     end
   end
 end
 ```
 
-## 本編
+## 共有するのは定義ですか、それとも作成済みの状態ですか
 
-### 発生した状況
+ここではモデルを作る関数と、更新を許可しない状態の契約を共有します。helperは呼び出すたびに新しいモデルを返します。生成済みのモデルをグローバル変数や定数に入れて再利用しません。
 
-1つのModel Specにvalidation、association、callback、scope、状態遷移、外部連携が積み上がり、検索・実行・レビューが難しくなった。単純に行数で分けても責務が見えない。
+```ruby file=spec/support/spec_files_contracts.rb
+module SpecFilesHelpers
+  def build_membership(**overrides)
+    defaults = { status: "active", seats: 1 }
+    SpecFiles::Membership.new(defaults.merge(overrides))
+  end
+end
 
-### 当初の理解・誤解
+RSpec.shared_examples "spec files: renewal is disabled" do |state|
+  let(:membership) { build_membership(status: state) }
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Specは実装メソッド単位ではなく、読者が理解したい振る舞い・変更理由・実行コストのまとまりで分ける。巨大Specはモデル自体の責務過多を示すシグナルでもある。 という観点で見る必要がありました。
-
-### 観測したこと
-
-- 推奨ディレクトリ例
-- `user/validations_spec.rb`等の構成
-- shared_contextを乱用した悪い例と、小さなhelperの例
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 細分化 | 探しやすい／ファイル数と重複setupが増える |
-| 単一ファイル | 全体像／巨大化すると変更影響が読めない |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- ファイル分割は本体設計の問題を隠す場合がある
-- テストの実行順に依存させない
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- ファイル分割は本体設計の問題を隠す場合がある
-- テストの実行順に依存させない
-
-## 再発防止テスト
-
-```ruby
-RSpec.describe "split-large-model-spec" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
-
-    expect(result).to be_present
+  it "#{state} は有効な入力でも更新対象にならない" do
+    expect(membership).to be_valid
+    expect(membership.renewal_allowed?).to be(false)
+    expect(membership.status).to eq(state)
   end
 end
 ```
 
-## 一般化できる設計原則
+`defaults.merge(overrides)`で呼び出し側の条件を明示できます。このhelperは関連データやstubを作らず、モデル一つの生成だけを行います。共通準備に処理を追加する場合は、利用するすべてのspecで本当に必要かを確認します。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+RSpecは`spec/support`の共有定義を自動では読み込みません。共有例を使う前に、その定義が読み込まれている必要があります。今回は各specで`require_relative`します。[共有例の読み込み規約](https://rspec.info/features/3-13/rspec-core/example-groups/shared-examples/)
 
-## まとめ
+入力検証のファイルです。最後の例は、helperが前に作ったモデルの変更を次の入力へ持ち越さないことを確認します。
 
-良い分割は、テストを速くするだけでなく、ドメインの責務境界を可視化する、とまとめる。
+```ruby file=spec/spec_files/validation_spec.rb
+require "rspec"
+require_relative "../../lib/spec_files"
+require_relative "../support/spec_files_contracts"
 
+RSpec.describe SpecFiles::Membership, "入力の検証" do
+  include SpecFilesHelpers
 
-この記事では、次のような短絡的な一般化は避けます。
+  it "1 席の active を受け付ける" do
+    expect(build_membership).to be_valid
+  end
 
-- 500行など固定行数を絶対基準にしない
-- private methodごとにSpecファイルを作らない
+  it "0 席を受け付けない" do
+    membership = build_membership(seats: 0)
+    expect(membership).not_to be_valid
+    expect(membership.errors.of_kind?(:seats, :greater_than)).to be(true)
+  end
 
-## 参考文献
+  it "未知の状態を受け付けない" do
+    membership = build_membership(status: "unknown")
+    expect(membership).not_to be_valid
+    expect(membership.errors.of_kind?(:status, :inclusion)).to be(true)
+  end
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+  it "別の入力を作るときに前の変更を引き継がない" do
+    first = build_membership
+    first.status = "cancelled"
+    second = build_membership
+
+    expect(second.status).to eq("active")
+    expect(second).not_to equal(first)
+  end
+end
+```
+
+更新可否のファイルも、libとsupportを直接読み込みます。もう一方のspecを`require`して前提を得る形にはしません。
+
+```ruby file=spec/spec_files/eligibility_spec.rb
+require "rspec"
+require_relative "../../lib/spec_files"
+require_relative "../support/spec_files_contracts"
+
+RSpec.describe SpecFiles::Membership, "更新可否" do
+  include SpecFilesHelpers
+
+  it "active は更新対象になる" do
+    expect(build_membership.renewal_allowed?).to be(true)
+  end
+
+  it_behaves_like "spec files: renewal is disabled", "paused"
+  it_behaves_like "spec files: renewal is disabled", "cancelled"
+end
+```
+
+`it_behaves_like`は共有例を子のgroupへ展開します。pausedとcancelledに対して同じ契約を使いながら、`membership`の定義を分けられます。共有先へ渡す条件は引数で見えるため、共有ファイルの中にだけ業務条件が隠れることも避けられます。
+
+## shared_contextを重ねると、何が上書きされるのでしょうか
+
+共有contextには`let`やhookも含められます。しかし、同じgroupへ同名の`let`を複数定義すると、最後の定義が使われます。次は、その誤りを再現するための失敗予定のコードです。通常の`spec/`から分離して保存します。
+
+```ruby expected-failure file=expected_failures/shared_context_override_spec.rb
+require "rspec"
+require_relative "../lib/spec_files"
+
+RSpec.shared_context "spec files: membership state" do |state|
+  let(:membership) { SpecFiles::Membership.new(status: state, seats: 1) }
+end
+
+RSpec.describe SpecFiles::Membership, "共有 context を同じ group に重ねる失敗例" do
+  include_context "spec files: membership state", "paused"
+
+  it "paused を検証するつもり" do
+    expect(membership.status).to eq("paused")
+  end
+
+  include_context "spec files: membership state", "cancelled"
+
+  it "cancelled を検証する" do
+    expect(membership.status).to eq("cancelled")
+  end
+end
+```
+
+exampleが実行される前に両方の`include_context`が評価されるため、最初のexampleもcancelledのモデルを参照します。この固定構成で別途実行すると、2例のうちpausedを期待する1例が失敗し、実際にはcancelledだったことを確認できました。[shared_contextの取り込み](https://rspec.info/features/3-13/rspec-core/example-groups/shared-context/)と[letの再定義処理](https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/memoized_helpers.rb)に対応します。
+
+修正後の`eligibility_spec.rb`では、`it_behaves_like`が作る別々のgroupでpausedとcancelledを確認します。状態そのものへの期待も残しているため、両方が同じfalseを返すだけでは成功になりません。共有が不要なほど短い場合は、二つの独立した`context`へ直接書く方法でも構いません。
+
+また、作成済みのモデルを`before(:context)`で共有すると、あるexampleの変更が他へ影響し得ます。ファイルを分けても、この状態共有は解消しません。今回のhelperのように、必要な入力をexampleごとに作ります。[RSpecのhookの注意点](https://rspec.info/features/3-13/rspec-core/hooks/before-and-after-hooks/)
+
+## 分割後は、単独実行と全体実行の両方を確かめます
+
+ファイルを保存したディレクトリで、まず個別に実行します。前述の2ファイルにはそれぞれ4例と3例があります。
+
+```sh
+bundle exec rspec spec/spec_files/validation_spec.rb
+bundle exec rspec spec/spec_files/eligibility_spec.rb
+bundle exec rspec spec/spec_files --order random --seed 2048
+bundle exec rspec spec/spec_files --order random --seed 4096
+```
+
+さらに、ほかのspecを含むsuiteでも確かめます。単独実行は読み込み忘れを、全体実行は共有名の衝突や状態の持ち越しを見つける手掛かりになります。二つのseedは確認手順の例であり、全実行順の独立性を証明する値ではありません。失敗した場合は表示されたseedで順序を再現できます。[RSpecのランダム実行](https://rspec.info/features/3-13/rspec-core/command-line/randomization/)
+
+失敗予定の例は通常suiteに混ぜず、別のコマンドで確認します。
+
+```sh
+bundle exec rspec expected_failures/shared_context_override_spec.rb --format documentation
+```
+
+ファイル分割は、関連するspecを指定して実行する単位を作ります。ただし、それだけで全体の実行が速くなるとは限りません。CIでファイル単位に分配する構成なら分配先を調整できますが、各プロセスの起動や共通準備が増える場合もあります。ここでは実行時間やCI並列化を測定していません。
+
+分割先のどこでも同じ大量の関連データや外部APIのstubが必要なら、モデルの依存関係も見直します。外部送信を別の処理へ移す場合も、移動先のテストと呼び出し元との接続を確認する例が必要です。ファイル数だけ増やして、元の大きな準備を共有contextへ隠さないことが判断の基準になります。

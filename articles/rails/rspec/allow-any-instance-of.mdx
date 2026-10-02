@@ -1,6 +1,6 @@
 ---
-title: "RSpecのallow_any_instance_ofはなぜ避けられがちなのか？twice指定の曖昧さから理解する"
-description: RSpecのallow_any_instance_ofが避けられがちな理由を、対象インスタンスの曖昧さとtwice指定の意味から整理する。
+title: "RSpecのany_instanceはどこまで効くか：回数指定と置き換える範囲"
+description: "allow_any_instance_ofとexpect_any_instance_ofの回数指定を分け、既存・新規インスタンスへの影響、constructorを飛ばすnewのstub、依存を直接渡す代替案を確認します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -13,401 +13,230 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-allow-any-instance-of.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+内部で作られるオブジェクトのメソッドを差し替えたいとき、`allow_any_instance_of`は手早く書けます。ただし、対象はその一つのオブジェクトに限られません。同じexampleの中で、別の目的で作ったインスタンスにも設定が効きます。
 
-RSpecには、次のような書き方があります。
+もう一つ注意したいのが回数です。`allow_any_instance_of(...).to receive(...).twice`と、`expect_any_instance_of(...).to receive(...).twice`を同じ意味で読むことはできません。前者は呼び出しを必須にする期待ではなく、後者もクラス全体の合計回数を数えるものではありません。
 
-```ruby
-allow_any_instance_of(Widget).to receive(:name).and_return("stub name")
-```
+対象はRuby 3.4.4、RSpec 3.13.0、rspec-mocks 3.13.8です。通常の9例はローカルで実行し、すべて成功しました。通常のRubyブロックは上から一つのspecに並べられます。「失敗確認用」としたブロックだけは別ファイルへ分けます。
 
-これは、`Widget` クラスから作られる任意のインスタンスに対して、`name` メソッドをスタブする書き方です。
+## 作成済みのオブジェクトにも、これから作るものにも効く
 
-一見すると便利ですが、RSpecでは `allow_any_instance_of` や `expect_any_instance_of` は避けられがちです。
-
-理由はいくつかありますが、特に大きいのは **対象が広すぎて、テストの意図が曖昧になりやすいこと** です。
-
-この記事では、次のコードを例にして、なぜ分かりにくいのかを整理します。
+表示用のラベルを返すクラスで確認します。`render_calls`は元の`render`が実行されたかを見るための説明用の値です。DBや外部通信はありません。
 
 ```ruby
-allow_any_instance_of(Widget).to receive(:name).twice
-```
+require "rspec"
 
-## この記事で学べること
+module AnyInstanceExample
+  class LabelFormatter
+    attr_reader :prefix, :render_calls
 
-- allow_any_instance_ofの意味
-- インスタンス単位の期待値が曖昧になる理由
-- twice指定で誤解しやすい点
-- 対象インスタンスを明示する代替案
+    def initialize(prefix:)
+      unless prefix.is_a?(String) && !prefix.empty?
+        raise ArgumentError, "prefix is required"
+      end
+      @prefix = prefix
+      @render_calls = 0
+    end
 
-## 前提知識
-
-- RSpecのallow/receiveを使ったことがある
-- Railsのserviceやmodelのテストを書いたことがある
-- 複数インスタンスが生成される処理をテストしたことがある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class Widget
-  def run
-    # expensive process
+    def render(value:)
+      @render_calls += 1
+      "#{@prefix}:#{value}"
+    end
   end
-end
 
-RSpec.describe WidgetRunner do
-  it "対象インスタンスを明示して検証する" do
-    widget = instance_double(Widget)
-    allow(Widget).to receive(:new).and_return(widget)
-    allow(widget).to receive(:run)
+  class LegacyLabels
+    def call(prefix:, value:)
+      LabelFormatter.new(prefix: prefix).render(value: value)
+    end
+  end
 
-    described_class.new.call
+  class InjectedLabels
+    def initialize(formatter:)
+      @formatter = formatter
+    end
 
-    expect(widget).to have_received(:run).once
+    def call(value:)
+      @formatter.render(value: value)
+    end
   end
 end
 ```
 
-## 本編
-
-### any_instance_ofとは何か
-
-まず、通常のスタブは特定のインスタンスに対して書きます。
-
 ```ruby
-widget = Widget.new
-
-allow(widget)
-  .to receive(:name)
-  .and_return("stub name")
-```
-
-この場合、対象は明確です。
-
-```text
-このwidgetオブジェクトのnameメソッドをスタブする
-```
-
-一方で、`allow_any_instance_of` は次のように書きます。
-
-```ruby
-allow_any_instance_of(Widget)
-  .to receive(:name)
-  .and_return("stub name")
-```
-
-これは、`Widget` の任意のインスタンスに対して `name` をスタブします。
-
-```ruby
-Widget.new.name
-Widget.new.name
-```
-
-このように、どのインスタンスに対してもスタブが適用されます。
-
-### 問題のコード
-
-次のコードを見てみます。
-
-```ruby
-allow_any_instance_of(Widget).to receive(:name).twice
-```
-
-このコードは、一見すると次の2通りに読めてしまいます。
-
-```text
-解釈1:
-各Widgetインスタンスがnameメソッドを2回受け取る
-
-解釈2:
-Widgetインスタンス全体で合計2回、nameメソッドを受け取る
-```
-
-正しい解釈は、基本的には **各インスタンスごとに2回** です。
-
-### 各インスタンスごとに2回とは
-
-例えば、次のようなコードを考えます。
-
-```ruby
-widget1 = Widget.new
-widget2 = Widget.new
-
-widget1.name
-widget1.name
-
-widget2.name
-widget2.name
-```
-
-この場合、`widget1` は `name` を2回呼んでいます。
-`widget2` も `name` を2回呼んでいます。
-
-つまり、各インスタンスごとに2回です。
-
-```text
-widget1: nameを2回
-widget2: nameを2回
-```
-
-### 全体で合計2回ではない
-
-一方で、次のような意味ではありません。
-
-```ruby
-widget1 = Widget.new
-widget2 = Widget.new
-
-widget1.name # 全体の1回目
-widget2.name # 全体の2回目
-widget1.name # 全体の3回目なのでNG
-```
-
-`allow_any_instance_of(Widget).to receive(:name).twice` は、
-「Widgetクラス全体で合計2回だけnameを呼べる」という意味ではありません。
-
-ここが読み手にとって混乱しやすい点です。
-
-### なぜ混乱するのか
-
-理由は、`any_instance_of` が特定のオブジェクトを指していないからです。
-
-```ruby
-allow(widget).to receive(:name).twice
-```
-
-これなら、対象は `widget` です。
-
-```text
-このwidgetがnameを2回受け取る
-```
-
-一方で、
-
-```ruby
-allow_any_instance_of(Widget).to receive(:name).twice
-```
-
-では、対象が広くなります。
-
-```text
-どのWidgetなのか
-すでに作られたWidgetなのか
-これから作られるWidgetなのか
-複数インスタンスの場合、回数はどう数えるのか
-```
-
-読み手がこうしたことを考える必要があります。
-
-### テストの意図が曖昧になる
-
-`allow_any_instance_of` を使うと、テスト対象が見えにくくなります。
-
-例えば、次のようなサービスがあるとします。
-
-```ruby
-class ReportService
-  def call
-    report = Report.new
-    report.generate
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "affects an existing instance and a later instance but skips the method body" do
+    existing = described_class.new(prefix: "before")
+    allow_any_instance_of(described_class).to receive(:render).and_return("stubbed")
+    later = described_class.new(prefix: "after")
+    expect(existing.render(value: "x")).to eq("stubbed")
+    expect(later.render(value: "x")).to eq("stubbed")
+    expect([existing.prefix, later.prefix]).to eq(%w[before after])
+    expect([existing.render_calls, later.render_calls]).to eq([0, 0])
   end
 end
 ```
 
-このテストで、次のように書くことはできます。
+`existing`は設定前に作り、`later`は設定後に作っています。どちらも`render`の応答は置き換わり、元の本体にあるカウンター更新を通りません。prefixが保存されていることから、インスタンスの初期化まで消えたわけではないと分かります。
+
+[any_instanceの公式説明](https://rspec.info/features/3-13/rspec-mocks/working-with-legacy-code/any-instance/)でも、個別オブジェクトを対象とする通常のAPIに対し、クラスのインスタンス全体へ作用する点が注意されています。この例で必要なのが特定の一つだけなら、対象を直接渡せます。
 
 ```ruby
-allow_any_instance_of(Report)
-  .to receive(:generate)
-  .and_return(true)
-
-ReportService.new.call
-```
-
-しかし、この書き方だと、どの `Report` インスタンスが使われたのかが分かりにくいです。
-
-より明確にするなら、生成するインスタンスを明示的に差し替えます。
-
-```ruby
-report = instance_double(Report)
-
-allow(Report)
-  .to receive(:new)
-  .and_return(report)
-
-allow(report)
-  .to receive(:generate)
-  .and_return(true)
-
-ReportService.new.call
-
-expect(report).to have_received(:generate)
-```
-
-こちらの方が、どのオブジェクトに対する期待なのかが明確です。
-
-### any_instance_ofを使う場面
-
-とはいえ、`allow_any_instance_of` が常に悪いわけではありません。
-
-既存コードの都合で、依存オブジェクトを注入できない場合などには使うことがあります。
-
-例えば、対象クラスの内部で直接 `SomeClass.new` していて、それを簡単に差し替えられない場合です。
-
-```ruby
-class SomeService
-  def call
-    SomeClient.new.request
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "can stub one known instance while leaving another real" do
+    chosen = described_class.new(prefix: "chosen")
+    other = described_class.new(prefix: "other")
+    allow(chosen).to receive(:render).and_return("stubbed")
+    expect(chosen.render(value: "x")).to eq("stubbed")
+    expect(other.render(value: "x")).to eq("other:x")
+    expect(other.render_calls).to eq(1)
   end
 end
 ```
 
-このようなコードに対して、設計を変えずに一時的にテストを書くなら、`allow_any_instance_of` を使うことがあります。
+`chosen`だけを差し替えたので、`other`は元の処理を実行します。依存先が複数あるテストでは、この違いが失敗を隠さないために役立ちます。
 
-ただし、長期的には依存を外から渡せる設計にした方がテストしやすくなります。
+## メソッドのstubは、constructorまで飛ばさない
 
-### 代替案1：対象インスタンスを明示する
-
-対象が分かっているなら、特定のインスタンスに対してスタブします。
+`render`を差し替えても、`LabelFormatter.new`は本物のままです。不正なprefixを渡せば初期化で例外になります。
 
 ```ruby
-widget = instance_double(Widget)
-
-allow(widget)
-  .to receive(:name)
-  .twice
-  .and_return("stub name")
-```
-
-これなら意味は明確です。
-
-```text
-このwidgetがnameを2回受け取る
-```
-
-### 代替案2：newをスタブする
-
-内部でインスタンス生成している場合は、`new` をスタブして対象を固定できます。
-
-```ruby
-widget = instance_double(Widget)
-
-allow(Widget)
-  .to receive(:new)
-  .and_return(widget)
-
-allow(widget)
-  .to receive(:name)
-  .and_return("stub name")
-```
-
-これにより、テスト内で扱うインスタンスを明示できます。
-
-### 代替案3：依存性注入にする
-
-最もテストしやすいのは、依存オブジェクトを外から渡す設計です。
-
-```ruby
-class ReportService
-  def initialize(report: Report.new)
-    @report = report
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "does not skip the real constructor when an instance method is stubbed" do
+    allow_any_instance_of(described_class).to receive(:render).and_return("stubbed")
+    expect { described_class.new(prefix: nil) }.to raise_error(ArgumentError, "prefix is required")
   end
-
-  def call
-    report.generate
-  end
-
-  private
-
-  attr_reader :report
 end
 ```
 
-テストでは、次のように書けます。
+一方、`.new`そのものをstubしてdoubleを返すと、元の生成と初期化は実行されません。次の例では、本来拒否するnilが渡されても、テスト側で用意したオブジェクトを返します。
 
 ```ruby
-report = instance_double(Report, generate: true)
-
-described_class.new(report: report).call
-
-expect(report).to have_received(:generate)
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "skips constructor validation if new itself is stubbed" do
+    formatter = instance_double(described_class, render: "stubbed")
+    allow(described_class).to receive(:new).with(prefix: nil).and_return(formatter)
+    result = AnyInstanceExample::LegacyLabels.new.call(prefix: nil, value: "x")
+    expect(result).to eq("stubbed")
+    expect(formatter).to have_received(:render).with(value: "x").once
+  end
+end
 ```
 
-この形なら、`allow_any_instance_of` は不要になります。
+このテストが見るのは、`LegacyLabels`が受け取ったformatterに`render`を送る部分です。constructorが正しい引数で実行できることを確認した結果ではありません。
 
-### メリット・デメリット
+同じ切り分けはRailsのクエリにも当てはまります。モデルのインスタンスメソッドを置き換えたからといって、呼び出し前の検索が自動で消えるわけではありません。反対に検索を行うscopeやクラスメソッド自体をstubすれば、そのSQLの結果は確認していません。この稿の実行例は純粋なRubyなので、Active Recordのクエリ検証までは含めません。
 
-#### allow_any_instance_ofのメリット
+## twiceはallowとexpectを分けて読む
 
-```text
-- 既存コードに手を入れずにスタブできる
-- 内部でnewされるオブジェクトにも対応できる
-- 一時的なテストでは便利
-```
+固定版の挙動を、次のように分けます。
 
-#### allow_any_instance_ofのデメリット
+| 設定 | 呼び出し回数の意味 |
+| --- | --- |
+| `allow_any_instance_of(...).to receive(...).twice` | 0回や1回でも未達の期待にはならない。同じインスタンスの3回目は拒否する |
+| `expect_any_instance_of(...).to receive(...).twice` | 一つのインスタンスが2回受け取ることを期待する。別々の2個が1回ずつでは満たせない |
 
-```text
-- 対象インスタンスが曖昧になる
-- 回数指定が直感的に分かりにくい
-- テストの意図が読み取りづらい
-- 設計上の依存関係が見えにくくなる
-```
-
-## 図解
-
-![RSpecのallow_any_instance_ofはなぜ避けられがちなのか？twice指定の曖昧さから理解する](/images/articles/rails-rspec-allow-any-instance-of.png)
-
-```mermaid
-flowchart LR
-  A[allow_any_instance_of] --> B[すべてのWidgetインスタンス]
-  B --> C[どの個体に効くか曖昧]
-  D[Widget.newをスタブ] --> E[対象インスタンスを固定]
-  E --> F[期待値が明確]
-```
-
-## 内部動作
-
-any_instance_ofは、特定の1オブジェクトではなく、そのクラスから作られる任意のインスタンスに作用します。そのため、テスト対象が内部で複数インスタンスを作る場合、どの個体に対する期待なのかが読み取りにくくなります。対象インスタンスを作って渡す、newをスタブして返す、依存性注入にする、という形に寄せるとテストの意図が明確になります。
-
-## まとめ
-
-`allow_any_instance_of` は便利ですが、対象が広すぎるため、テストの意図が曖昧になりやすいです。
-
-特に次のようなコードは注意が必要です。
+まずallowです。次の二例は、未使用のインスタンスがあってもよいことと、二つのインスタンスがそれぞれ2回呼べることを示します。戻り値を設定していないので応答はnilです。
 
 ```ruby
-allow_any_instance_of(Widget).to receive(:name).twice
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "does not require two calls when twice is attached to an allowance" do
+    allow_any_instance_of(described_class).to receive(:render).twice
+    described_class.new(prefix: "unused")
+    used_once = described_class.new(prefix: "once")
+    expect(used_once.render(value: "x")).to be_nil
+  end
+
+  it "allows two calls on each of two instances without a class-wide total" do
+    allow_any_instance_of(described_class).to receive(:render).twice
+    first = described_class.new(prefix: "a")
+    second = described_class.new(prefix: "b")
+    2.times { expect(first.render(value: "x")).to be_nil }
+    2.times { expect(second.render(value: "x")).to be_nil }
+  end
+end
 ```
 
-これは「Widget全体で合計2回」ではなく、各インスタンスごとに2回という意味に読まれます。
-
-読み手の混乱を避けるためには、できるだけ次のように書く方がよいです。
+したがって、allowにtwiceを付けて「各インスタンスを必ず2回呼ぶテスト」と説明するのは不正確です。必要な呼び出しを検証するなら、[message expectationの回数指定](https://rspec.info/features/3-13/rspec-mocks/setting-constraints/receive-counts/)を使います。
 
 ```ruby
-widget = instance_double(Widget)
-
-allow(widget)
-  .to receive(:name)
-  .twice
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "satisfies an any-instance expectation using the same receiver twice" do
+    expect_any_instance_of(described_class).to receive(:render).twice.and_return("stubbed")
+    formatter = described_class.new(prefix: "a")
+    expect(formatter.render(value: "x")).to eq("stubbed")
+    expect(formatter.render(value: "x")).to eq("stubbed")
+  end
+end
 ```
 
-RSpecでは、テストが通ることだけでなく、テストの意図が読みやすいことも重要です。
+このexpectationを満たすのは、同じformatterへの2回の呼び出しです。別のインスタンスを作ること自体は禁止しませんが、その別インスタンスへの同じメソッド呼び出しを合計へ足すことはできません。
 
-`allow_any_instance_of` を使う前に、次を考えるとよいです。
+なお、複数の戻り値を並べる設定も、各インスタンスで別々に進みます。
 
-```text
-特定のインスタンスに対して書けないか
-newをスタブして対象を固定できないか
-依存性注入にできないか
+```ruby
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "uses an independent return sequence for each instance" do
+    allow_any_instance_of(described_class).to receive(:render).and_return("first", "next")
+    first = described_class.new(prefix: "a")
+    second = described_class.new(prefix: "b")
+    expect([first.render(value: "x"), first.render(value: "x")]).to eq(%w[first next])
+    expect(second.render(value: "x")).to eq("first")
+  end
+end
 ```
 
-これらを検討した上で、必要な場合だけ使うのがよいです。
+一つ目で二番目の応答まで進めても、二つ目は最初の応答から始まります。戻り値の列をクラス全体で共有する設定でもありません。
 
-## 参考文献
+## 誤った回数の読み方を、失敗するspecで確かめる
 
-- [RSpec Mocks](https://rspec.info/features/3-13/rspec-mocks/)
+次は失敗確認用です。通常のspecへ混ぜず、クラス定義を読み込む別ファイル`expected_failures/any_instance_counts_spec.rb`で実行します。3例を別に実行し、それぞれ以下の理由で失敗することを確認しました。
+
+```ruby expected-failure
+RSpec.describe "intentional any-instance count failures" do
+  it "cannot combine one call on each of two receivers to satisfy twice" do
+    expect_any_instance_of(AnyInstanceExample::LabelFormatter).to receive(:render).twice
+    first = AnyInstanceExample::LabelFormatter.new(prefix: "a")
+    second = AnyInstanceExample::LabelFormatter.new(prefix: "b")
+    first.render(value: "x")
+    second.render(value: "x")
+  end
+
+  it "fails an any-instance expectation when no instance receives the message" do
+    expect_any_instance_of(AnyInstanceExample::LabelFormatter).to receive(:render).twice
+    AnyInstanceExample::LabelFormatter.new(prefix: "unused")
+  end
+
+  it "rejects a third call to one instance under an allowance with twice" do
+    allow_any_instance_of(AnyInstanceExample::LabelFormatter).to receive(:render).twice
+    formatter = AnyInstanceExample::LabelFormatter.new(prefix: "a")
+    3.times { formatter.render(value: "x") }
+  end
+end
+```
+
+最初は別のreceiverが同じメソッドを受け取るため、二つ目は期待した呼び出しがないため、三つ目は同じreceiverで上限を超えるための失敗です。具体的なobject IDやエラーメッセージ全文を固定する必要はありません。どの契約を破ったのかを確かめます。
+
+## 一つの依存オブジェクトを渡せるなら、対象も明確になる
+
+`InjectedLabels`にはformatterを引数で渡せます。そのオブジェクトに期待を置けば、他のインスタンスへ設定を広げずに済みます。
+
+```ruby
+RSpec.describe AnyInstanceExample::LabelFormatter do
+  it "injects one collaborator and checks that receiver's call" do
+    formatter = instance_double(described_class)
+    expect(formatter).to receive(:render).with(value: "x").once.and_return("checked")
+    service = AnyInstanceExample::InjectedLabels.new(formatter: formatter)
+    expect(service.call(value: "x")).to eq("checked")
+  end
+end
+```
+
+この場合も、doubleを使ったテストがformatterの初期化や実装まで検証するわけではありません。組み立てる部分とformatter自身のテストは別に残します。どのオブジェクトとのやり取りを見ているかを、テストから読めるようにした変更です。
+
+RSpecのstubと期待には[example単位のライフサイクル](https://rspec.info/features/3-13/rspec-mocks/basics/scope/)があり、終了後に解除されます。設定はexample内か`before(:example)`へ置き、doubleを別exampleへ使い回しません。
+
+既存コードへ一時的にテストを足すときにany_instanceを使う余地はあります。使う場合は、置き換えたメソッド、影響するインスタンス、実行されない処理を説明できる範囲にとどめます。DBの保存や制約まで確認したいときの境界は、[実DBとテストダブルの使い分け](/tech-note/articles/rails/rspec/real-vs-mock-boundary/)で扱います。

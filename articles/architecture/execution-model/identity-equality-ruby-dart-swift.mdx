@@ -1,6 +1,6 @@
 ---
-title: "Rails、Dart、Swiftで異なる同一性と等価性"
-description: "各言語で参照同一性、値等価性、ハッシュ契約、永続化同一性を分け、ドメイン上どの「同じ」を必要としているか明示する。"
+title: "Ruby・Dart・Swiftで「同じ」を比較するときの基準"
+description: "同値の別インスタンスをRuby Hash・Dart HashSet・Swift Setで比べ、参照同一性、値等価性、hash契約、DBやUIの識別を区別します。"
 date: 2026-07-20
 tags:
   - "Ruby"
@@ -14,124 +14,189 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/identity-equality-ruby-dart-swift.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+同じSKUの商品を2つのオブジェクトに読み込み、Setへ入れたら2件になった。「同じ商品」と「同じインスタンス」が別の判断なら、それはコレクションの契約に沿った結果かもしれません。
 
-Railsの同じDB行、Dartの`identical`、Swiftの`===`など、言語を跨ぐと「同じ」の意味が変わる。同じ値、同じ参照、同じ永続化IDを混同するとバグになる。
+この記事では、商品を `catalog` と `sku` の組で区別する説明用の値を使います。Ruby 3.4.4、Dart 3.11.5、Apple Swift 6.3.3のCLI向けに用意した例です。各言語のファイルを独立して実行し、出力を期待値と照合しました。Swiftは言語モード6、macOS SDK26.5、target `arm64-apple-macosx26.0`で確認しています。hashの数値やメモリアドレスは期待値にしません。
 
-各言語で参照同一性、値等価性、ハッシュ契約、永続化同一性を分け、ドメイン上どの「同じ」を必要としているか明示する。
+## Rubyでは、==がtrueでもHashの同じキーとは限りませんか？
 
-## この記事で学べること
+Rubyの `equal?` は同一オブジェクトかを調べます。`==` は型に応じた等価性として再定義できます。一方、通常のHashが同じキーと扱うには、`eql?` と `hash` の契約を満たす必要があります。例えば `1 == 1.0` はtrueでも、`1.eql?(1.0)` はfalseです。[Ruby 3.4: BasicObject](https://docs.ruby-lang.org/en/3.4/BasicObject.html#method-i-equal-3F)、[Hash key equivalence](https://docs.ruby-lang.org/en/3.4/Hash.html#class-Hash-label-Hash+Key+Equivalence)
 
-- Ruby: `equal?`, `==`, `eql?`, `hash`
-- Active Record: 同じprimary keyでも別Rubyインスタンス
-- Dart: `identical`, `==`, `hashCode`
-- Swift: classの`===`, `Equatable`の`==`, value type
-- Hash/Set/Dictionary keyの契約
-- immutable Value Object
+商品キーには `Data` を使い、2つの文字列を組み合わせた値として比較します。保持する文字列も複製してfreezeし、呼び出し側による後からの変更を切り離しています。
 
-## 前提知識
+```ruby file="identity.rb"
+require "json"
 
-- Rails、Dart、Swiftのいずれかで、状態や副作用の扱いに触れたこと
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+ProductKey = Data.define(:catalog, :sku) do
+  def initialize(catalog:, sku:)
+    super(catalog: catalog.dup.freeze, sku: sku.dup.freeze)
+  end
+end
 
-## 図解
+first = ProductKey.new(catalog: "jp", sku: "sku-1")
+second = ProductKey.new(catalog: "jp", sku: "sku-1")
+same_reference = first
+stock = { first => 12 }
+source_sku = +"sku-1"
+copied_key = ProductKey.new(catalog: "jp", sku: source_sku)
+source_sku.replace("sku-2")
 
-![Rails、Dart、Swiftで異なる同一性と等価性](/images/articles/identity-equality-ruby-dart-swift.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+puts JSON.generate({
+  identity_and_value: {
+    same_object: first.equal?(second),
+    same_value: first == second,
+    same_key: first.eql?(second),
+    alias_identity: first.equal?(same_reference)
+  },
+  hash_contract: {
+    equal_hash: first.hash == second.hash,
+    lookup: stock[second],
+    distinct_keys: [first, second].to_h { |key| [key, 12] }.size,
+    other_catalog: first == ProductKey.new(catalog: "eu", sku: "sku-1")
+  },
+  copied_input: { sku: copied_key.sku, lookup: stock[copied_key] },
+  numeric_keys: { same_value: 1 == 1.0, same_key: 1.eql?(1.0), count: { 1 => "int", 1.0 => "float" }.size }
+})
 ```
 
-## 実装コード例
+`first` と `second` は別オブジェクトですが、同じ値・同じHashキーとして扱われます。期待値は `same_object: false`、`same_value: true`、`same_key: true`、`lookup: 12` です。一方 `same_reference` は `first` と同じオブジェクトなので、`alias_identity` はtrueになります。
 
-```text
-Ruby:  equal? は同一オブジェクト、== は値の比較として再定義されることがある
-Dart:  identical は同一性、== と hashCode は等価性
-Swift: === はクラス参照の同一性、== は Equatable の等価性
+`Data` 自体に属性のwriterがないことと、内部のオブジェクトが変更できないことは別です。配列などの可変値を格納しても、自動で深くfreezeされるわけではありません。上の複製とfreezeは、この商品キーがStringを受け取るという前提のための処理です。[Ruby 3.4: Data](https://docs.ruby-lang.org/en/3.4/Data.html)
+
+## Dartでは、フィールドが同じなら==もtrueになりますか？
+
+通常の自作クラスが継承する `Object.==` は同一性に基づきます。`ProductReference` のSKUが同じでも、別インスタンスなら既定の比較はfalseです。値で比較したい `ProductKey` では、`==` と `hashCode` を一緒に定義します。[Dart 3.11.5: Objectの契約](https://github.com/dart-lang/sdk/blob/3.11.5/sdk/lib/core/object.dart)
+
+```dart file="identity.dart"
+import 'dart:collection';
+import 'dart:convert';
+
+final class ProductReference {
+  final String sku;
+  ProductReference(this.sku);
+}
+
+final class ProductKey {
+  final String catalog;
+  final String sku;
+  ProductKey(this.catalog, this.sku);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProductKey && catalog == other.catalog && sku == other.sku;
+
+  @override
+  int get hashCode => Object.hash(catalog, sku);
+}
+
+void main() {
+  final rawFirst = ProductReference('sku-1');
+  final rawSecond = ProductReference('sku-1');
+  final first = ProductKey('jp', 'sku-1');
+  final second = ProductKey('jp', 'sku-1');
+  final sameReference = first;
+  final keys = HashSet<ProductKey>()..addAll([first, second]);
+  final identities = HashSet<ProductKey>.identity()..addAll([first, second]);
+  final stock = <ProductKey, int>{first: 12};
+
+  print(jsonEncode({
+    'default_comparison': {
+      'same_value': rawFirst == rawSecond,
+      'set_size': (HashSet<ProductReference>()..addAll([rawFirst, rawSecond])).length,
+    },
+    'identity_and_value': {
+      'same_object': identical(first, second),
+      'same_value': first == second,
+      'alias_identity': identical(first, sameReference),
+    },
+    'hash_contract': {
+      'equal_hash': first.hashCode == second.hashCode,
+      'lookup': stock[second],
+      'distinct_keys': keys.length,
+      'other_catalog': first == ProductKey('eu', 'sku-1'),
+    },
+    'identity_set_size': identities.length,
+  }));
+}
 ```
 
-## 本編
+`default_comparison.set_size` は2、`hash_contract.distinct_keys` は1が期待値です。比較の基準を変えたことで、同じ商品キーが集合の1要素になります。カタログが違う場合はSKUが同じでも別のキーとするため、`other_catalog` はfalseです。
 
-### 発生した状況
+同一性で区別することが目的なら、`HashSet.identity()` を使う選択もあります。この例の `identity_set_size` は2になります。「常に値比較へ変える」のではなく、その集合が何を区別するのかを決めます。[Dart 3.11.5: HashSet](https://github.com/dart-lang/sdk/blob/3.11.5/sdk/lib/collection/hash_set.dart)
 
-Railsの同じDB行、Dartの`identical`、Swiftの`===`など、言語を跨ぐと「同じ」の意味が変わる。同じ値、同じ参照、同じ永続化IDを混同するとバグになる。
+ここではconstではない通常のコンストラクターで2つのインスタンスを作っています。constの正規化や数値・recordの同一性まで、この結果から一般化しません。Dart単体の詳細は[identical・等価性・hashCode](/tech-note/articles/flutter/dart/dart-identity-equality-hashcode-equatable/)で扱います。
 
-### 当初の理解・誤解
+## Swiftの===は、structにも使うのですか？
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、各言語で参照同一性、値等価性、ハッシュ契約、永続化同一性を分け、ドメイン上どの「同じ」を必要としているか明示する。 という観点で見る必要がありました。
+Swiftの `===` はclassインスタンスの同一性を調べます。structは値型なので、同じ演算子で参照を比較する対象にはしません。`==` は `Equatable` の契約です。[The Swift Programming Language: Structures and Classes](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/)
 
-### 観測したこと
+次は商品キーをstructで、同じ商品キーを持つ参照オブジェクトをclassで表した例です。`identity.swift` をSwift 6言語モードで実行しました。Foundationは結果をJSONにするためだけに使用し、SwiftUIやactorは使いません。
 
-- 3言語で同値別インスタンスを比較
-- Ruby Hash、Dart HashSet、Swift Setの小例
-- DB同一行を2回loadするRails例
+```swift file="identity.swift"
+import Foundation
 
-### 修正案の比較
+struct ProductKey: Hashable {
+    let catalog: String
+    let sku: String
+}
 
-| 方針 | 見るべき点 |
-| --- | --- |
-| 値等価性 | ドメイン表現に有効／mutable値で危険 |
-| 参照同一性 | 所有/共有確認／永続化同一性とは別 |
+final class ProductReference: Equatable {
+    let key: ProductKey
+    init(key: ProductKey) { self.key = key }
 
-## 内部動作
+    static func == (lhs: ProductReference, rhs: ProductReference) -> Bool {
+        lhs.key == rhs.key
+    }
+}
 
-複数の言語やフレームワークを横断すると、同じ名前の概念でも意味が変わります。構文を暗記するより、実行時に何が保持され、いつ評価され、どこで副作用が出るかを追う方が、保守時の判断に効きます。
+let firstKey = ProductKey(catalog: "jp", sku: "sku-1")
+let secondKey = ProductKey(catalog: "jp", sku: "sku-1")
+let first = ProductReference(key: firstKey)
+let second = ProductReference(key: secondKey)
+let sameReference = first
+let stock = [firstKey: 12]
 
-- Swiftの`===`はclass instance identityでありvalue typeには使わない
-- Rubyの`eql?`/`hash`関係を正確に説明
-- 言語版により細部を確認
-
-```text
-syntax
-  -> state
-  -> lifecycle
-  -> boundary
-  -> execution model
+let result: [String: Any] = [
+    "identity_and_value": [
+        "same_object": first === second,
+        "same_value": first == second,
+        "alias_identity": first === sameReference
+    ],
+    "hash_contract": [
+        "equal_hash": firstKey.hashValue == secondKey.hashValue,
+        "lookup": stock[secondKey]!,
+        "distinct_keys": Set([firstKey, secondKey]).count,
+        "other_catalog": firstKey == ProductKey(catalog: "eu", sku: "sku-1")
+    ] as [String: Any]
+]
+let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+print(String(decoding: data, as: UTF8.self))
 ```
 
-## 調査手順
+`first === second` はfalseでも、ここで定義した `first == second` はtrueになります。classにも値に基づく等価性を定義できるためです。
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+`ProductKey` は全ての保存プロパティが `Hashable` なので、`==` と `hash(into:)` の合成を利用できます。Setの要素数は1、別に作ったキーでDictionaryから取得する値は12が期待値です。[Swift 6.3.3: Hashable](https://github.com/swiftlang/swift/blob/swift-6.3.3-RELEASE/stdlib/public/core/Hashable.swift)
 
-- Swiftの`===`はclass instance identityでありvalue typeには使わない
-- Rubyの`eql?`/`hash`関係を正確に説明
-- 言語版により細部を確認
+## hashが同じなら、同じ値だと判断できますか？
 
-## 再発防止テスト
+必要なのは「等しいと扱う値には同じhashを与える」という方向の契約です。逆方向は保証されず、異なる値でもhashが衝突することがあります。hashだけを永続IDや等価性の判定に使わないでください。DartやSwiftでは、別の実行で同じhash値が得られる保証もありません。[Dart 3.11.5: hashCode](https://github.com/dart-lang/sdk/blob/3.11.5/sdk/lib/core/object.dart)、[Swift 6.3.3: Hashable](https://github.com/swiftlang/swift/blob/swift-6.3.3-RELEASE/stdlib/public/core/Hashable.swift)
 
-```text
-given: 状態と境界を明示する
-when: 実行モデルに沿って処理を進める
-then: 期待した副作用だけが発生する
-```
+また、キーとして格納している間に比較やhashへ使う内容を変えると、コレクションの前提が崩れます。上の例では不変の文字列からキーを作っています。Rubyの通常のHashには、Stringキーを複製してfreezeする仕組みがありますが、自作の複合キーの内部まで同じ保護が行われるわけではありません。[Ruby 3.4: Modifying an Active Hash Key](https://docs.ruby-lang.org/en/3.4/Hash.html#class-Hash-label-Modifying+an+Active+Hash+Key)
 
-## 一般化できる設計原則
+## DBのIDやUIのidentityも、同じ話ですか？
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+何を同じものとして追跡するかは共通の問いですが、判定の契約は別です。
 
-## まとめ
+Active Record 8.1.3の `==` は、同じRubyオブジェクトか、同じモデルクラスでprimary keyが存在し一致するかを判定します。全属性の一致を判定しているわけではありません。同じ行を別インスタンスとして読み込んだ場合、`==` がtrueでも `equal?` はfalseになり得ます。この節は公式実装による確認で、今回のCLI例ではDBの読み込みは実行しません。[Rails 8.1.3: ActiveRecord::Core#==](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-3D-3D)
 
-「同じか？」という質問には、値・参照・DB identity・UI identityのどれかを必ず付ける。
+そのため、変更検知で「内容が変わったか」を調べたいのに、Entityの `==` をそのまま使うと目的がずれます。DBの識別、メモリ上の共有、属性の比較を別々にします。[Active Recordの保存差分とインスタンスの寿命](/tech-note/articles/rails/active_record/active-record-dirty-tracking-lifecycle/)もこの区別が前提です。
 
+UIにも個別の契約があります。例えばFlutterの `Widget.canUpdate` は、旧Widgetと新Widgetの `runtimeType` と `key` の一致を使います。モデルの全フィールドの等価性とは違う判断です。[Flutter: Widget.canUpdate](https://api.flutter.dev/flutter/widgets/Widget/canUpdate.html)
 
-この記事では、次のような短絡的な一般化は避けます。
+Swiftの `Identifiable` もidentityの有効期間や範囲を一律には決めません。class向け既定実装はオブジェクトの寿命に基づくため、DBの永続IDが必要なら、その契約を自分で与えます。ここではUIの再描画や状態保持を検証したとは扱いません。[Swift 6.3.3: Identifiableの契約](https://github.com/swiftlang/swift/blob/swift-6.3.3-RELEASE/stdlib/public/core/Identifiable.swift)
 
-- 演算子を単純対応表にしない
-- primary key一致だけで全ドメイン等価としない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+比較を書く前に、「同じインスタンスを共有しているか」「同じ商品キーか」「同じ保存先の行か」「同じUI要素として追跡するか」を言葉にします。その答えに合わせて、演算子、値型、キーの構成を選べます。

@@ -35,7 +35,18 @@ export function Mermaid({ chart, encodedChart }: MermaidProps) {
       .render(id, diagram)
       .then((result) => {
         if (!cancelled) {
-          setSvg(result.svg);
+          // Preserve Mermaid's drawing scale so mobile labels stay readable.
+          // The surrounding region scrolls instead of shrinking the whole SVG.
+          const template = document.createElement("template");
+          template.innerHTML = result.svg;
+          const drawing = template.content.querySelector("svg");
+          const width = drawing?.viewBox.baseVal.width;
+          if (drawing && width && Number.isFinite(width)) {
+            drawing.style.width = `${width}px`;
+            drawing.style.maxWidth = "none";
+            drawing.style.height = "auto";
+          }
+          setSvg(template.innerHTML);
           setError("");
         }
       })
@@ -60,7 +71,10 @@ export function Mermaid({ chart, encodedChart }: MermaidProps) {
 
   return (
     <div
-      className="not-prose my-8 overflow-x-auto rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+      className="reader-diagram not-prose my-8 overflow-x-auto rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+      role="region"
+      aria-label="本文の図（左右にスクロールできます）"
+      tabIndex={0}
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

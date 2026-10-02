@@ -1,6 +1,6 @@
 ---
-title: "GROUP BYとHAVINGで重複データを検出する"
-description: "重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) > 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意制約まで設計する。"
+title: "GROUP BYとHAVINGで重複を探すときの集約単位とNULL"
+description: "単一キーと複合キー、COUNTのNULL扱い、元の行へのJOIN、一意制約との違いを説明用SQLで確認します。"
 date: 2026-07-20
 tags:
   - "SQL"
@@ -14,140 +14,133 @@ articleType: reference
 draft: false
 thumbnail: "/images/articles/sql-group-by-having-duplicates.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+重複検出では、先に「どの行の、どの列が同じなら重複か」を決めます。テナント別の連絡先なら、emailだけでまとめるのか、tenant_idとemailの組でまとめるのかで、検出対象が変わります。
 
-メーカー名、発売日、車種IDなど、同じ値の組み合わせを持つレコードを調べる必要があった。Rubyで全件読み込むのではなく、DBの集約機能で候補を絞る。
+以下は合成データによる例です。PostgreSQL 17.10で、本文のSQLとNULL・JOIN・一意制約を含む8ケースの結果を確認しています。行の削除は扱いません。
 
-重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) &gt; 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意制約まで設計する。
+## emailだけでまとめると、誰と誰が同じグループになりますか
 
-## この記事で学べること
-
-- 単一カラムの重複
-- 複合キーの重複
-- `WHERE`と`HAVING`の役割差
-- NULLを含む場合のグルーピング
-- 重複グループだけでなく実レコードを取るCTE/JOIN
-- どのレコードを残すかの決定
-
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![GROUP BYとHAVINGで重複データを検出する](/images/articles/sql-group-by-having-duplicates.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+有効・無効な連絡先と、emailが不明な行を含む一時テーブルを作ります。本文のSQLは同じ接続で掲載順に実行し、最後に`ROLLBACK`します。
 
 ```sql
-SELECT email, COUNT(*) AS count
-FROM users
+BEGIN;
+CREATE TEMP TABLE gh_contacts (
+  id integer PRIMARY KEY,
+  tenant_id integer NOT NULL,
+  email text,
+  active boolean NOT NULL
+) ON COMMIT DROP;
+INSERT INTO gh_contacts (id, tenant_id, email, active) VALUES
+  (1, 10, 'alpha@example.test', true),
+  (2, 10, 'alpha@example.test', true),
+  (3, 10, NULL, true),
+  (4, 10, NULL, true),
+  (5, 20, 'alpha@example.test', true),
+  (6, 10, 'beta@example.test', false),
+  (7, 10, 'beta@example.test', true),
+  (8, 20, 'gamma@example.test', true),
+  (9, 10, 'alpha@example.test', false);
+```
+
+まず、有効な連絡先をemailだけで集約します。
+
+```sql
+SELECT email, COUNT(*) AS row_count
+FROM gh_contacts
+WHERE active
 GROUP BY email
 HAVING COUNT(*) > 1
-ORDER BY count DESC;
+ORDER BY email NULLS FIRST;
 ```
 
-```ruby
-class DuplicateEmailReport
-  def call
-    User.select("email, COUNT(*) AS count")
-      .group(:email)
-      .having("COUNT(*) > 1")
-      .order("count DESC")
-  end
-end
+期待する結果は、NULLが2行、`alpha@example.test`が3行です。alphaにはテナント10の2行と、別テナント20の1行が含まれています。「テナント内の重複」を探す目的なら、この集約単位では広すぎます。
+
+`GROUP BY`は指定した値の組で行をまとめ、`HAVING`は集約後のグループを絞ります。`WHERE active`は、その前に対象行を有効なものだけへ限定しています。[PostgreSQLのGROUP BYとHAVING](https://www.postgresql.org/docs/17/queries-table-expressions.html#QUERIES-GROUP)
+
+## 複合キーとNULLは、どう数えますか
+
+対象を「有効な行のうち、同じテナントでemailが重なるもの」に変えます。
+
+```sql
+SELECT tenant_id, email,
+  COUNT(*) AS row_count,
+  COUNT(email) AS non_null_email_count
+FROM gh_contacts
+WHERE active
+GROUP BY tenant_id, email
+HAVING COUNT(*) > 1
+ORDER BY tenant_id, email NULLS FIRST;
 ```
 
-## 本編
+| tenant_id | email | row_count | non_null_email_count |
+| --- | --- | --- | --- |
+| 10 | NULL | 2 | 0 |
+| 10 | alpha@example.test | 2 | 2 |
 
-### 発生した状況
+`COUNT(*)`は行数、`COUNT(email)`はemailがNULLでない行数です。NULLのグループで`COUNT(email)`を使うと0になるため、`HAVING COUNT(email) > 1`ではそのグループが消えます。行の重複候補を数える意図なら、まず`COUNT(*)`との違いを確かめます。[PostgreSQLのCOUNT](https://www.postgresql.org/docs/17/functions-aggregate.html)
 
-メーカー名、発売日、車種IDなど、同じ値の組み合わせを持つレコードを調べる必要があった。Rubyで全件読み込むのではなく、DBの集約機能で候補を絞る。
+ここでNULLが同じグループになることと、「email不明の人は同じ人だ」と判断することは別です。NULLを重複判定の対象から外す要件なら、`WHERE active AND email IS NOT NULL`とします。大文字小文字、前後の空白、表記の正規化も、業務上のキーを決めてから扱います。
 
-### 当初の理解・誤解
+`WHERE active`を外せば、無効な`id=9`がalphaの件数に加わり、`id=6, 7`のbetaも重複候補になります。`WHERE`は集約前の行、`HAVING`は集約後のグループという違いが、ここで結果に現れます。
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、重複検出は`GROUP BY`で同じキーをまとめ、`HAVING COUNT(*) &gt; 1`で複数件のグループだけを残す。検出後は実レコード取得と再発防止の一意... という観点で見る必要がありました。
+Railsのrelationで表すなら、同じ考え方で`where(active: true).group(:tenant_id, :email).having("COUNT(*) > 1")`と対象と集約条件を分けます。このチェーンを使うモデルや戻り値の整形はアプリ側に合わせる必要があり、この稿ではSQLを検証対象としています。[Rails 8.1.3のhaving](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-having)
 
-### 観測したこと
+## 重複したキーから、元の行をどう取り出しますか
 
-- SQL: `GROUP BY name, released_on, car_model_id HAVING COUNT(*) &gt; 1`
-- Active Recordの`group(...).having(...)`
-- CTEで重複行を展開する例
-- unique index migrationと既存重複の失敗テスト
+集約結果だけでは、確認したいidや他の属性が分かりません。重複キーをCTEにし、元テーブルへ結び直します。NULLを含むグループも戻したいので、emailには`IS NOT DISTINCT FROM`を使います。
 
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| SQL集約 | 高速でDB向き／複雑な正規化ルールは前処理が必要 |
-| アプリ処理 | 柔軟／メモリと転送コスト |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- `COUNT(*)`と`COUNT(column)`はNULLの扱いが異なる
-- DBごとのNULL一意制約挙動を確認する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
+```sql
+WITH duplicate_keys AS (
+  SELECT tenant_id, email
+  FROM gh_contacts
+  WHERE active
+  GROUP BY tenant_id, email
+  HAVING COUNT(*) > 1
+)
+SELECT c.id, c.tenant_id, c.email
+FROM gh_contacts AS c
+JOIN duplicate_keys AS d
+  ON c.tenant_id = d.tenant_id
+ AND c.email IS NOT DISTINCT FROM d.email
+WHERE c.active
+ORDER BY c.id;
 ```
 
-## 調査手順
+期待するidは`1, 2, 3, 4`です。通常の`c.email = d.email`にすると、NULL同士はtrueにならないため`3, 4`が落ちます。`IS NOT DISTINCT FROM`はNULL同士を同値として比較できます。[PostgreSQLのNULLを含む比較](https://www.postgresql.org/docs/17/functions-comparison.html)
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+外側にも`WHERE c.active`を置いています。CTEで有効な行からキーを見つけた後でも、結び直す行を絞らなければ、同じキーを持つ無効な`id=9`まで戻ってしまうからです。
 
-- `COUNT(*)`と`COUNT(column)`はNULLの扱いが異なる
-- DBごとのNULL一意制約挙動を確認する
+## 検出できた重複は、一意制約で同じように防げますか
 
-## 再発防止テスト
+PostgreSQLの通常の一意制約・unique indexは、NULL同士を異なるものとして扱います。そのため、有効な`(tenant_id=10, email=NULL)`を2行許す設定でも、上の`GROUP BY`では2行のグループになります。集約と一意性のNULLの扱いを同一視しないようにします。[PostgreSQLの一意制約](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS)
 
-```ruby
-RSpec.describe "sql-group-by-having-duplicates" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+PostgreSQL 17で「有効な行では、NULLも含めてテナント内で1つまで」としたいなら、`NULLS NOT DISTINCT`と部分unique indexの条件を組み合わせられます。次は別の空の一時テーブルで、その条件だけを確認する例です。
 
-    expect(result).to be_present
-  end
-end
+```sql
+CREATE TEMP TABLE gh_unique_strict (LIKE gh_contacts INCLUDING ALL) ON COMMIT DROP;
+CREATE UNIQUE INDEX gh_unique_strict_key
+ON gh_unique_strict (tenant_id, email) NULLS NOT DISTINCT
+WHERE active;
+INSERT INTO gh_unique_strict VALUES (1, 10, NULL, true);
+INSERT INTO gh_unique_strict VALUES (3, 10, NULL, false);
 ```
 
-## 一般化できる設計原則
+有効なNULLの行がすでにあるので、もう1行有効なNULLを追加すれば一意性違反になります。無効な行は`WHERE active`の対象外なので、上の`id=3`は投入できます。fixtureでは有効なNULLの追加に対する`23505`と、有効1行・無効1行が残ることを期待しています。[PostgreSQLのCREATE INDEX](https://www.postgresql.org/docs/17/sql-createindex.html)
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+一方、最初の`gh_contacts`にはすでに有効なalphaの重複があります。この状態で同じキーのunique indexを作ろうとすると、既存の重複により失敗します。fixtureには、index作成時の`23505`も含めています。検出SQLに通しただけで、制約を追加できる状態になったわけではありません。
 
-## まとめ
+MySQL 8.4のunique indexも、NULLを許す列では複数のNULLを許します。NULLを含む等価比較には`<=>`がありますが、この稿の`NULLS NOT DISTINCT`や部分indexのSQLをそのまま持ち込む例ではありません。MySQLの実行検証はしていません。[MySQLのunique index](https://dev.mysql.com/doc/refman/8.4/en/create-index.html)、[MySQLのNULL-safe比較](https://dev.mysql.com/doc/refman/8.4/en/comparison-operators.html)
 
-重複検出は掃除ではなく、データモデルが本来持つ一意性を見つけ直す作業だと締める。
+```sql
+ROLLBACK;
+```
 
+## 候補を見つけた後、何を決めますか
 
-この記事では、次のような短絡的な一般化は避けます。
+重複キーだけで、自動的に削除対象が決まるわけではありません。残す行、関連先を付け替える必要、失われる履歴を確認します。最新1行を候補にするなら、[ROW_NUMBERで同時刻とNULLを扱う方法](/tech-note/articles/rails/sql/row-number)のように選択規則を明示します。
 
-- 検出SQLをそのまま削除SQLへ変えない
-- 重複の業務定義を決めずに一意制約を貼らない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+整理へ進む前には、対象idと件数を読み取りだけの結果として保存し、バックアップから戻せることを確認します。別テーブルへコピーする場合は[INSERT SELECTの制約と再実行](/tech-note/articles/rails/sql/insert-select)も確認対象です。並行する書き込みがある環境で制約を導入する手順、ロック、データの整理と制約作成の間に再び重複が入る可能性は、この小さなfixtureでは検証していません。

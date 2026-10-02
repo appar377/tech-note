@@ -1,6 +1,6 @@
 ---
-title: Ubuntu系LinuxにWine経由でMT5を入れるときに確認すべきこと
-description: Wine上にMetaTrader 5を入れるとき、インストール成功よりもWine prefix、terminal path、run user、初回ログインを記録することが重要である理由を整理する。
+title: Wine経由のMT5導入：公式手順とprefixの確認点
+description: 公式Linux導入手順の範囲を確認し、実行ユーザー、Wine prefix、実行ファイル、データ保存先を分けて記録する方法を整理します。
 date: 2026-06-28
 tags:
   - Ubuntu
@@ -14,157 +14,93 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-wine-installation.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+Wine経由でMT5を導入するときは、インストーラーの完了だけでなく、後から同じ環境を起動できる記録が必要です。まず、**どのユーザーが、どのprefixを使い、どの実行ファイルを起動するか**を決めます。
 
-Ubuntu系LinuxでMT5を動かす場合、基本的にはWine経由でWindows版MT5を動かす構成になります。
+MetaTrader 5公式はLinux上でWineを使う方法を案内しています。本稿はその手順の範囲と、導入前後に分けて確認する項目を整理します。WineやMT5のインストール、起動、口座接続は実行していません。[MetaTrader 5: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-ここで大事なのは、インストールできたかどうかだけではありません。
+## 公式のLinux導入スクリプトは何を行うのか
 
-本番運用へ進めるなら、どのユーザーの、どのWine prefixに、どのterminalが入ったのかを記録する必要があります。
+2026年10月2日に参照した公式ページでは、Ubuntu、Debian、Linux Mint、Fedoraを判定し、Wineのパッケージを導入してからMT5のインストーラーを起動するスクリプトが案内されています。単一のアプリ用ファイルを置くだけの処理ではなく、OS側のパッケージ変更も含む説明です。
 
-## この記事で学べること
+公式ページは管理者権限のないターミナルから開始し、導入の途中で必要な権限を与える流れを説明しています。OSパッケージを導入する権限と、Wine上のアプリを動かすユーザーは分けて考えます。[MetaTrader 5: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
 
-- Wine経由でMT5を扱う前提
-- Wine prefixを固定する理由
-- `terminal64.exe` pathを記録する理由
-- 初回起動時に確認する項目
-- Server化する前に残しておくべき値
+ここでは配布スクリプトを取得・監査・実行していないため、コマンド一行をコピーして即実行する手順にはしません。実際に導入する段階では、公式リンクの配布物、対象OSとCPU構成、変更するパッケージ、生成先、更新方法を確認する必要があります。資料で案内されるOS名と、個別の版・構成での動作確認は同じではありません。
 
-## 前提知識
+OSやCPU構成の判断は[実行環境の選定](/tech-note/articles/linux/mt5-ubuntu/01-os-selection)、表示先を用意する条件は[headless構成](/tech-note/articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design)へ分けます。
 
-- WineはWindowsアプリをUnix-like OS上で動かす互換レイヤー
-- MetaTrader 5公式ドキュメントでは、Linux上でWineを使ってplatformを動かす説明がある
-- Wine prefixはWindows環境のようなディレクトリ構造を持つため、ユーザーやprefixが変わると別環境になる
+## prefixは実行ファイルのフォルダなのか
 
-## 本編
+`WINEPREFIX`はWineが状態を保存するディレクトリを指定します。Wine 10.0のman pageでは、未指定時の既定値は`$HOME/.wine`です。レジストリや設定などの状態に関わるため、同じ実行ファイルを指定してもprefixが違えば同じ状態を参照するとは限りません。[Wine 10.0: WINEPREFIX](https://github.com/wine-mirror/wine/blob/wine-10.0/loader/wine.man.in)
 
-### Wine経由で動かす前提
+一方、`terminal64.exe`のパスは起動対象です。Linux側のファイルパス、Wine内のドライブ表現、アプリのデータ保存先を一つの値として扱わないようにします。Wineのドライブ対応はprefix内の`dosdevices`で表現されますが、prefixを指定するだけでLinuxのファイル権限や隔離境界が作られるわけではありません。[Wine 10.0: Files / Program Arguments](https://github.com/wine-mirror/wine/blob/wine-10.0/loader/wine.man.in)
 
-MT5はLinux向けネイティブアプリとして動くわけではなく、LinuxではWineを使う構成が前提になります。
+MT5にも実行ファイルの場所とデータフォルダーの区別があります。導入方式や起動条件を確認せず、すべてのデータが実行ファイルの隣にあるとは決めません。[MetaTrader 5: Files and Folders](https://www.metatrader5.com/en/terminal/help/start_advanced/structure)
 
-MetaTrader 5公式のLinuxインストールページでは、Wineを使ってplatformを動かす説明と、Ubuntu、Debian、Linux Mint、Fedoraなどを判定してWineとplatform installerを実行するscriptが案内されています。
+公式Linuxページには`.mt5`以下の既定パスが記載されていますが、独自に指定したprefixの例と混ぜないようにします。次の表は公式スクリプトの実測結果ではなく、記録項目を示す合成例です。
 
-ただし、公式scriptを使う場合でも、内部でどのprefixに何が入ったのかを記録しておかないと、あとでsystemd化やPython連携で詰まりやすくなります。
+| 項目 | 説明用の値 | 何を区別するか |
+| --- | --- | --- |
+| 実行ユーザー | `wine-demo` | Linux上でファイルへアクセスする主体 |
+| prefix | `/srv/wine-demo/prefix` | Wineの状態を保存する場所 |
+| 実行ファイル | prefix内の`Example Terminal/terminal64.exe` | 今回起動するアプリ |
+| 実行時の表示経路 | 別途X11かWaylandかを記録 | prefixからは決まらない表示先 |
 
-### インストール方式の比較
+## 導入時と起動時の取り違えをどう見つけるか
 
-| 方式 | メリット | デメリット |
-|---|---|---|
-| 公式Linux installer / script | 手順が少ない | 内部で何をしたか追いづらい |
-| 手動Wine + MT5 installer | prefixや依存関係を管理しやすい | 初期構築が面倒 |
-| Bottles / PlayOnLinux等 | GUI管理しやすい | server自動運用では抽象化が増える |
-| Windows VPS | MT5との相性は高い | Linux運用のメリットは減る |
+次のRuby 3.4向けコードは、記録したユーザー・prefix・実行ファイルと、起動予定の値を比較します。合成値だけを扱い、OSのユーザー、環境変数、ファイル、Wine、MT5は読み取りません。
 
-どの方式でも、最終的に必要になる確認項目は同じです。
+```ruby file=cli-workbench/launch_contract.rb
+# frozen_string_literal: true
 
-### Wine prefixを固定する
+require "json"
 
-Wine prefixは、Wineが使う仮想的なWindows環境です。
+def differing_launch_fields(expected, actual)
+  %i[run_user wine_prefix terminal_path].filter_map do |field|
+    field.to_s unless expected.fetch(field) == actual[field]
+  end
+end
 
-たとえば次のように、MT5用のprefixを明示しておきます。
+# 説明用の合成値です。OS、環境変数、実ファイルを読みません。
+recorded = {
+  run_user: "wine-demo",
+  wine_prefix: "/srv/wine-demo/prefix",
+  terminal_path: "/srv/wine-demo/prefix/drive_c/Program Files/Example Terminal/terminal64.exe"
+}
 
-```text
-WINEPREFIX=/home/<user>/.wine-mt5
+launches = {
+  same: recorded.dup,
+  different_user: recorded.merge(run_user: "another-user"),
+  different_prefix: recorded.merge(wine_prefix: "/srv/wine-demo/another-prefix"),
+  different_terminal: recorded.merge(terminal_path: "/srv/wine-demo/other/terminal64.exe"),
+  omitted_prefix: recorded.reject { |key, _| key == :wine_prefix },
+  empty_prefix: recorded.merge(wine_prefix: "")
+}
+
+puts JSON.generate(launches.transform_values { |launch| differing_launch_fields(recorded, launch) })
 ```
 
-デフォルトの`~/.wine`を使っても動くことはありますが、MT5専用に分けておくと、systemd化や再構築時に説明しやすくなります。
+期待値は、`same`だけが空配列です。ユーザー、prefix、実行ファイルを変えたケースでは対応するフィールド名が返ります。prefixを省略した場合と空文字の場合も、明示した記録と一致しないため`wine_prefix`が返ります。
 
-### terminal pathを記録する
+これは「この運用では記録値を明示して揃える」という方針の比較です。Wine一般の有効・無効を判定するものではありません。空配列でも、パスの存在、所有者、アクセス権、ドライブ対応、アプリの起動成功は確認できません。文字列が同じでも、別のWine実行ファイルや更新後の状態を使っていないかは別の記録で確かめます。
 
-Python API連携では、MT5 terminalのpathが重要になります。
+Ruby 3.4.4でこのCLI例を実行し、6ケースのJSONが上の期待値と一致することを確認しました。本文から取り出した同じコードでも一致しています。合成記録の文字列比較であり、Linuxへの導入成功を示すログではありません。
 
-例としては次のようなpathになります。
+## 導入後の何を、次の工程へ渡すか
 
-```text
-/home/<user>/.wine-mt5/drive_c/Program Files/MetaTrader 5/terminal64.exe
-```
+引き継ぐ記録を、設定値と観測結果に分けます。
 
-実際にはbroker名やインストール先名でpathが変わることがあります。公開記事に書く場合は、broker名をマスクします。
+| 記録 | 内容 |
+| --- | --- |
+| 導入条件 | OSの版、CPU構成、Wineの版と入手元、MT5の配布元・版 |
+| 起動条件 | 実行ユーザー、prefix、実行ファイル、表示経路 |
+| 表示の確認 | ウィンドウが開いたか、必要な表示や操作ができたか |
+| 状態の保存先 | 実行ファイルとデータの場所を区別した記録 |
+| 未確認 | API接続、再起動後の復旧、長時間の動作など |
 
-### 初回起動で確認すること
+Wineの版を表示する`wine --version`も含め、本稿ではLinux固有の確認コマンドを実行していません。prefix全体や生のログを公開用の記録として扱わず、必要な構成情報だけを分けます。アプリの保存状態を含む可能性があるためです。
 
-初回起動時には、次を確認します。
-
-- MT5が起動する
-- Wine Mono / Gecko / font関連のダイアログを処理できる
-- broker serverが見える
-- demo accountでログインできる
-- Market Watchに対象symbolが見える
-- OS再起動後もログイン状態が維持される
-- terminal pathを記録できる
-
-実口座情報は記事に出しません。確認はdemo accountまたはマスク済み情報で扱います。
-
-### 詰まりやすいポイント
-
-よくある詰まりポイントは次です。
-
-- font関連で文字化けする
-- terminal pathが分からない
-- prefixが想定と違う
-- rootでインストールしてしまう
-- 一般ユーザーで起動すると別prefixを見る
-- GUIでは起動するがsystemdでは起動しない
-- Pythonから接続すると別terminalを探している
-
-## 図解
-
-```mermaid
-flowchart TD
-  A["Linux user"] --> B["WINEPREFIX"]
-  B --> C["drive_c"]
-  C --> D["Program Files"]
-  D --> E["MetaTrader 5"]
-  E --> F["terminal64.exe"]
-  F --> G["Python initialize path"]
-  B --> H["systemd Environment"]
-```
-
-## CLI・設定例
-
-インストール後に確認する例です。
-
-```bash
-$ echo "$USER"
-$ export WINEPREFIX=/home/<user>/.wine-mt5
-$ wine --version
-$ find "$WINEPREFIX" -iname "terminal64.exe" 2>/dev/null
-$ ps aux | grep -i terminal64.exe
-```
-
-公式scriptを使う場合も、実行ユーザーと生成されたデータディレクトリを確認します。
-
-## 内部動作
-
-Wine上のMT5は、Linuxプロセスとして起動しますが、内部的にはWine prefix内のWindows風ファイル構造を使います。
-
-```text
-Linux user
-↓
-WINEPREFIX
-↓
-drive_c
-↓
-terminal64.exe
-↓
-MT5 data / login state
-↓
-Python API connection target
-```
-
-prefixが違えば、別のWindows環境を見ているのと同じです。手動起動時とsystemd起動時でprefixがズレると、同じMT5を見ているつもりでも別環境になります。
-
-## まとめ
-
-- Wine + MT5では、インストール成功よりもprefix、terminal path、run userの記録が重要。
-- `sudo wine`やroot prefix前提の構成は避ける。
-- broker名、口座番号、server名、passwordは公開しない。
-- Server化する前に、OS version、Wine version、WINEPREFIX、terminal path、display番号を確認する。
-
-## 参考文献
-
-- [MetaTrader 5 Help: Installation on Linux](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux)
-- [WineHQ](https://www.winehq.org/)
-- [MQL5 Reference: initialize](https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py)
+ウィンドウが開いたことから、Python連携や再起動後の復旧まで成功したとは結論づけません。[Python API連携の境界](/tech-note/articles/linux/mt5-ubuntu/05-mt5-python-api-integration)と[systemd管理](/tech-note/articles/linux/mt5-ubuntu/06-systemd-operation)は、それぞれの入力と成功条件を持つ次の工程です。

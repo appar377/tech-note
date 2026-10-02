@@ -1,0 +1,2867 @@
+[
+  {
+    "kind": "articles",
+    "source": "articles/flutter/dart/dart-final-vs-const.mdx",
+    "sha256": "f8af66dd9d50f8d74ace0a68b774436c16057a03cc761a76d15ab52cfc097154",
+    "source_urls": [
+      "https://dart.dev/language/variables",
+      "https://dart.dev/language/constructors",
+      "https://api.dart.dev/dart-core/identical.html",
+      "https://dart.dev/language/variables#late-variables",
+      "https://docs.flutter.dev/perf/best-practices"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Dart",
+        "Flutter",
+        "Final",
+        "Const",
+        "Immutability"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/dart-final-vs-const.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dart-final-vs-const.png",
+    "image_sha256": "78d88af04b4d1920b57cd1fc2f35a116201f5df9ecc25e0ccd68c404a9441c49",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/dart/dart-copywith-sentinel-pattern.mdx",
+    "sha256": "f85cc607f2a3e0f46f6e78bf4a568b8d4d56f39b34a395feedefeb4c91391337",
+    "source_urls": [
+      "https://dart.dev/language/functions#named-parameters",
+      "https://dart.dev/language/libraries",
+      "https://api.dart.dev/dart-core/identical.html",
+      "https://dart.dev/language/class-modifiers#sealed",
+      "https://pub.dev/packages/freezed#how-copywith-works"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Dart",
+        "Copywith",
+        "Null Safety",
+        "Sentinel Pattern",
+        "Immutability"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/dart-copywith-sentinel-pattern.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dart-copywith-sentinel-pattern.png",
+    "image_sha256": "5eb386ef774d7350c92c2376bb1aba1a43e61d53446f599e855ed81e693ee323",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/dart/dart-identity-equality-hashcode-equatable.mdx",
+    "sha256": "9b5fccb71ac613408ac74287fc2b3d3a9ed6e42f1f228a1d46b060ec2faa748e",
+    "source_urls": [
+      "https://api.dart.dev/dart-core/Object/operator_equals.html",
+      "https://api.dart.dev/dart-core/identical.html",
+      "https://api.dart.dev/dart-core/Object/hashCode.html",
+      "https://api.dart.dev/dart-collection/HashSet-class.html",
+      "https://api.dart.dev/dart-core/List/operator_equals.html",
+      "https://pub.dev/packages/equatable"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Dart",
+        "Identity",
+        "Equality",
+        "Hashcode",
+        "Equatable"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/dart-identity-equality-hashcode-equatable.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dart-identity-equality-hashcode-equatable.png",
+    "image_sha256": "324d5a2fc8a67854c44ab523460fd6f8e0fd815138a438833c8804c80a7d1a45",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/dart/dart-future-async-await.mdx",
+    "sha256": "b2fe7e88c5f7dfc4911902c1f61f122c28d1482428a37e80c8c21fcde3d26d5b",
+    "source_urls": [
+      "https://dart.dev/libraries/async/async-await",
+      "https://dart.dev/libraries/async/async-await#execution-flow-with-async-and-await",
+      "https://dart.dev/libraries/async/async-await#handling-errors",
+      "https://api.dart.dev/dart-async/Future/wait.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Dart",
+        "Flutter",
+        "Future",
+        "Async",
+        "Await"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/dart-future-async-await.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dart-future-async-await.png",
+    "image_sha256": "f690a58eb839e782283a40f43fa4547e48cf09768b325b3d4e44138f1c10ba66",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/dart/dart-sealed-class-exhaustive-switch-api.mdx",
+    "sha256": "18b66b021072ccbcaf87d4603de3a17d375a0f39ed25e85ba491c234be1549af",
+    "source_urls": [
+      "https://dart.dev/language/pattern-types#object",
+      "https://dart.dev/language/class-modifiers#sealed",
+      "https://dart.dev/language/libraries",
+      "https://dart.dev/language/branches#exhaustiveness-checking"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Dart",
+        "Sealed Class",
+        "Pattern Matching",
+        "Api Design"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/dart-sealed-class-exhaustive-switch-api.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dart-sealed-class-exhaustive-switch-api.png",
+    "image_sha256": "c012da2c52f7f15e75b2dc2806d09990c7d14cfd796b76154c87b9470677735f",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/repository-save-create-update-design.mdx",
+    "sha256": "8ae8023ef0bca28169cd4ac8996d5d0913749323105eb87548b5c32393d75213",
+    "source_urls": [
+      "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.3.3",
+      "https://www.rfc-editor.org/rfc/rfc5789.html#section-2",
+      "https://docs.flutter.dev/app-architecture/guide#data-layer",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#section-13.1.1"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Repository",
+        "Api Design",
+        "Create",
+        "Update"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/repository-save-create-update-design.png",
+      "popular": false
+    },
+    "image": "public/images/articles/repository-save-create-update-design.png",
+    "image_sha256": "1de872703289599366d35a6542e68aecc966115090349b7050f85afde2d2c228",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/feature-first-vs-ddd.mdx",
+    "sha256": "1080251631b5740637b209a3fa08aa16fca561b03c5bd6cb64ee391bbf4b704d",
+    "source_urls": [
+      "https://docs.flutter.dev/app-architecture/guide#optional-domain-layer",
+      "https://www.domainlanguage.com/wp-content/uploads/2016/05/DDD_Reference_2015-03.pdf#page=9",
+      "https://www.domainlanguage.com/ddd/reference/",
+      "https://pub.dev/packages/analyzer/versions/9.0.0"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Feature First",
+        "Ddd",
+        "Architecture",
+        "Folder Structure"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/feature-first-vs-ddd.png",
+      "popular": false
+    },
+    "image": "public/images/articles/feature-first-vs-ddd.png",
+    "image_sha256": "05e2fb095d1a67bae86c7bd74d1cc2da3b75441953a2c6e7dc45c381e73c7a09",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/riverpod-generated-provider-code.mdx",
+    "sha256": "e18005401157cf77ecd63a8daf7031159454db22b59eb22d66d76378896e2d03",
+    "source_urls": [
+      "https://dart.dev/language/libraries",
+      "https://riverpod.dev/docs/concepts/about_code_generation",
+      "https://riverpod.dev/docs/3.0_migration#simplified-ref-and-removed-ref-subclasses",
+      "https://pub.dev/packages/build_runner/versions/2.15.1",
+      "https://riverpod.dev/docs/how_to/testing#unit-tests",
+      "https://riverpod.dev/docs/concepts/about_code_generation#enablingdisable-autodispose",
+      "https://riverpod.dev/docs/how_to/testing",
+      "https://riverpod.dev/docs/how_to/testing#mocking-providers"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Riverpod",
+        "Code Generation",
+        "Build Runner"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/riverpod-generated-provider-code.png",
+      "popular": false
+    },
+    "image": "public/images/articles/riverpod-generated-provider-code.png",
+    "image_sha256": "1d75354a7555cafedad3c88f7bd42df7e3533d70ce19d90d13388cf5ce72b31b",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/dio-cancel-token-lifecycle.mdx",
+    "sha256": "17b958600e4eb5fd422395eec34ca91f6e8b0aba85fd7471cadf8182ce119e6e",
+    "source_urls": [
+      "https://pub.dev/packages/dio/versions/5.9.2#cancellation",
+      "https://api.flutter.dev/flutter/widgets/State/dispose.html",
+      "https://riverpod.dev/docs/concepts2/auto_dispose"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Dio",
+        "CancelToken",
+        "Lifecycle",
+        "Networking"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/dio-cancel-token-lifecycle.png",
+      "popular": false
+    },
+    "image": "public/images/articles/dio-cancel-token-lifecycle.png",
+    "image_sha256": "165fabc4c84adb39c9615c795944eb966637e73a18b9fa119777194f1b745c6d",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/gorouter-riverpod-refresh-adapter.mdx",
+    "sha256": "13f35a2187a5476cfacc5973080324b236798e915df4641ae63a4d2eff19b397",
+    "source_urls": [
+      "https://pub.dev/documentation/go_router/latest/topics/Redirection-topic.html",
+      "https://riverpod.dev/docs/concepts2/refs",
+      "https://github.com/flutter/packages/blob/go_router-v17.3.0/packages/go_router/lib/src/information_provider.dart"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "GoRouter",
+        "Riverpod",
+        "Adapter",
+        "Routing"
+      ],
+      "category": "Flutter",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/gorouter-riverpod-refresh-adapter.png",
+      "popular": false
+    },
+    "image": "public/images/articles/gorouter-riverpod-refresh-adapter.png",
+    "image_sha256": "6b8ac4742f5e3ab41323f0db9178b95674ca6cb47dff54ca9144ca660f8b313e",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/flutter-global-error-handling.mdx",
+    "sha256": "ed1b04aa259cbb884be78ef4077aae967dc389115616383a12624a0a60d02e30",
+    "source_urls": [
+      "https://docs.flutter.dev/testing/errors",
+      "https://api.flutter.dev/flutter/dart-ui/PlatformDispatcher/onError.html",
+      "https://docs.flutter.dev/release/breaking-changes/zone-errors",
+      "https://api.dart.dev/dart-async/runZonedGuarded.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Error Handling",
+        "Fluttererror",
+        "Runzonedguarded",
+        "Observability"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/flutter-global-error-handling.png",
+      "popular": false
+    },
+    "image": "public/images/articles/flutter-global-error-handling.png",
+    "image_sha256": "b26ef501bcf353de2cec87f07161766b52ce8ef4efd0e4c090fa023731a4f483",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/architecture/stateful-shell-route-tab-state.mdx",
+    "sha256": "f82c17b7c5ce421ec17795f97d44520eb53ca82c67f3c00093a4db03d6aaa6da",
+    "source_urls": [
+      "https://pub.dev/documentation/go_router/latest/go_router/StatefulShellRoute-class.html",
+      "https://docs.flutter.dev/platform-integration/android/restore-state-android",
+      "https://pub.dev/documentation/go_router/latest/go_router/StatefulNavigationShell/goBranch.html",
+      "https://github.com/flutter/packages/blob/go_router-v17.3.0/packages/go_router/lib/src/route.dart"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "GoRouter",
+        "StatefulShellRoute",
+        "Navigation",
+        "Tabs"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/stateful-shell-route-tab-state.png",
+      "popular": false
+    },
+    "image": "public/images/articles/stateful-shell-route-tab-state.png",
+    "image_sha256": "2a579bd741ab02544cf6c6ad1dceed1cb265d815fe373fd61f6466c7dbfa4e2a",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/auth/di-dio-secure-storage-roles.mdx",
+    "sha256": "94e9e8774e03f11bcb07d161eefced06afaabb7d8d05d7597e56dc7048c7c00f",
+    "source_urls": [
+      "https://docs.flutter.dev/app-architecture/case-study/dependency-injection",
+      "https://pub.dev/packages/flutter_secure_storage/versions/10.3.1",
+      "https://pub.dev/packages/dio/versions/5.9.2"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Dart",
+        "Dependency Injection",
+        "Dio",
+        "Secure Storage"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/di-dio-secure-storage-roles.png",
+      "popular": false
+    },
+    "image": "public/images/articles/di-dio-secure-storage-roles.png",
+    "image_sha256": "026575e095d5e528d3cb407a187fce78b5f8a6bd44a87f0e21a863bcee4cdadb",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/auth/access-token-memory-refresh-token-secure-storage.mdx",
+    "sha256": "cc3109c9852c2116bb5e41f49fd1c6cfe2f3dac0423b7e70931f7bce03e18908",
+    "source_urls": [
+      "https://www.rfc-editor.org/rfc/rfc6749.html#section-1.4",
+      "https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2",
+      "https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#usage",
+      "https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#installation",
+      "https://www.rfc-editor.org/rfc/rfc6749.html#section-6",
+      "https://www.rfc-editor.org/rfc/rfc9700.html#section-2.2.2",
+      "https://www.rfc-editor.org/rfc/rfc7009.html#section-2",
+      "https://support.apple.com/guide/security/keychain-data-protection-secb0694df1a/web",
+      "https://developer.android.com/privacy-and-security/keystore#SecurityFeatures"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Authentication",
+        "Access Token",
+        "Refresh Token",
+        "Secure Storage"
+      ],
+      "category": "Flutter",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/access-token-memory-refresh-token-secure-storage.png",
+      "popular": false
+    },
+    "image": "public/images/articles/access-token-memory-refresh-token-secure-storage.png",
+    "image_sha256": "abf3cfe8c33a54280fc6d8d300cbf9c9ad76525b20548b8f961733023dd1032d",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/auth/single-flight-token-refresh-concurrent-401.mdx",
+    "sha256": "2ac70183397824eb8e79901aa1e7851261d5517025cd22488123aea7b6048f30",
+    "source_urls": [
+      "https://www.rfc-editor.org/rfc/rfc9700.html#section-4.14.2",
+      "https://www.rfc-editor.org/rfc/rfc6750.html#section-3.1",
+      "https://www.rfc-editor.org/rfc/rfc6749.html#section-6",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2",
+      "https://pub.dev/packages/dio/versions/5.9.2#reuse-formdatas-and-multipartfiles",
+      "https://github.com/cfug/dio/blob/dio_v5.9.2/dio/lib/src/interceptor.dart",
+      "https://www.rfc-editor.org/rfc/rfc6749.html#section-5.2",
+      "https://api.dart.dev/dart-async/Future/timeout.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "Dio",
+        "Authentication",
+        "Concurrency",
+        "Token Refresh"
+      ],
+      "category": "Flutter",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/single-flight-token-refresh-concurrent-401.png",
+      "popular": false
+    },
+    "image": "public/images/articles/single-flight-token-refresh-concurrent-401.png",
+    "image_sha256": "56967205a6af134d767733bfb339ce317081df45593f9d0495f29b2b7ba31c92",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/active-record-dirty-tracking-lifecycle.mdx",
+    "sha256": "2f40bab22fb904c21a9e393734d0f44c74c3d348399f226172c5b851c5495fdc",
+    "source_urls": [
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb#L214-L224",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Dirty.html#method-i-previous_changes",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Dirty.html#method-i-changes_applied",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-reload",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb#L57-L63",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/transactions.rb#L379-L401"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Dirty Tracking",
+        "Lifecycle"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/active-record-dirty-tracking-lifecycle.png",
+      "popular": false
+    },
+    "image": "public/images/articles/active-record-dirty-tracking-lifecycle.png",
+    "image_sha256": "b4fdc779f1951105e5e4689794837d0ab719ba064f0047f382524939bfdb8bdf",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/dirty-tracking-saved-change.mdx",
+    "sha256": "87d8fbe11f005ab8f8dc464984f294c167d74a04e9f99fc01cd22771808ff835",
+    "source_urls": [
+      "https://api.rubyonrails.org/classes/ActiveRecord/AttributeMethods/Dirty.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/dirty.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Dirty Tracking",
+        "Callback",
+        "after_commit"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-dirty-tracking-saved-change.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-dirty-tracking-saved-change.png",
+    "image_sha256": "0db0bc3b29b110c6fc3f5d58c352043079e76b8cf008207e109045f1ba1b391c",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/active-record-type-casting.mdx",
+    "sha256": "9cec462b0b5ec0ad972e7d4650ff5588129b348bc2bbb2784b98b5b963f3108a",
+    "source_urls": [
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/attribute.rb",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/before_type_cast.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Value.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/type/decimal.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Boolean.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/type/date.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Integer.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/validations/numericality.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Attributes/ClassMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Type/Value.html#method-i-changed_in_place-3F",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Type Casting",
+        "Active Model"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/active-record-type-casting.png",
+      "popular": false
+    },
+    "image": "public/images/articles/active-record-type-casting.png",
+    "image_sha256": "f8445f7b55d077c7286727a4c86987b996559bd86a5a7cc9b15051dee2a9a0ce",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/with-lock-dirty-tracking-after-commit.mdx",
+    "sha256": "77d5bc57f9577ad7265ec2ab184ccf93c2f37253b562b1067fb2a0bb15a580bf",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb#L57-L63",
+      "https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/locking/pessimistic.rb#L67-L85"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Dirty Tracking",
+        "with_lock",
+        "after_commit"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/with-lock-dirty-tracking-after-commit.png",
+      "popular": false
+    },
+    "image": "public/images/articles/with-lock-dirty-tracking-after-commit.png",
+    "image_sha256": "1fa12332473b74bfe0bbacef962231dfcad6bae96561559813a941ccccef309c",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/with-lock-after-commit-dirty-tracking.mdx",
+    "sha256": "24b2c667f51454ffee14c41a6ce1b742815ceb7b7885cbd0af2e7cbf13ffe21f",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-reload",
+      "https://guides.rubyonrails.org/active_record_callbacks.html#after-commit-and-after-rollback"
+    ],
+    "identity": {
+      "date": "2026-06-30",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Dirty Tracking",
+        "after_commit",
+        "Locking",
+        "SQL"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-with-lock-after-commit-dirty-tracking.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-with-lock-after-commit-dirty-tracking.png",
+    "image_sha256": "0c9ae62ee7fbe103430623bcb29329325724026a9865d13143fd3a7745011595",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/rails-pessimistic-locking-select-for-update.mdx",
+    "sha256": "092527a54fe200b050e9f27d0bbfb56c9d1f0796a4347ad7e3c7b87f38f741cc",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html",
+      "https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS",
+      "https://www.postgresql.org/docs/17/transaction-iso.html",
+      "https://www.postgresql.org/docs/17/sql-select.html#SQL-FOR-UPDATE-SHARE",
+      "https://www.postgresql.org/docs/17/runtime-config-client.html#GUC-LOCK-TIMEOUT",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/locking/optimistic.rb"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "SQL",
+        "Pessimistic Locking",
+        "Transactions"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-pessimistic-locking-select-for-update.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-pessimistic-locking-select-for-update.png",
+    "image_sha256": "d196a035f0c7495ea88ba3a7cf9dc525c1a500860c060cb3e31e4c4b5a65e58a",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/after-commit-business-workflow.mdx",
+    "sha256": "19f49c21531da6bdc9c81bf8285a058032781bfc720a7012e5d8d13c4edf4abc",
+    "source_urls": [
+      "https://github.com/rails/rails/blob/v8.1.3/guides/source/active_record_callbacks.md#transaction-callbacks",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-update_columns",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/attribute_methods/dirty.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html",
+      "https://www.postgresql.org/docs/17/explicit-locking.html#LOCKING-ROWS",
+      "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Callbacks",
+        "after_commit",
+        "Outbox Pattern"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/after-commit-business-workflow.png",
+      "popular": false
+    },
+    "image": "public/images/articles/after-commit-business-workflow.png",
+    "image_sha256": "86aeb8e66ac23fadf2baca71c025d1b0ad4f6b9374baaf82f24666b2c856e5c4",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/active-record-scope-naming.mdx",
+    "sha256": "24a0def476cf0e8978fe84a8acbc44e0b4c22801a52d9d8d75f3fb4b18fb28e2",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Named/ClassMethods.html#method-i-scope",
+      "https://www.postgresql.org/docs/17/queries-order.html",
+      "https://guides.rubyonrails.org/active_record_querying.html#understanding-the-method-chaining",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-reorder"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "ActiveRecord",
+        "Scope",
+        "Naming"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/active-record-scope-naming.png",
+      "popular": false
+    },
+    "image": "public/images/articles/active-record-scope-naming.png",
+    "image_sha256": "ba2af15354add6c435250907dab272cbe1e7127ccda230cea7d7c70cc6356013",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/active_record/class-name-and-inverse-of.mdx",
+    "sha256": "a806c179a95e359d659529635ea1640f9bcb6c847ac20862455db9d2d73f1634",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Associations/ClassMethods.html",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/reflection.rb#L772-L781",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/associations/association.rb#L121-L144",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/associations/builder/belongs_to.rb#L111-L137",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/reflection.rb#L699-L765",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html#label-Saving",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-3D-3D",
+      "https://docs.ruby-lang.org/en/3.4/BasicObject.html#method-i-equal-3F",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Associations/ClassMethods.html#label-Eager+loading+of+associations"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Associations",
+        "Class Name",
+        "Inverse Of",
+        "Identity"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/class-name-and-inverse-of.png",
+      "popular": false
+    },
+    "image": "public/images/articles/class-name-and-inverse-of.png",
+    "image_sha256": "294c171d832d806c4cd0130cebf3fd799e5acf45de586febd6bad1aa562fc9d8",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/data/external-id-vs-primary-key.mdx",
+    "sha256": "0edac70993aedaab806136d28865572eea91f4a869f158f5664f4a97a654e180",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/SchemaStatements.html#method-i-add_index",
+      "https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-create_or_find_by-21",
+      "https://guides.rubyonrails.org/security.html#insecure-direct-object-reference-or-forced-browsing"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Database Design",
+        "External Id",
+        "Primary Key"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/external-id-vs-primary-key.png",
+      "popular": false
+    },
+    "image": "public/images/articles/external-id-vs-primary-key.png",
+    "image_sha256": "e72197935ce6d4c0989ba4e954c6c6aefe676c46a23c3815f6ffa8450b7e478e",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/data/idempotent-csv-importer-rails.mdx",
+    "sha256": "ed5c919e5f8027e7a66c8e47d6cecb818f828f8ad7efaad55de7d1d8e28f0d57",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS",
+      "https://docs.ruby-lang.org/en/3.4/String.html#method-i-encode",
+      "https://ruby.github.io/csv/CSV.html",
+      "https://www.postgresql.org/docs/17/sql-insert.html#SQL-ON-CONFLICT",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Csv",
+        "Idempotency",
+        "Soft Delete",
+        "Import"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/idempotent-csv-importer-rails.png",
+      "popular": false
+    },
+    "image": "public/images/articles/idempotent-csv-importer-rails.png",
+    "image_sha256": "e9ce7181835c105bd7cff66a334a614f2b3832fbdb92b69a7b6fc5d9a4371b95",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/data/db-s3-transaction-boundary.mdx",
+    "sha256": "8d7d2b9dbf0d4d0f8729454201f1e4621600846975388207838017e6b91a167f",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://aws.amazon.com/builders-library/making-retries-safe-with-idempotent-APIs/",
+      "https://docs.ruby-lang.org/en/3.4/Digest.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html#method-i-current_transaction",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html",
+      "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Transactions",
+        "S3",
+        "Compensation",
+        "Outbox"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/db-s3-transaction-boundary.png",
+      "popular": false
+    },
+    "image": "public/images/articles/db-s3-transaction-boundary.png",
+    "image_sha256": "5dadc52c315eef8cde0540b14d38b37546234b032af9e7aee116e26b67b010a4",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/data/s3-db-consistency-reconciliation.mdx",
+    "sha256": "fb3ada0b9fe8128b5428e623855e9dcccb2890bc4e811c613b6452e9be45bab5",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Default/ClassMethods.html#method-i-unscoped",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html",
+      "https://docs.aws.amazon.com/sdk-for-ruby/v3/developer-guide/stubbing.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html#ConsistencyModel",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_Object.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "S3",
+        "Data Consistency",
+        "Batch"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/s3-db-consistency-reconciliation.png",
+      "popular": false
+    },
+    "image": "public/images/articles/s3-db-consistency-reconciliation.png",
+    "image_sha256": "a7b3db63b90ac8a03a11a4b55b7fa2786b0d9443255d5f9c4da05d6429b19dee",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/security/rails-to-unsafe-h-strong-parameters.mdx",
+    "sha256": "79f6db68499dff9a2faac43c9a1169f8f7c1814d836ed3b9eddc170916fb5623",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Request.html#method-i-GET",
+      "https://guides.rubyonrails.org/action_controller_overview.html#parameters",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-reorder",
+      "https://guides.rubyonrails.org/security.html#sql-injection",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionController/Parameters.html#method-i-expect",
+      "https://guides.rubyonrails.org/action_controller_advanced_topics.html#parameters-filtering"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "Strong Parameters",
+        "Security",
+        "To Unsafe H"
+      ],
+      "category": "Rails",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-to-unsafe-h-strong-parameters.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-to-unsafe-h-strong-parameters.png",
+    "image_sha256": "d979f0e439763cb7e422ca233c96a28a562b935634ae76ce3b905301974b7d33",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/describe-context-it.mdx",
+    "sha256": "808f6005b6cda102df3433076bb472fec2021948e41a1c2d10d815df92ab1797",
+    "source_urls": [
+      "https://rspec.info/features/3-13/rspec-core/example-groups/basic-structure/",
+      "https://rspec.info/features/3-13/rspec-core/command-line/ruby/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/example_group.rb#L246-L291",
+      "https://rspec.info/features/3-13/rspec-core/metadata/user-defined/",
+      "https://rspec.info/features/3-13/rspec-core/helper-methods/let/",
+      "https://rspec.info/features/3-13/rspec-core/command-line/format-option/"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "Spec Design"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-describe-context-it.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-describe-context-it.png",
+    "image_sha256": "f99f7f051d1d1e62b6c4a4ce482618868fdc0bf53615aa24d3576035dbe356cf",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/shared-examples.mdx",
+    "sha256": "cc45d171605fb77a5ff8992f37d459c3d70a1f6a4647aa6122a4f85d17a8ae18",
+    "source_urls": [
+      "https://docs.ruby-lang.org/en/3.4/Hash.html#class-Hash-label-Entry+Order",
+      "https://rspec.info/features/3-13/rspec-core/example-groups/shared-examples/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/shared_example_group.rb#L33-L40",
+      "https://rspec.info/features/3-13/rspec-core/helper-methods/let/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/memoized_helpers.rb#L306-L345",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/example_group.rb#L328-L377",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/shared_example_group.rb#L90-L103"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "shared_examples"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-shared-examples.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-shared-examples.png",
+    "image_sha256": "0d47aa464daa504a5d01176c86aadb0bfbd07e9185b53899397cf577dc93cda4",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/stub-mock-meaning.mdx",
+    "sha256": "f7efcc88991be7fece6fc96f6eb2f98f963ecf7efe6a6a53b48b59fd529d90a9",
+    "source_urls": [
+      "https://rspec.info/features/3-13/rspec-mocks/basics/allowing-messages/",
+      "https://rspec.info/features/3-13/rspec-mocks/configuring-responses/raising-an-error/",
+      "https://rspec.info/features/3-13/rspec-mocks/basics/expecting-messages/",
+      "https://rspec.info/features/3-13/rspec-mocks/basics/spies/",
+      "https://rspec.info/features/3-13/rspec-mocks/verifying-doubles/instance-doubles/"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "Mock",
+        "Stub"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-stub-mock-meaning.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-stub-mock-meaning.png",
+    "image_sha256": "93e39e5982bad871902a72a39dff30fb27253c50b23ed9ae761c3cae39b95d2b",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/stub-mock-fake-by-purpose.mdx",
+    "sha256": "194345297438fdae004589444e6b9bb4d0e9b1483a01ec25af43e717a19bfc96",
+    "source_urls": [
+      "https://martinfowler.com/bliki/TestDouble.html",
+      "https://docs.ruby-lang.org/en/3.4/Net/HTTP.html#method-i-request",
+      "https://rspec.info/features/3-13/rspec-core/example-groups/shared-examples/",
+      "https://rspec.info/features/3-13/rspec-mocks/working-with-legacy-code/any-instance/"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Testing",
+        "Stub",
+        "Mock",
+        "Fake",
+        "RSpec"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/stub-mock-fake-by-purpose.png",
+      "popular": false
+    },
+    "image": "public/images/articles/stub-mock-fake-by-purpose.png",
+    "image_sha256": "1480d475ef8e496b1388648ec67d9ec3b7adbfd53737402e63c1834547beb47d",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/let-let-bang-let-it-be.mdx",
+    "sha256": "e0f1d8afc639dd0d2e94b4a943349240e030d49f0eaaabb4758835e985d699f8",
+    "source_urls": [
+      "https://rspec.info/features/3-13/rspec-core/helper-methods/let/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/memoized_helpers.rb#L400-L403",
+      "https://rspec.info/features/3-13/rspec-core/hooks/before-and-after-hooks/",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/let_it_be.md",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/before_all.md"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "let_it_be",
+        "TestProf"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-let-let-bang-let-it-be.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-let-let-bang-let-it-be.png",
+    "image_sha256": "50787ea89721b414e2e8d8669959f5b9dd6fac61335e8a13ae3401c0c12400a2",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/let-it-be-shared-state-pollution.mdx",
+    "sha256": "eef0f3cd8e3a41dccc30282ac64d23c426ed973638050eb2985fec576ae619cc",
+    "source_urls": [
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/before_all.rb",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/let_it_be.md#caveats",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/let_it_be.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-reload",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/ext/active_record_refind.rb",
+      "https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/let_it_be.rb#L155-L240",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-freeze",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/persistence.rb#L773-L790"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "RSpec",
+        "Test Prof",
+        "let_it_be",
+        "Test Isolation"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/let-it-be-shared-state-pollution.png",
+      "popular": false
+    },
+    "image": "public/images/articles/let-it-be-shared-state-pollution.png",
+    "image_sha256": "5a83afbaea4a685b9e3364535f0ba5d243460048bed9b7c75df177d1de852f99",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/allow-any-instance-of.mdx",
+    "sha256": "af2f9e50151d347756084d21e775b27d3468e7bd289bfe421e59867287268177",
+    "source_urls": [
+      "https://rspec.info/features/3-13/rspec-mocks/working-with-legacy-code/any-instance/",
+      "https://rspec.info/features/3-13/rspec-mocks/setting-constraints/receive-counts/",
+      "https://rspec.info/features/3-13/rspec-mocks/basics/scope/"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "Mock"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-allow-any-instance-of.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-allow-any-instance-of.png",
+    "image_sha256": "c52e720ff803802aa0c4baf29ae3b8fc815492f6b98eb8dbad9218c78f2b1627",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/real-vs-mock-boundary.mdx",
+    "sha256": "043f43ed60c7439aebc4d7715aed2c91b9f88d1cac72c9f0ccc16d49dad72421",
+    "source_urls": [
+      "https://guides.rubyonrails.org/active_record_validations.html#uniqueness",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-transaction_open-3F",
+      "https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "Mock",
+        "Service Object"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-real-vs-mock.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-real-vs-mock.png",
+    "image_sha256": "7bdc1f967e338dea05407a5caf5f9b1e43f19273f375387ca645379d3200701c",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/request-spec-vs-controller-spec.mdx",
+    "sha256": "9aa800689c7925c178b1269cd0b4b499a996496ede40818e13e16f79d0d2b039",
+    "source_urls": [
+      "https://github.com/rails/rails/blob/v8.1.3/actionpack/lib/action_controller/test_case.rb",
+      "https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec/rails/example/request_example_group.rb",
+      "https://github.com/rspec/rspec-rails/blob/v8.0.4/lib/rspec/rails/example/controller_example_group.rb",
+      "https://rspec.info/features/8-0/rspec-rails/controller-specs/",
+      "https://rspec.info/features/8-0/rspec-rails/request-specs/request-spec/",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Integration/Session.html#method-i-process",
+      "https://rspec.info/features/8-0/rspec-rails/system-specs/system-specs/"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Request Spec",
+        "Controller Spec"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/request-spec-vs-controller-spec.png",
+      "popular": false
+    },
+    "image": "public/images/articles/request-spec-vs-controller-spec.png",
+    "image_sha256": "73da8992f486175c65343b3a00dccd14a62101070a290d82d4b49996625ad8f0",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/test-duplication-across-layers.mdx",
+    "sha256": "0fd4bdd49bf81dd1cdd1eed7ee62041bcac686acc4817d5c9b83a70df93b32a0",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Validations/HelperMethods.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Validations.html#method-i-save",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Errors.html#method-i-details",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionDispatch/Integration/Session.html#method-i-process",
+      "https://rspec.info/features/3-13/rspec-mocks/verifying-doubles/instance-doubles/"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Testing",
+        "Test Pyramid",
+        "Integration Test",
+        "RSpec"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/test-duplication-across-layers.png",
+      "popular": false
+    },
+    "image": "public/images/articles/test-duplication-across-layers.png",
+    "image_sha256": "596dc357b1931ac9ca9cd72f203cd588dac0d9c0910a9c91f2154dd1e90c4631",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/large-model-spec-refactor.mdx",
+    "sha256": "7120cc10a1e8c5479507b054cdb1a39b381b81f3bc17962966e14a9e63ce4740",
+    "source_urls": [
+      "https://github.com/rails/rails/blob/v8.1.3/activemodel/lib/active_model/model.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveModel/Validations.html",
+      "https://rspec.info/features/3-13/rspec-core/helper-methods/let/"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Testing",
+        "Refactoring",
+        "Model Spec"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-large-model-spec-refactor.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-large-model-spec-refactor.png",
+    "image_sha256": "c60f6db62690a68a1bb1a3ab7ae3396f8b32e67001d9ecc38dfcddaa72533b7d",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/split-large-model-spec.mdx",
+    "sha256": "174cfe7c202a32c25f6f304759c50a68509653e2c80d85c11eab22cba7e65df4",
+    "source_urls": [
+      "https://rspec.info/features/3-13/rspec-core/command-line/pattern-option/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/example_group.rb",
+      "https://rspec.info/features/3-13/rspec-core/example-groups/shared-examples/",
+      "https://rspec.info/features/3-13/rspec-core/example-groups/shared-context/",
+      "https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/memoized_helpers.rb",
+      "https://rspec.info/features/3-13/rspec-core/hooks/before-and-after-hooks/",
+      "https://rspec.info/features/3-13/rspec-core/command-line/randomization/"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "RSpec",
+        "Test Organization",
+        "Model Spec",
+        "Maintainability"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/split-large-model-spec.png",
+      "popular": false
+    },
+    "image": "public/images/articles/split-large-model-spec.png",
+    "image_sha256": "9c436c38cebfebe84857869691964eb642151d9c0a1166330f10bb850de31499",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/active-job-time-helpers.mdx",
+    "sha256": "d1be46fa7b22248d82b922571bcae7f1772b03fad5e913c8580c363cc0b16401",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/Enqueuing.html#method-i-enqueue",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/QueueAdapters/InlineAdapter.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/QueueAdapters/TestAdapter.html",
+      "https://rspec.info/features/8-0/rspec-rails/matchers/have-enqueued-job-matcher/",
+      "https://github.com/rails/rails/blob/v8.1.3/activejob/lib/active_job/queue_adapters/test_adapter.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/TestHelper.html#method-i-perform_enqueued_jobs",
+      "https://github.com/rails/rails/blob/v8.1.3/activejob/lib/active_job/test_helper.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveSupport/Testing/TimeHelpers.html#method-i-travel_to",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/Execution.html#method-i-perform_now",
+      "https://github.com/rails/rails/blob/v8.1.3/activesupport/lib/active_support/testing/time_helpers.rb"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "ActiveJob",
+        "TimeHelpers",
+        "Testing"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-active-job-time-helpers.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-active-job-time-helpers.png",
+    "image_sha256": "d274b060ba0ab8025a41c759bbb423f6080c08f29aa3c21e32c4922b79858e1f",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/rspec/nested-attributes-shoulda-matchers.mdx",
+    "sha256": "99f62fac9e83926fd41d369960acb6fa0cc6c5609578491f29e5157f1669c345",
+    "source_urls": [
+      "https://github.com/thoughtbot/shoulda-matchers/blob/v8.0.1/lib/shoulda/matchers/active_record/accept_nested_attributes_for_matcher.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html",
+      "https://github.com/thoughtbot/shoulda-matchers/blob/v8.0.1/README.md#rspec",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html#module-ActiveRecord::NestedAttributes::ClassMethods-label-One-to-many",
+      "https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/nested_attributes.rb",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/AutosaveAssociation.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html",
+      "https://guides.rubyonrails.org/v8.1/active_support_instrumentation.html#sql-active-record"
+    ],
+    "identity": {
+      "date": "2026-07-01",
+      "tags": [
+        "Rails",
+        "RSpec",
+        "Shoulda Matchers",
+        "Nested Attributes",
+        "Testing"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-rspec-nested-attributes-shoulda-matchers.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-rspec-nested-attributes-shoulda-matchers.png",
+    "image_sha256": "dbe7e94a6c709ebf2e20fc8c61b027fed24fed3e7db3b65985923d1624c00174",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/insert-select.mdx",
+    "sha256": "efa49f877191de58df5e89efcf099f5f814d5e36b1c9828d5161c238a68dec0f",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/sql-insert.html",
+      "https://www.postgresql.org/docs/17/tutorial-transactions.html",
+      "https://www.postgresql.org/docs/17/sql-insert.html#SQL-ON-CONFLICT",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-execute",
+      "https://www.postgresql.org/docs/17/transaction-iso.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/insert-select.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/insert.html"
+    ],
+    "identity": {
+      "date": "2026-06-20",
+      "tags": [
+        "SQL",
+        "Rails",
+        "ActiveRecord",
+        "MySQL"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-insert-select.png",
+      "popular": true
+    },
+    "image": "public/images/articles/rails-insert-select.png",
+    "image_sha256": "5113b0f851099673240a6586f92c59e5d4c36e5235d884f9bf8520259488650f",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/row-number.mdx",
+    "sha256": "ded63e53cae2993399a8a48dc5f2230227885780e199e4be00d0cb99c7ee45e1",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/tutorial-window.html",
+      "https://www.postgresql.org/docs/17/queries-order.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/window-functions-usage.html",
+      "https://www.postgresql.org/docs/17/functions-window.html"
+    ],
+    "identity": {
+      "date": "2026-06-21",
+      "tags": [
+        "SQL",
+        "Rails",
+        "Window Function",
+        "PostgreSQL"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-row-number.png",
+      "popular": true
+    },
+    "image": "public/images/articles/rails-row-number.png",
+    "image_sha256": "a09f5e1e8211b85ff4c693a0af43bb9c790ea7b2b30c639bd7b86f8951628ca3",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/sql-group-by-having-duplicates.mdx",
+    "sha256": "8ac06a6de2953cdea07f6d52344b812e9ec92b4b3e6c64a9458f19dd8e0b203b",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/queries-table-expressions.html#QUERIES-GROUP",
+      "https://www.postgresql.org/docs/17/functions-aggregate.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-having",
+      "https://www.postgresql.org/docs/17/functions-comparison.html",
+      "https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS",
+      "https://www.postgresql.org/docs/17/sql-createindex.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/create-index.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/comparison-operators.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "SQL",
+        "GROUP BY",
+        "HAVING",
+        "Duplicates",
+        "Rails"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/sql-group-by-having-duplicates.png",
+      "popular": false
+    },
+    "image": "public/images/articles/sql-group-by-having-duplicates.png",
+    "image_sha256": "771eaa6050941815cc7d859c329047125076ce390e65033515a62d03ee022640",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/rails-engineer-needs-sql.mdx",
+    "sha256": "d45ebeceec89b44805e445ed7da28df447c3339cd470012303ffe478e098fe12",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-to_sql",
+      "https://guides.rubyonrails.org/v8.1/active_support_instrumentation.html#sql-active-record",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-includes",
+      "https://www.postgresql.org/docs/17/using-explain.html",
+      "https://www.postgresql.org/docs/17/queries-with.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Rails",
+        "SQL",
+        "ActiveRecord",
+        "Database",
+        "Performance"
+      ],
+      "category": "Rails",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-engineer-needs-sql.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-engineer-needs-sql.png",
+    "image_sha256": "935afa83e77be3397721b488eee12d78fbb4f0453a63c6540b223ce76d8173be",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/raw-sql-summary.mdx",
+    "sha256": "0f5029e288b8dbac6f01fd96a28faa157d64cd96753c0e7212677929311c7bef",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/tutorial-window.html",
+      "https://www.postgresql.org/docs/17/sql-insert.html",
+      "https://www.postgresql.org/docs/17/ddl-constraints.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-exec_query",
+      "https://dev.mysql.com/doc/refman/8.4/en/string-functions.html#function_length",
+      "https://www.postgresql.org/docs/17/functions-string.html"
+    ],
+    "identity": {
+      "date": "2026-06-25",
+      "tags": [
+        "Rails",
+        "MySQL",
+        "SQL",
+        "ActiveRecord",
+        "Migration"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-raw-sql-summary.png",
+      "popular": true
+    },
+    "image": "public/images/articles/rails-raw-sql-summary.png",
+    "image_sha256": "106208877b01f6c41f1d27dc355e81990ce0f6c822c3b9a743f28058484a0a70",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/sql/on-duplicate-key-update.mdx",
+    "sha256": "1cf48fa4cd1a6d8683fb6c2ba585785c42f73b942e2bb7156799ddae0ca3a10b",
+    "source_urls": [
+      "https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html",
+      "https://www.postgresql.org/docs/17/sql-insert.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all"
+    ],
+    "identity": {
+      "date": "2026-06-22",
+      "tags": [
+        "SQL",
+        "MySQL",
+        "Rails",
+        "UPSERT"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/rails-upsert.png",
+      "popular": false
+    },
+    "image": "public/images/articles/rails-upsert.png",
+    "image_sha256": "ebf5060caa34537fbb954b29fef7d0c3642040dcd13dc8789ac6e49a0eabe8a7",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/sql/internal/explain-analyze.mdx",
+    "sha256": "edbb8aaf275d2310e279be52da34f270606c79ba4c56128baff94999f640870c",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/sql-analyze.html",
+      "https://www.postgresql.org/docs/17/using-explain.html",
+      "https://www.postgresql.org/docs/17/using-explain.html#USING-EXPLAIN-CAVEATS",
+      "https://www.postgresql.org/docs/17/using-explain.html#USING-EXPLAIN-ANALYZE",
+      "https://www.postgresql.org/docs/17/sql-explain.html",
+      "https://www.postgresql.org/docs/17/monitoring-stats.html",
+      "https://www.postgresql.org/docs/17/functions-sequence.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/explain.html"
+    ],
+    "identity": {
+      "date": "2026-06-26",
+      "tags": [
+        "SQL",
+        "MySQL",
+        "PostgreSQL",
+        "EXPLAIN",
+        "EXPLAIN ANALYZE",
+        "Optimizer",
+        "Performance"
+      ],
+      "category": "Database",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/sql-explain-analyze.png",
+      "popular": true
+    },
+    "image": "public/images/articles/sql-explain-analyze.png",
+    "image_sha256": "d0346563598e60523d50441360dab1c2c34dc6dc5bbbef739cb0a9c85a5642d5",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/sql/internal/view-derived-table-cte-temporary-table.mdx",
+    "sha256": "b5d80d6061c9955e25ff585d0d24a2d571b523391838f0f95d78c5d2eb7b3576",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/sql-select.html",
+      "https://www.postgresql.org/docs/17/sql-createview.html",
+      "https://www.postgresql.org/docs/17/sql-createtableas.html",
+      "https://www.postgresql.org/docs/17/transaction-iso.html",
+      "https://www.postgresql.org/docs/17/sql-createview.html#SQL-CREATEVIEW-UPDATABLE-VIEWS",
+      "https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-MODIFYING",
+      "https://www.postgresql.org/docs/17/sql-select.html#SQL-WITH",
+      "https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-CTE-MATERIALIZATION",
+      "https://www.postgresql.org/docs/17/sql-createtable.html",
+      "https://www.postgresql.org/docs/17/sql-createtable.html#SQL-CREATETABLE-ON-COMMIT",
+      "https://dev.mysql.com/doc/refman/8.4/en/derived-table-optimization.html"
+    ],
+    "identity": {
+      "date": "2026-06-26",
+      "tags": [
+        "SQL",
+        "MySQL",
+        "PostgreSQL",
+        "View",
+        "CTE",
+        "Temporary Table",
+        "Optimizer"
+      ],
+      "category": "Database",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/sql-view-derived-cte-temp-table.png",
+      "popular": true
+    },
+    "image": "public/images/articles/sql-view-derived-cte-temp-table.png",
+    "image_sha256": "95ac6d3736351ff4b7f32525343af067e878fe1d750d736334b42db2e3105192",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/git/commands/switch-checkout.mdx",
+    "sha256": "5c9c1583b9c7e64500e0aaff3299fdfb6a218672b8ff31ffd4adb845ba16fe42",
+    "source_urls": [
+      "https://git-scm.com/docs/git-switch/2.30.0",
+      "https://git-scm.com/docs/git-checkout",
+      "https://git-scm.com/docs/git-switch/2.30.0#_description",
+      "https://git-scm.com/docs/git-restore/2.30.0",
+      "https://git-scm.com/docs/git-checkout#_description",
+      "https://git-scm.com/docs/git-checkout#_detached_head"
+    ],
+    "identity": {
+      "date": "2026-06-23",
+      "tags": [
+        "Git",
+        "コマンド"
+      ],
+      "category": "Git",
+      "level": 1,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/git-switch-checkout.png",
+      "popular": true
+    },
+    "image": "public/images/articles/git-switch-checkout.png",
+    "image_sha256": "8511e6a1a81d2b60d28729eaf8d4fe71135d591cb49094ddc456697099b1f702",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/git/merge/squash-merge-rebase-conflict.mdx",
+    "sha256": "dbeb1b8cc0d90b07c2600602131b3ace507cc304d692c930ea207aa940946a04",
+    "source_urls": [
+      "https://git-scm.com/docs/git-merge/2.34.0#Documentation/git-merge.txt---squash",
+      "https://git-scm.com/docs/git-merge-base#Documentation/git-merge-base.txt---is-ancestor",
+      "https://git-scm.com/docs/git-rebase/2.34.0#_description",
+      "https://git-scm.com/docs/git-rebase/2.34.0#Documentation/git-rebase.txt---emptydropkeepask",
+      "https://docs.github.com/en/pull-requests/reference/pull-request-merges#squashing-and-merging-a-long-running-branch"
+    ],
+    "identity": {
+      "date": "2026-06-26",
+      "tags": [
+        "Git",
+        "GitHub",
+        "Squash Merge",
+        "Rebase",
+        "コンフリクト"
+      ],
+      "category": "Git",
+      "level": 2,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/git-squash-rebase-conflict.png",
+      "popular": true
+    },
+    "image": "public/images/articles/git-squash-rebase-conflict.png",
+    "image_sha256": "05d2a0a5e76afecaf8f84e3ab953a96f8cf8d225e918eb8fe20b7b332f32d529",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/github/pull-request/merge-methods.mdx",
+    "sha256": "e149d988bb19558e52ddfd04518022b19abee6083abeec94738d89ab6a6f31b4",
+    "source_urls": [
+      "https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request#merging-a-pull-request",
+      "https://docs.github.com/en/pull-requests/reference/pull-request-merges",
+      "https://git-scm.com/docs/git-merge/2.34.0#Documentation/git-merge.txt---squash",
+      "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github#rebasing-and-merging-your-commits",
+      "https://git-scm.com/docs/git-rebase/2.34.0#Documentation/git-rebase.txt---keep-empty",
+      "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github",
+      "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-linear-history",
+      "https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/merging-a-pull-request#about-pull-request-merges"
+    ],
+    "identity": {
+      "date": "2026-06-26",
+      "tags": [
+        "Git",
+        "GitHub",
+        "Pull Request"
+      ],
+      "category": "Git",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/github-pr-merge-methods.png",
+      "popular": true
+    },
+    "image": "public/images/articles/github-pr-merge-methods.png",
+    "image_sha256": "b947e9a6a766dcb1de73830c51757cf8f19611f9569b7d824cd6fdb9d2d6b448",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/swift/concurrency/swift-nonisolated-actor-isolation.mdx",
+    "sha256": "b32d42ab01f1e0dc6419555bc2e4f4ca3f965e9c4bffb1ea271170d1303655e2",
+    "source_urls": [
+      "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0306-actors.md",
+      "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0313-actor-isolation-control.md",
+      "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md",
+      "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0466-control-default-actor-isolation.md"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Swift",
+        "Concurrency",
+        "Actor",
+        "Nonisolated",
+        "Swift 6"
+      ],
+      "category": "Swift",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/swift-nonisolated-actor-isolation.png",
+      "popular": false
+    },
+    "image": "public/images/articles/swift-nonisolated-actor-isolation.png",
+    "image_sha256": "01d7c774db31d0746855838083d4e4ab978e56d3faaa088be5d79ab1d295161c",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/swiftui/layout/swiftui-ignores-safe-area.mdx",
+    "sha256": "e10994a82bb323acf585c21c8bc555619c04f8cc2625bb2016553495e256fbc3",
+    "source_urls": [
+      "https://developer.apple.com/videos/play/wwdc2021/10021/",
+      "https://developer.apple.com/documentation/swiftui/view/safeareainset(edge:alignment:spacing:content:)-4s51l",
+      "https://developer.apple.com/documentation/swiftui/view/ignoressafearea(_:edges:)",
+      "https://developer.apple.com/documentation/swiftui/safearearegions",
+      "https://developer.apple.com/documentation/swiftui/geometryproxy/safeareainsets"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "SwiftUI",
+        "Safe Area",
+        "Ignores Safe Area",
+        "Layout"
+      ],
+      "category": "SwiftUI",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/swiftui-ignores-safe-area.png",
+      "popular": false
+    },
+    "image": "public/images/articles/swiftui-ignores-safe-area.png",
+    "image_sha256": "9a47812ea917369419b5c42900ec286da464d2de6f5a71ae00b2e248e75b850a",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/flutter/swiftui/flutter-engineer-learning-swiftui.mdx",
+    "sha256": "f6e8cb0db07565173a929a59075086dfa0ed464dcc36b92fda15876e50b84fff",
+    "source_urls": [
+      "https://api.flutter.dev/flutter/widgets/State-class.html",
+      "https://developer.apple.com/videos/play/wwdc2023/10149/",
+      "https://riverpod.dev/docs/concepts2/providers",
+      "https://developer.apple.com/videos/play/wwdc2021/10022/",
+      "https://api.flutter.dev/flutter/widgets/Widget/canUpdate.html",
+      "https://dart.dev/language/constructors#constant-constructors",
+      "https://developer.apple.com/videos/play/wwdc2022/10054/",
+      "https://api.flutter.dev/flutter/widgets/Navigator-class.html",
+      "https://developer.apple.com/documentation/swiftui/view/task(id:name:priority:file:line:_:)",
+      "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0304-structured-concurrency.md",
+      "https://api.flutter.dev/flutter/widgets/State/dispose.html",
+      "https://api.flutter.dev/flutter/widgets/State/setState.html"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Flutter",
+        "SwiftUI",
+        "Comparison",
+        "State Management",
+        "Navigation"
+      ],
+      "category": "Flutter",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/flutter-engineer-learning-swiftui.png",
+      "popular": false
+    },
+    "image": "public/images/articles/flutter-engineer-learning-swiftui.png",
+    "image_sha256": "72da3882cf736885046596226a7172d5128fc8098e5da795318183e783afe75b",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/architecture/execution-model/framework-api-abstraction-leaks.mdx",
+    "sha256": "043e4946d3ccbf761d680364cc7d844f83db03b26ac736fcdfbec9f2cc24cc20",
+    "source_urls": [
+      "https://dart.dev/language/functions#named-parameters",
+      "https://dart.dev/language/operators#conditional-expressions",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Locking/Pessimistic.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-save",
+      "https://pub.dev/packages/flutter_secure_storage/versions/10.3.1#usage",
+      "https://pub.dev/packages/dio/versions/5.9.2#cancellation",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Scoping/Named/ClassMethods.html#method-i-scope"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Abstraction",
+        "Frameworks",
+        "with_lock",
+        "Save",
+        "Copywith"
+      ],
+      "category": "Architecture",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/framework-api-abstraction-leaks.png",
+      "popular": false
+    },
+    "image": "public/images/articles/framework-api-abstraction-leaks.png",
+    "image_sha256": "80951b4a8b9a26f59fd8ffe64a84135ad3b3ee3ed9d6d1344beaa5ed210caeee",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/architecture/execution-model/identity-equality-ruby-dart-swift.mdx",
+    "sha256": "3db79095d83515903a9e136bfecab2028280800f409621ea969e24dea9140b16",
+    "source_urls": [
+      "https://docs.ruby-lang.org/en/3.4/BasicObject.html#method-i-equal-3F",
+      "https://docs.ruby-lang.org/en/3.4/Hash.html#class-Hash-label-Hash+Key+Equivalence",
+      "https://docs.ruby-lang.org/en/3.4/Data.html",
+      "https://github.com/dart-lang/sdk/blob/3.11.5/sdk/lib/core/object.dart",
+      "https://github.com/dart-lang/sdk/blob/3.11.5/sdk/lib/collection/hash_set.dart",
+      "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/classesandstructures/",
+      "https://github.com/swiftlang/swift/blob/swift-6.3.3-RELEASE/stdlib/public/core/Hashable.swift",
+      "https://docs.ruby-lang.org/en/3.4/Hash.html#class-Hash-label-Modifying+an+Active+Hash+Key",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-3D-3D",
+      "https://api.flutter.dev/flutter/widgets/Widget/canUpdate.html",
+      "https://github.com/swiftlang/swift/blob/swift-6.3.3-RELEASE/stdlib/public/core/Identifiable.swift"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Ruby",
+        "Dart",
+        "Swift",
+        "Identity",
+        "Equality"
+      ],
+      "category": "Architecture",
+      "level": 3,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/identity-equality-ruby-dart-swift.png",
+      "popular": false
+    },
+    "image": "public/images/articles/identity-equality-ruby-dart-swift.png",
+    "image_sha256": "0b7aa9c9289aca9ce76dafa3f7214d2b19ffb39d9b1ff3f4db2d516cfa2c9b91",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/architecture/execution-model/execution-model-over-syntax.mdx",
+    "sha256": "c263ad09cb180a2d694c76d39e8df0241ff00adc6d3df603442d7405bf80794c",
+    "source_urls": [
+      "https://api.dart.dev/dart-async/Completer-class.html",
+      "https://dart.dev/libraries/async/async-await#execution-flow-with-async-and-await",
+      "https://dart.dev/language/concurrency",
+      "https://dart.dev/libraries/async/async-await#handling-errors"
+    ],
+    "identity": {
+      "date": "2026-07-20",
+      "tags": [
+        "Engineering",
+        "Execution Model",
+        "State",
+        "Concurrency",
+        "Transactions"
+      ],
+      "category": "Architecture",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/execution-model-over-syntax.png",
+      "popular": false
+    },
+    "image": "public/images/articles/execution-model-over-syntax.png",
+    "image_sha256": "67f2b585f612b49aae4c293036fb27262303dc5bc8da200ef49f39d3c5390bc8",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/architecture/auth/authentication-types.mdx",
+    "sha256": "1bd51e97080e91420e36995b58210340efe5eb3fc723b59adaad79c186bd54fc",
+    "source_urls": [
+      "https://pages.nist.gov/800-63-4/sp800-63b.html",
+      "https://guides.rubyonrails.org/security.html#session-storage",
+      "https://www.rfc-editor.org/rfc/rfc7519",
+      "https://www.rfc-editor.org/rfc/rfc6749#section-1.4",
+      "https://www.rfc-editor.org/rfc/rfc6750#section-1.2",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#httponly-attribute",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html",
+      "https://openid.net/specs/openid-connect-core-1_0.html#Introduction",
+      "https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation",
+      "https://www.rfc-editor.org/rfc/rfc8725#section-3",
+      "https://www.rfc-editor.org/rfc/rfc9700#section-2",
+      "https://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf",
+      "https://openid.net/specs/openid-connect-core-1_0.html#ClaimStability",
+      "https://docs.ruby-lang.org/en/3.4/Hash.html",
+      "https://www.rfc-editor.org/rfc/rfc6238",
+      "https://pages.nist.gov/800-63-4/sp800-63b.html#phishres",
+      "https://pages.nist.gov/800-63-4/sp800-63b.html#ooba",
+      "https://www.w3.org/TR/webauthn-3/#user-verification",
+      "https://www.w3.org/TR/webauthn-3/#sctn-credential-backup",
+      "https://pages.nist.gov/800-63-4/sp800-63b.html#aal2",
+      "https://www.rfc-editor.org/rfc/rfc6749#section-4.4",
+      "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html#api-keys"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Auth",
+        "Security",
+        "OAuth",
+        "OIDC",
+        "MFA",
+        "Passkey"
+      ],
+      "category": "Architecture",
+      "level": 2,
+      "articleType": "reference",
+      "draft": false,
+      "thumbnail": "/images/articles/authentication-types.png",
+      "popular": false
+    },
+    "image": "public/images/articles/authentication-types.png",
+    "image_sha256": "0c6fffdb9f75415f76c5700a0c459e4b4b0e9b92cf6392c9c9b293863d533d54",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/architecture/performance/css-image-size-pixels.mdx",
+    "sha256": "29f62b99e3075b39406654922f5c0e944960410ba733837260f5c3ca53ea4858",
+    "source_urls": [
+      "https://www.w3.org/TR/css-values-4/#absolute-lengths",
+      "https://drafts.csswg.org/cssom-view/#dom-window-devicepixelratio",
+      "https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-naturalwidth",
+      "https://html.spec.whatwg.org/multipage/rendering.html#attributes-for-embedded-content-and-images",
+      "https://www.w3.org/TR/2026/CRD-resource-timing-20260901/#dom-performanceresourcetiming-transfersize",
+      "https://www.w3.org/TR/png-3/#10Compression",
+      "https://html.spec.whatwg.org/multipage/images.html#decoding-images",
+      "https://html.spec.whatwg.org/multipage/images.html#introduction-3",
+      "https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes"
+    ],
+    "identity": {
+      "date": "2026-06-30",
+      "tags": [
+        "CSS",
+        "Images",
+        "Web Performance",
+        "Frontend",
+        "HTML"
+      ],
+      "category": "Architecture",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/css-image-size-pixels.png",
+      "popular": false
+    },
+    "image": "public/images/articles/css-image-size-pixels.png",
+    "image_sha256": "be3eac2f3ecd2d5de7e65a6fb7e7287228a4ca4ce82be609d67c049de637fbaf",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/nextjs/github-pages/static-export.mdx",
+    "sha256": "dd542c3d499fc7bcca9019898ba67a5597cdc001efa0e04b4cb73319bb194c93",
+    "source_urls": [
+      "https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages",
+      "https://nextjs.org/docs/app/guides/static-exports",
+      "https://nextjs.org/docs/app/guides/static-exports#browser-apis",
+      "https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages#types-of-github-pages-sites",
+      "https://nextjs.org/docs/app/api-reference/config/next-config-js/basePath",
+      "https://nextjs.org/docs/app/api-reference/config/next-config-js/assetPrefix",
+      "https://nextjs.org/docs/app/api-reference/functions/generate-static-params",
+      "https://nextjs.org/docs/app/guides/static-exports#version-history",
+      "https://nextjs.org/docs/app/getting-started/installation",
+      "https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages",
+      "https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site"
+    ],
+    "identity": {
+      "date": "2026-06-25",
+      "tags": [
+        "Next.js",
+        "GitHub Pages",
+        "GitHub Actions",
+        "SSG"
+      ],
+      "category": "Next.js",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/nextjs-github-pages.png",
+      "popular": true
+    },
+    "image": "public/images/articles/nextjs-github-pages.png",
+    "image_sha256": "d797e64cd6285d882ad961bdce123bef78f4fb86fdbb2eee6b141cfaf3e37ca8",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/mdx.mdx",
+    "sha256": "f5583ddb362a7a4d23a66196adfce65105c070e101735c5050d509f5784af752",
+    "source_urls": [
+      "https://mdxjs.com/docs/what-is-mdx/",
+      "https://mdxjs.com/docs/using-mdx/#components",
+      "https://mdxjs.com/docs/using-mdx/#how-mdx-works",
+      "https://mdxjs.com/packages/mdx/#evaluatefile-options",
+      "https://github.com/hashicorp/next-mdx-remote/blob/v6.0.0/README.md#javascript-expressions-in-mdx",
+      "https://nextjs.org/docs/app/guides/mdx",
+      "https://mdxjs.com/guides/frontmatter/",
+      "https://mdxjs.com/docs/what-is-mdx/#markdown"
+    ],
+    "identity": {
+      "date": "2026-06-30",
+      "tags": [
+        "File Extension",
+        "MDX",
+        "Markdown",
+        "React",
+        "Documentation"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 1
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-mdx.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-mdx.svg",
+    "image_sha256": "6bfe8c9851b549fa615243b8de4dc6f99fe8117bc689c3934124880109f2fe4c",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/00-series-overview.mdx",
+    "sha256": "37b90e6d2951033958bfbdc4665379f6a3b59ae31bd6c4e11d6a4c123c6d8622",
+    "source_urls": [
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://wayland.freedesktop.org/docs/book/Xwayland.html",
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md",
+      "https://github.com/systemd/systemd/blob/v255/man/os-release.xml",
+      "https://www.mql5.com/en/docs/python_metatrader5",
+      "https://pypi.org/project/metatrader5/5.0.6231/#files",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "Linux",
+        "MT5",
+        "Wine",
+        "Wayland",
+        "X11",
+        "XAuthority",
+        "Python",
+        "systemd"
+      ],
+      "category": "Linux",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-overview.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-overview.png",
+    "image_sha256": "b6c23edc66b8e722d51542356287ad98a804e6020d94a7a3f13122eb3d602486",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/01-os-selection.mdx",
+    "sha256": "630e70d5952e45edbcccaa0289f4ec9c81f2360e6d072bcc082b13d4e2104258",
+    "source_urls": [
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://ubuntu.com/desktop/flavors",
+      "https://discourse.ubuntu.com/t/ubuntu-24-04-lts-noble-numbat-release-notes/39890",
+      "https://ubuntu.com/server/docs/tutorial/basic-installation/",
+      "https://manpages.debian.org/bookworm/dpkg/dpkg.1.en.html",
+      "https://pypi.org/project/metatrader5/5.0.6231/#files",
+      "https://ubuntu.com/about/release-cycle",
+      "https://lubuntu.me/noble-1-released/"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "Lubuntu",
+        "Xubuntu",
+        "Kubuntu",
+        "MT5",
+        "Wine"
+      ],
+      "category": "Linux",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-os-selection.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-os-selection.png",
+    "image_sha256": "448d8f6bf8f6d4fd6d6050f931cd1623ee6aff9e28477f634402f74857d43780",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/02-gui-flavors-validation.mdx",
+    "sha256": "a0f45ffc5d9d97f0bef32d15a180464873b9ee44a34f1ff05a955ddf43e0816d",
+    "source_urls": [
+      "https://github.com/systemd/systemd/blob/v255/man/pam_systemd.xml",
+      "https://wayland.freedesktop.org/docs/book/Xwayland.html",
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md",
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://www.mql5.com/en/docs/python_metatrader5"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "Lubuntu",
+        "Xubuntu",
+        "Kubuntu",
+        "MT5",
+        "Wine"
+      ],
+      "category": "Linux",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-gui-validation.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-gui-validation.png",
+    "image_sha256": "7a2d0966ba2044afd0a440cf1219d53943f286d0a8b9c26719b1527bb5749803",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design.mdx",
+    "sha256": "a40c4c147f20a4cb7f795045e599ef024b94719a5e6379b74d00e2167459ce5c",
+    "source_urls": [
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/Xvfb.1.html",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/X.7.html",
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md#wayland-driver",
+      "https://tigervnc.org/doc/Xvnc.html",
+      "https://tigervnc.org/doc/x0vncserver.html",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/Xserver.1.html",
+      "https://github.com/systemd/systemd/blob/v258/man/file-hierarchy.xml",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu Server",
+        "Headless",
+        "Xvfb",
+        "VNC",
+        "MT5",
+        "Wine",
+        "XAuthority"
+      ],
+      "category": "Linux",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-headless-design.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-headless-design.png",
+    "image_sha256": "0587a8a09b87fd8d837db5995bea7b5418498ffc5da4f666ab769e73f7438ba2",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/03-wayland-x11-xauthority.mdx",
+    "sha256": "e454acb492e37012b9f24e335355ed046237da768a09860e8f6d55f354222e5d",
+    "source_urls": [
+      "https://wayland.freedesktop.org/docs/book/Xwayland.html",
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md#wayland-driver",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/X.7.html",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/Xsecurity.7.html",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xauth.1.html",
+      "https://wayland.freedesktop.org/docs/html/apb.html",
+      "https://specifications.freedesktop.org/basedir/latest/",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml",
+      "https://man.openbsd.org/ssh.1#DISPLAY",
+      "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/xhost.1.html"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "Linux",
+        "MT5",
+        "Wine",
+        "Wayland",
+        "X11",
+        "XAuthority",
+        "systemd"
+      ],
+      "category": "Linux",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-wayland-x11-xauthority.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-wayland-x11-xauthority.png",
+    "image_sha256": "049dee558c2e9991dbf6d395a46f3db8fd6792b60a623cf9c5ed22ab1f5c6121",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/04-wine-mt5-installation.mdx",
+    "sha256": "4eb062c99ad19fd3bbe58c16e6032e6584858c9c412ba848288f628c5744ece6",
+    "source_urls": [
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/loader/wine.man.in",
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/structure"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "Linux",
+        "Wine",
+        "MT5",
+        "WINEPREFIX"
+      ],
+      "category": "Linux",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-wine-installation.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-wine-installation.png",
+    "image_sha256": "86eea738e72aec634188d738294213fb46c9ac72ae6ff376e8a56d8da7728938",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/05-mt5-python-api-integration.mdx",
+    "sha256": "83d88f8173e83a2f367a365e9b48030f4d8d7152ce305cb4626ff2517ef25e4e",
+    "source_urls": [
+      "https://www.mql5.com/en/docs/python_metatrader5",
+      "https://pypi.org/project/metatrader5/5.0.6231/#files",
+      "https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/",
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5login_py",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5shutdown_py",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5lasterror_py"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu",
+        "MT5",
+        "Python",
+        "MetaTrader5",
+        "Wine",
+        "API"
+      ],
+      "category": "Linux",
+      "level": 3,
+      "articleType": "internal",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-python-api.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-python-api.png",
+    "image_sha256": "dc8392fe2db5f885aa9caa607e75f07800282535a9ced401a116f1501c02cc72",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/06-systemd-operation.mdx",
+    "sha256": "ca6cf01d03daf6bf5265b8a533a5df3ea64d59e0e6a44edc54f3d6268b2c72d2",
+    "source_urls": [
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5initialize_py",
+      "https://www.mql5.com/en/docs/python_metatrader5/mt5shutdown_py",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.unit.xml",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.service.xml",
+      "https://github.com/systemd/systemd/blob/v258/man/sd_notify.xml",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu Server",
+        "systemd",
+        "MT5",
+        "Wine",
+        "Python"
+      ],
+      "category": "Linux",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-systemd-operation.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-systemd-operation.png",
+    "image_sha256": "6f29bd5af8e18ddf0b02bbc52504cf487acc0add0e6831dba254e06c60d26afc",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/linux/mt5-ubuntu/07-final-architecture-troubleshooting.mdx",
+    "sha256": "b8557841484e09f6b58b402edcbd7a0c743c1123018efe3c27af9eb2748dad77",
+    "source_urls": [
+      "https://github.com/wine-mirror/wine/blob/wine-10.0/ANNOUNCE.md",
+      "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
+      "https://www.mql5.com/en/docs/python_metatrader5",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.service.xml",
+      "https://github.com/systemd/systemd/blob/v258/man/systemd.exec.xml"
+    ],
+    "identity": {
+      "date": "2026-06-28",
+      "tags": [
+        "Ubuntu Server",
+        "MT5",
+        "Wine",
+        "Python",
+        "systemd",
+        "Troubleshooting"
+      ],
+      "category": "Linux",
+      "level": 3,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/mt5-ubuntu-final-troubleshooting.png",
+      "popular": false
+    },
+    "image": "public/images/articles/mt5-ubuntu-final-troubleshooting.png",
+    "image_sha256": "d89a34de96b65c06f3013b05e792ed53037d011e9851a337125b1c2bbc57b262",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "books",
+    "source": "books/database-internal.mdx",
+    "sha256": "a65f41143e709472b6c60ebf404cc63ae3352f6c68e8f1aa61d2f63259b11486",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/sql-analyze.html",
+      "https://www.postgresql.org/docs/17/queries-table-expressions.html#QUERIES-GROUP",
+      "https://www.postgresql.org/docs/17/query-path.html",
+      "https://www.postgresql.org/docs/17/parser-stage.html",
+      "https://www.postgresql.org/docs/17/sql-createview.html",
+      "https://www.postgresql.org/docs/17/sql-createtableas.html",
+      "https://www.postgresql.org/docs/17/transaction-iso.html",
+      "https://www.postgresql.org/docs/17/using-explain.html",
+      "https://www.postgresql.org/docs/17/sql-explain.html",
+      "https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-CTE-MATERIALIZATION",
+      "https://www.postgresql.org/docs/17/using-explain.html#USING-EXPLAIN-CAVEATS"
+    ],
+    "identity": {
+      "title": "Database Internal",
+      "subtitle": "SQLが実行される流れから、実行計画を読めるようになる",
+      "date": "2026-06-27",
+      "category": "Database",
+      "level": 2,
+      "cover": "/images/books/database-internal-cover.png",
+      "access": "free",
+      "status": "published",
+      "featured": true,
+      "aliases": [
+        "Database Internal"
+      ],
+      "references": [
+        {
+          "articleSlug": "sql/internal/view-derived-table-cte-temporary-table",
+          "note": "View、派生テーブル、CTE、一時テーブルの比較メモ。"
+        },
+        {
+          "articleSlug": "sql/internal/explain-analyze",
+          "note": "EXPLAINとEXPLAIN ANALYZEの調査メモ。"
+        }
+      ]
+    },
+    "image": "public/images/books/database-internal-cover.png",
+    "image_sha256": "32deeb3c89d9d583648f511163615ad3efd65d62af0d2445b34bcf306b2873c6",
+    "mutable_metadata": [
+      "description",
+      "updated"
+    ]
+  },
+  {
+    "kind": "books",
+    "source": "books/rails-raw-sql.mdx",
+    "sha256": "e321a16f042b9bcdea77a17279ceeab522dda509f5fbd7a64a893fbf51d7e79f",
+    "source_urls": [
+      "https://www.postgresql.org/docs/17/tutorial-window.html",
+      "https://www.postgresql.org/docs/17/sql-insert.html",
+      "https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all",
+      "https://www.postgresql.org/docs/17/tutorial-transactions.html",
+      "https://www.postgresql.org/docs/17/transaction-iso.html"
+    ],
+    "identity": {
+      "title": "Rails Raw SQL",
+      "subtitle": "ActiveRecordの外側で、DBに任せるべき処理を設計する",
+      "date": "2026-06-27",
+      "category": "Rails",
+      "level": 1,
+      "cover": "/images/books/rails-raw-sql-cover.png",
+      "access": "free",
+      "status": "published",
+      "featured": true,
+      "aliases": [
+        "Railsで生SQLを書くときに知っておきたいSQL"
+      ],
+      "references": [
+        {
+          "articleSlug": "rails/sql/raw-sql-summary",
+          "note": "Railsで生SQLを書くときの構文・関数メモ。"
+        },
+        {
+          "articleSlug": "rails/sql/insert-select",
+          "note": "INSERT SELECTの個別メモ。"
+        },
+        {
+          "articleSlug": "rails/sql/row-number",
+          "note": "ROW_NUMBERの個別メモ。"
+        },
+        {
+          "articleSlug": "rails/sql/on-duplicate-key-update",
+          "note": "ON DUPLICATE KEY UPDATEの個別メモ。"
+        }
+      ]
+    },
+    "image": "public/images/books/rails-raw-sql-cover.png",
+    "image_sha256": "3c2b6452ae0115c7b302eaca03b3a337612fd726426fe37486f884974b864431",
+    "mutable_metadata": [
+      "description",
+      "updated"
+    ]
+  },
+  {
+    "kind": "notes",
+    "source": "notes/site-design/content-model.mdx",
+    "sha256": "940c8c599b01bebf788e617e60aa9930812256753ef825e70ae08d9619a82c2e",
+    "source_urls": [],
+    "identity": {
+      "date": "2026-07-02",
+      "tags": [
+        "Tech Note",
+        "Portfolio",
+        "Knowledge Base",
+        "Learning"
+      ],
+      "area": "Site Design",
+      "status": "rough",
+      "source": "ai-dialogue",
+      "draft": false
+    },
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated"
+    ]
+  },
+  {
+    "kind": "series",
+    "source": "lib/series-books.ts",
+    "sha256": "a41b9930870ac9d68831af589f7e49ecc175c04bcd4785fc4245fa7b16f34311",
+    "source_urls": [],
+    "mutable_metadata": []
+  }
+]

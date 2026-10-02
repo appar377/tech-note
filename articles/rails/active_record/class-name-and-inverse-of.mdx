@@ -1,6 +1,6 @@
 ---
-title: "Railsの関連付けを名前解決とオブジェクト同一性から理解する"
-description: "`class_name`は関連名からクラスを解決する規約を上書きし、`inverse_of`は双方向関連が同じインメモリオブジェクトを参照できるようにする。DB上の同一行とRubyオブジェクトの同一性は別である。"
+title: "Railsのclass_name・foreign_key・inverse_ofは何を指定するか"
+description: "関連先のクラス、外部キーの列、逆関連の参照を分け、新規親子のvalidationとnested attributesの保存からinverse_ofの役割を確認します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -14,130 +14,190 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/class-name-and-inverse-of.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+関連名を`posts`、モデルを`AuthoredPost`、外部キーを`writer_id`にしたいとき、`class_name`だけで設定は済むでしょうか。関連先のクラスと、DBで結び付ける列は別の指定です。さらに、子から親へ戻ったときに同じRubyオブジェクトを参照するかは、逆関連の扱いに関係します。
 
-関連名とクラス名が一致しないため`class_name`が必要になり、さらに`inverse_of`の意味が分からなかった。同じDB行を指していてもRuby上で別インスタンスになる問題まで追うと理解できた。
+ここでは著者と記事の小さな例で三つを分けます。Ruby 3.4.4、Active Record 8.1.3、pg 1.6.3、PostgreSQL 17.10の専用ローカルDBで、新規親子・参照の同一性・保存に関する8例をRSpecで確認しています。
 
-`class_name`は関連名からクラスを解決する規約を上書きし、`inverse_of`は双方向関連が同じインメモリオブジェクトを参照できるようにする。DB上の同一行とRubyオブジェクトの同一性は別である。
+以下の二つのテーブルを用意します。コード中の名前や記事名は合成値です。保存例があるため、使い捨てのローカルDBを使います。
 
-## この記事で学べること
+- `association_authors`：主キー`id`と`name:string`。
+- `authored_posts`：主キー`id`、`title:string`、`writer_id:bigint`。`writer_id`は`association_authors.id`を参照する外部キーです。
 
-- Railsが関連名からクラス名・外部キーを推論する規約
-- `class_name`と`foreign_key`
-- 自動inverse推論が効くケース/効かないケースを利用バージョンで確認
-- 未保存親子オブジェクトとvalidation
-- nested attributes
-- 同じDB行を別インスタンスで読む場合
+各列は`NULL`を許可せず、`writer_id`にインデックスを付けます。モデル定義から順にRuby例を実行できる構成です。末尾のRSpec抜粋はテスト用の別ブロックです。
 
-## 前提知識
-
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![Railsの関連付けを名前解決とオブジェクト同一性から理解する](/images/articles/class-name-and-inverse-of.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+## クラス・列・逆関連をそれぞれ指定する
 
 ```ruby
-class User < ApplicationRecord
-  has_many :posts, class_name: "Post", inverse_of: :author
+class AssociationAuthor < ActiveRecord::Base
+  self.table_name = "association_authors"
+
+  has_many :posts,
+    class_name: "AuthoredPost",
+    foreign_key: "writer_id",
+    inverse_of: :writer
+  accepts_nested_attributes_for :posts
+  validates :name, presence: true
 end
 
-class Post < ApplicationRecord
-  belongs_to :author, class_name: "User", inverse_of: :posts
+class AuthoredPost < ActiveRecord::Base
+  self.table_name = "authored_posts"
+
+  belongs_to :writer,
+    class_name: "AssociationAuthor",
+    foreign_key: "writer_id",
+    inverse_of: :posts,
+    optional: false
+  validates :title, presence: true
 end
 ```
 
-## 本編
+`has_many :posts`側で指定している内容は、次の三つです。
 
-### 発生した状況
+- `class_name: "AuthoredPost"`：関連先のRubyクラスを選びます。
+- `foreign_key: "writer_id"`：関連を結ぶ子テーブルの列を選びます。
+- `inverse_of: :writer`：子のどの関連が、この親へ戻る逆関連なのかを示します。
 
-関連名とクラス名が一致しないため`class_name`が必要になり、さらに`inverse_of`の意味が分からなかった。同じDB行を指していてもRuby上で別インスタンスになる問題まで追うと理解できた。
+子の`belongs_to :writer`側も、同じ列と対応する逆関連`:posts`を指定しています。`optional: false`は、子の検証で著者の関連を必須にするための指定です。DBの外部キー制約や`NOT NULL`制約を作る設定ではありません。[Rails 8.1.3の関連付けオプション](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Associations/ClassMethods.html)
 
-### 当初の理解・誤解
+通常、`belongs_to :writer`からは`writer_id`が推論されます。一方、`has_many`側では親のクラス名などから外部キーを推論します。Rails 8.1.3には、明示した逆関連から相手側の外部キーを求める分岐もあるため、「`foreign_key`を書かないと必ず不一致になる」とは限りません。この例では両側に`writer_id`を書き、スキーマとの対応を明示しています。[外部キーを推論する実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/reflection.rb#L772-L781)
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`class_name`は関連名からクラスを解決する規約を上書きし、`inverse_of`は双方向関連が同じインメモリオブジェクトを参照できるようにする。DB... という観点で見る必要がありました。
+## まだIDのない親へ、子から戻れるのはなぜか
 
-### 観測したこと
-
-- `User has_many :authored_posts, class_name: 'Post', foreign_key: ...`
-- `Post belongs_to :author, inverse_of: :authored_posts`
-- `equal?`と`==`でオブジェクトを比較するコンソール例
-- 未保存関連のvalidation RSpec
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| `inverse_of` | 追加クエリや不整合を減らせる／複雑な関連では推論・設定が難しい |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- `class_name`は名前解決、`inverse_of`は逆関連のインメモリ対応
-- RailsのIdentity Map全般を提供する機能ではない
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- `class_name`は名前解決、`inverse_of`は逆関連のインメモリ対応
-- RailsのIdentity Map全般を提供する機能ではない
-
-## 再発防止テスト
+親を保存する前に、関連を通して子を組み立てます。
 
 ```ruby
-RSpec.describe "class-name-and-inverse-of" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+author = AssociationAuthor.new(name: "Aki")
+post = author.posts.build(title: "Draft")
 
-    expect(result).to be_present
-  end
+author.id                 # => nil
+post.writer_id            # => nil
+post.writer.equal?(author) # => true
+post.valid?               # => true
+author.valid?             # => true
+```
+
+この時点では、親の行も外部キーの値もありません。それでも`post.writer`が親を返せるのは、関連の中で親への参照を持っているためです。逆関連を設定する処理は、関連元のオブジェクトを逆側の参照先へ渡します。[逆関連を設定する実装](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/associations/association.rb#L121-L144)
+
+また、`optional: false`の検証は、`writer_id`が埋まっているかだけを確認するものではありません。この例では、まだ未保存の`author`を関連先として参照できるので、親の存在を要求する検証に通ります。[belongs_toの検証処理](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/associations/builder/belongs_to.rb#L111-L137)
+
+`valid?`に通っても、レコードがDBへ保存されたわけではありません。ここまでの`new`と`build`は、親子をメモリ上で組み立てています。
+
+## inverse_ofを無効にすると、何が違うか
+
+比較用に、同じテーブルへ別のモデルを割り当てます。クラス名の対応を変え、両側の`inverse_of`を`false`にします。検証とnested attributesの設定は同じです。
+
+```ruby
+class NoInverseAuthor < ActiveRecord::Base
+  self.table_name = "association_authors"
+
+  has_many :posts,
+    class_name: "NoInversePost",
+    foreign_key: "writer_id",
+    inverse_of: false
+  accepts_nested_attributes_for :posts
+  validates :name, presence: true
+end
+
+class NoInversePost < ActiveRecord::Base
+  self.table_name = "authored_posts"
+
+  belongs_to :writer,
+    class_name: "NoInverseAuthor",
+    foreign_key: "writer_id",
+    inverse_of: false,
+    optional: false
+  validates :title, presence: true
 end
 ```
 
-## 一般化できる設計原則
+このモデルでも未保存の親から子を組み立てます。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+```ruby
+without_inverse = NoInverseAuthor.new(name: "Mio")
+unlinked_post = without_inverse.posts.build(title: "Draft without inverse")
 
-## まとめ
+unlinked_post.writer_id # => nil
+unlinked_post.writer    # => nil
+unlinked_post.valid?    # => false
+unlinked_post.errors[:writer].empty? # => false
+```
 
-ORMでは「同じ行」「等価な値」「同じRubyオブジェクト」を分けて観測する必要がある、と締める。
+子には親を再検索するためのIDがなく、逆関連による親への参照もありません。そのため、親の関連を必須とする検証に通りません。親がすでに保存されていれば、外部キーで読み出して検証できる場合はありますが、それは同じRubyオブジェクトを参照することとは別です。
 
+`inverse_of`を省略すると、Railsが自動で逆関連を推論できる場合があります。省略と`false`は同じではありません。Rails 8.1.3では、明示した`foreign_key`、`through`、スコープや設定などが自動推論の条件に影響します。比較ではその違いを曖昧にしないため、無効化を明示しています。[自動inverse推論の条件](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/reflection.rb#L699-L765)
 
-この記事では、次のような短絡的な一般化は避けます。
+## nested attributesでは、保存までどうつながるか
 
-- `inverse_of`で常に同じインスタンスになると広く一般化しない
-- N+1対策としてのみ説明しない
+`accepts_nested_attributes_for :posts`は、親へ`posts_attributes=`という入力口を追加し、関連のautosaveを有効にします。`inverse_of`はその入力口を作る機能ではありません。[Railsのnested attributes](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html)
 
-## 参考文献
+新しい親へ二つの記事を渡して保存します。
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+```ruby
+nested_author = AssociationAuthor.new(
+  name: "Ren",
+  posts_attributes: [{ title: "First" }, { title: "Second" }]
+)
+children = nested_author.posts.to_a
+
+children.map(&:writer_id) # => [nil, nil]
+children.all? { |child| child.writer.equal?(nested_author) } # => true
+
+nested_author.save!
+
+nested_author.persisted?             # => true
+children.all?(&:persisted?)            # => true
+children.map(&:writer_id).uniq        # => [nested_author.id]
+AuthoredPost.where(writer_id: nested_author.id).order(:id).pluck(:title)
+# => ["First", "Second"]
+```
+
+保存前の検証ではメモリ上の親を参照し、保存時には親のIDが子の`writer_id`へ入ります。親子を保存する処理は、親の保存が開始するトランザクション内で行われます。子の検証に失敗したときに親だけ残らないことも、実装に合わせて確認します。[nested attributesの保存](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/NestedAttributes/ClassMethods.html#label-Saving)
+
+## 別のfindでも同じオブジェクトが返るのか
+
+`inverse_of`は、アプリ内のあらゆる読み込みを一つのオブジェクトへまとめる仕組みではありません。保存した親を二度読み直すと、同じ行を表す別のインスタンスになります。
+
+```ruby
+first = AssociationAuthor.find(nested_author.id)
+second = AssociationAuthor.find(nested_author.id)
+
+first == second       # => true
+first.equal?(second)  # => false
+
+first.name = "Only the first instance"
+second.name           # => "Ren"
+first == second       # => true
+```
+
+Active Recordの`==`は、同じオブジェクトである場合に加え、同じモデルクラスでIDが一致する場合にも`true`を返します。全属性の値を比較しているわけではありません。[Active Recordの==](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-3D-3D)
+
+Rubyの`equal?`は、同じオブジェクトかどうかを見る比較です。逆関連が元の親を再利用しているかを調べるなら、こちらで区別します。[Ruby 3.4のequal?](https://docs.ruby-lang.org/en/3.4/BasicObject.html#method-i-equal-3F)
+
+## 設定を変えたとき、何をテストへ残すか
+
+未保存の親から子を組み立てる画面や処理では、「後で保存できた」だけでなく、保存前の検証と参照の関係を確かめます。次は、モデルを読み込んだRSpecの`describe`内へ置く例です。各例の前に`authored_posts`、`association_authors`の順で検証用データを削除し、空のDBから始めます。
+
+```ruby
+it "validates a child against its unsaved inverse parent without a foreign key value" do
+  author = AssociationAuthor.new(name: "Aki")
+  post = author.posts.build(title: "Draft")
+
+  expect(author.id).to be_nil
+  expect(post.writer_id).to be_nil
+  expect(post.writer).to equal(author)
+  expect(post.valid?).to be(true)
+  expect(author.valid?).to be(true)
+  expect(AssociationAuthor.count).to eq(0)
+  expect(AuthoredPost.count).to eq(0)
+end
+```
+
+一覧表示のN+1問題は、この参照の確認とは別に考えます。逆関連で親の再取得を避けられる場合があっても、必要な関連を一括で読む`includes`などの代わりにはなりません。[関連のeager loading](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Associations/ClassMethods.html#label-Eager+loading+of+associations)
+
+親子が互いを参照すると、一方を保持する間は接続されたオブジェクトも参照されます。関連を含むレコード群を長寿命のキャッシュへ残すなら、何をどこまで保持するかも確認します。双方向の参照があることだけでメモリリークや使用量の大小を判断することはできません。
+
+クラスが違う問題、外部キーの列が違う問題、同じオブジェクトを参照していない問題を分けると、修正すべき設定も見つけやすくなります。`inverse_of`で、クラス名やスキーマの不一致まで直そうとしないことが要点です。

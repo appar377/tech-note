@@ -1,8 +1,8 @@
 ---
-title: Railsで生SQLを書くときに知っておきたいSQL構文・関数まとめ
-description: RailsのMigrationやバッチ処理で生SQLを書くときに役立つSQL構文、MySQL関数、考え方を整理する。
+title: "生SQLで最新の履歴を選び、未登録の行だけ補う"
+description: "ROW_NUMBER、CTE、INSERT SELECTを一つの例でつなぎ、同時刻の選び方と再投入時に既存行を変えない条件を確認します。"
 date: 2026-06-25
-updated: 2026-06-25
+updated: 2026-10-02
 tags:
   - Rails
   - MySQL
@@ -15,405 +15,130 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-raw-sql-summary.png
 popular: true
+editorialProfile: question-led-v1
 ---
 
-## 概要
+履歴から最新の値を取り出し、まだない行だけ現在値のテーブルへ追加したい。この処理は、「どの履歴を選ぶか」と「どの行へ書き込むか」を分けると読みやすくなります。
 
-RailsではActiveRecordだけで多くの処理を書けますが、Migrationやバッチ処理では生SQLを使った方が速く、意図も明確になる場面があります。
+ここでは説明用の在庫履歴を使い、SKUごとに一行を選んでから不足行を補います。既存の在庫値は上書きしない契約です。PostgreSQL 17.10で、候補の選択と初回・再投入後の結果を確認しました。SQLを使うだけで高速になるという比較はしていません。
 
-この記事では、Railsから生SQLを書くときに出てくるSQL構文・関数・考え方を、実務で読み解ける形に整理します。
+## 同じSKUの履歴から、どの行を選びますか
 
-## この記事で学べること
+次のSQLを同じ検証用接続で実行する前提です。一時テーブルなので、接続を切り替えると利用できません。
 
-- Railsで生SQLを実行する方法
-- `INSERT ... SELECT`、UPSERT、Window Functionの考え方
-- SQL関数をRubyの処理と対応づけて理解する方法
-- RubyループではなくDB内部で集合処理する理由
+```sql file=raw_summary/setup.sql
+CREATE TEMPORARY TABLE raw_stock_events (
+  id integer PRIMARY KEY,
+  sku text NOT NULL,
+  quantity integer NOT NULL CHECK (quantity >= 0),
+  recorded_at timestamptz NOT NULL
+);
 
-## 前提知識
+CREATE TEMPORARY TABLE raw_stock_levels (
+  sku text PRIMARY KEY,
+  quantity integer NOT NULL CHECK (quantity >= 0)
+);
 
-- Rails Migrationの基本を知っている
-- ActiveRecordでCRUDを書いたことがある
-- SQLの `SELECT`、`INSERT`、`JOIN` の基本を知っている
+INSERT INTO raw_stock_events (id, sku, quantity, recorded_at) VALUES
+  (1, 'A', 3, '2026-09-01 00:00:00+00'),
+  (2, 'A', 5, '2026-09-02 00:00:00+00'),
+  (3, 'A', 7, '2026-09-02 00:00:00+00'),
+  (4, 'B', 0, '2026-09-03 00:00:00+00'),
+  (5, 'C', 4, '2026-09-04 00:00:00+00');
 
-## 図解
-
-```mermaid
-flowchart TD
-  A[Rails Migration] --> B[execute]
-  B --> C[SQL]
-  C --> D[Optimizer]
-  D --> E[Storage Engine]
-  E --> F[Result]
+INSERT INTO raw_stock_levels (sku, quantity) VALUES ('C', 99);
 ```
 
-## 実装コード例
+SKU Aには同じ時刻の履歴が二つあります。ここでは「記録時刻が新しい方、同時刻ならidが大きい方」という説明用の規則を採用します。idが大きければ業務上も必ず新しい、という一般則ではありません。
 
-```ruby
-class BackfillProfiles < ActiveRecord::Migration[8.0]
-  def up
-    execute(<<~SQL)
-      INSERT INTO user_profiles (user_id, email, created_at, updated_at)
-      SELECT id, email, NOW(), NOW()
-      FROM users
-    SQL
-  end
-end
-```
-
-## 内部動作
-
-```text
-Rails
-↓
-ActiveRecord::ConnectionAdapters
-↓
-DBへSQLを送信
-↓
-DBエンジンが集合として最適化
-↓
-結果または更新件数を返す
-```
-
-## 本編
-
-## はじめに
-
-普段はActiveRecordを利用して開発することがほとんどですが、データ移行やバッチ処理では、生SQLを書く機会があります。
-
-先日、PRレビューでデータ移行用のMigrationを読んでいた際に、ActiveRecordだけではあまり触れることのないSQL構文やMySQLの関数が数多く登場しました。
-
-この記事では、その中でも実務で頻繁に利用されるSQL構文や関数について、RailsのMigrationを例にしながらまとめていきます。
-
-なお、実際の業務で学んだ内容をもとにしていますが、テーブル名やカラム名は理解しやすいように一般的なものへ置き換えています。
-
-対象読者は以下のような方です。
-
-- 普段はActiveRecordを利用しているRailsエンジニア
-- Migrationやバッチ処理で生SQLを書く機会がある方
-- SQLをもう一歩深く理解したい方
-
-## executeで生SQLを実行する
-
-RailsではMigrationやバッチ処理などで、生SQLを直接実行できます。
-
-```ruby
-execute(<<~SQL)
-  SELECT *
-  FROM users
-SQL
-```
-
-## `<<~SQL` とは？
-
-これはヒアドキュメント（Heredoc）と呼ばれるRubyの構文です。
-
-複数行の文字列をそのまま記述できるため、長いSQLでも読みやすく書くことができます。
-
-例えば以下のコードがあります。
-
-```ruby
-sql = <<~SQL
-  SELECT *
-  FROM users
-SQL
-```
-
-これは以下と同じ意味になります。
-
-```ruby
-sql = "SELECT *\nFROM users\n"
-```
-
-> [!NOTE]
-> `\n` は文字列中での改行を意味します。
-
-## INSERT ... SELECT
-
-普段よく見る `INSERT` は以下のような形です。
-
-```sql
-INSERT INTO users (name, age)
-VALUES ('Alice', 20);
-```
-
-ですが、大量データの移行では以下のような書き方もできます。
-
-```sql
-INSERT INTO user_profiles (
-  email,
-  name,
-  created_at
+```sql file=raw_summary/latest.sql
+WITH ranked AS (
+  SELECT id, sku, quantity,
+    ROW_NUMBER() OVER (
+      PARTITION BY sku
+      ORDER BY recorded_at DESC, id DESC
+    ) AS rn
+  FROM raw_stock_events
 )
-SELECT
-  email,
-  name,
-  NOW()
-FROM users;
+SELECT id, sku, quantity
+FROM ranked
+WHERE rn = 1
+ORDER BY sku;
 ```
 
-これは、`SELECT` で取得した結果をそのまま `INSERT` するSQLです。
+確認する期待値は次の3行です。
 
-Rubyで以下のようにループする必要がなく、DB内部だけで処理が完結するため、大量データの移行では非常に高速です。
-
-```ruby
-User.find_each do |user|
-  UserProfile.create!(
-    email: user.email,
-    name: user.name
-  )
-end
-```
-
-## ON DUPLICATE KEY UPDATE
-
-MySQLにはUPSERT用の構文があります。
-
-```sql
-INSERT INTO user_profiles (
-  email,
-  name
-)
-VALUES (
-  'alice@example.com',
-  'Alice'
-)
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name);
-```
-
-ここで重要なのは、衝突キー（Conflict Key）はSQLでは指定していないということです。
-
-衝突キーは以下によって決まります。
-
-- `PRIMARY KEY`
-- `UNIQUE INDEX`
-
-例えば以下のようなindexがある場合、`email` が衝突キーになります。
-
-```ruby
-add_index :user_profiles, :email, unique: true
-```
-
-つまり、以下のような動きになります。
-
-```mermaid
-flowchart TD
-  A[emailが存在するか] -->|存在しない| B[INSERT]
-  A -->|既に存在する| C[UPDATE]
-```
-
-## VALUES()
-
-`ON DUPLICATE KEY UPDATE` では、以下のような書き方ができます。
-
-```sql
-name = VALUES(name)
-```
-
-これは、INSERTしようとしていた値という意味です。
-
-例えば以下のSQLなら、`VALUES(name)` は `Alice` になります。
-
-```sql
-INSERT INTO users(name)
-VALUES ('Alice')
-```
-
-つまり、`name = VALUES(name)` は「INSERTしようとしていたnameで更新する」という意味になります。
-
-## NOW()
-
-`updated_at = NOW()` は、DBサーバーの現在時刻を取得する関数です。
-
-Railsでいう `Time.current` に近い役割になります。
-
-## ROW_NUMBER()
-
-`ROW_NUMBER()` はウィンドウ関数（Window Function）の一つです。
-
-```sql
-ROW_NUMBER() OVER (
-    PARTITION BY user_id
-    ORDER BY updated_at DESC
-)
-```
-
-例えば以下のデータがあるとします。
-
-| id | user_id | updated_at |
+| id | sku | quantity |
 | --- | --- | --- |
-| 1 | 1 | 2024-01-01 |
-| 2 | 1 | 2025-01-01 |
-| 3 | 2 | 2023-01-01 |
-| 4 | 2 | 2024-05-01 |
+| 3 | A | 7 |
+| 4 | B | 0 |
+| 5 | C | 4 |
 
-これに対して実行すると、以下のようになります。
+`PARTITION BY sku`は順位を付ける範囲を分け、`ORDER BY recorded_at DESC, id DESC`はその範囲内の順番を決めます。時刻だけでは同順位の行の順が決まらないため、今回の規則に必要なidも指定しています。[PostgreSQLのWindow Function](https://www.postgresql.org/docs/17/tutorial-window.html)
 
-| id | user_id | updated_at | rn |
-| --- | --- | --- | --- |
-| 2 | 1 | 2025-01-01 | 1 |
-| 1 | 1 | 2024-01-01 | 2 |
-| 4 | 2 | 2024-05-01 | 1 |
-| 3 | 2 | 2023-01-01 | 2 |
+Window Functionは、集計結果一行へまとめるGROUP BYとは異なり、元の行を残したまま値を計算します。このSQLでは、その後で外側のSELECTが`rn = 1`へ絞っています。順位を計算するSELECT自身のWHEREへ`rn = 1`を書く形にはしません。
 
-そのため、`WHERE rn = 1` とすると、各ユーザーの最新レコードだけ取得できます。
+## 選んだ行のうち、何を書き込みますか
 
-## PARTITION BY
+現在値のテーブルには、すでにCが99で入っています。最新履歴のCが4でも、今回の処理では99を維持します。
 
-`PARTITION BY user_id` は、`user_id` ごとにグループ分けするという意味です。
-
-`GROUP BY` との違いは、元のレコードを失わないことです。
-
-順位付けや累積計算でよく利用されます。
-
-## FROM (...) ranked
-
-```sql
-FROM (
-  SELECT ...
-) ranked
-```
-
-これはDerived Table（派生テーブル）と呼ばれます。
-
-`SELECT` 結果へ一時的に `ranked` という名前を付けています。
-
-そのため、以下のように参照できます。
-
-- `ranked.created_at`
-- `ranked.updated_by`
-- `ranked.rn`
-
-これはViewとは異なり、SQL実行中だけ存在します。
-
-## LEFT JOIN ... IS NULL
-
-例えば以下のSQLがあります。
-
-```sql
-SELECT
-    u.*
-FROM users u
-LEFT JOIN user_profiles p
-    ON p.user_id = u.id
-WHERE p.id IS NULL;
-```
-
-このように書くと、プロフィールがまだ作成されていないユーザーだけ取得できます。
-
-例えば以下のデータがあるとします。
-
-users
-
-| id | name |
-| --- | --- |
-| 1 | Alice |
-| 2 | Bob |
-| 3 | Carol |
-
-user_profiles
-
-| user_id |
-| --- |
-| 1 |
-| 3 |
-
-この場合、取得されるのは以下だけです。
-
-| id | name |
-| --- | --- |
-| 2 | Bob |
-
-重複INSERTを防いだり、未作成データだけ取得したいときによく使われます。
-
-## REGEXP_REPLACE
-
-```sql
-REGEXP_REPLACE(
-    phone_number,
-    '[[:space:]]',
-    ''
+```sql file=raw_summary/backfill.sql
+WITH ranked AS (
+  SELECT sku, quantity,
+    ROW_NUMBER() OVER (
+      PARTITION BY sku
+      ORDER BY recorded_at DESC, id DESC
+    ) AS rn
+  FROM raw_stock_events
 )
+INSERT INTO raw_stock_levels (sku, quantity)
+SELECT ranked.sku, ranked.quantity
+FROM ranked
+WHERE ranked.rn = 1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM raw_stock_levels AS existing
+    WHERE existing.sku = ranked.sku
+  )
+ON CONFLICT (sku) DO NOTHING
+RETURNING sku, quantity;
 ```
 
-正規表現に一致した文字列を置換できます。
+`INSERT ... SELECT`は、SELECTが返した列を指定した順に挿入します。Rubyへ各行を返してモデルを一つずつ作る手順はありません。ただし、このSQLはRailsモデルのvalidationやcallbackを呼びません。現在値のテーブルに付けた非負のCHECK制約と主キーは、DB側の制約として働きます。[INSERTの仕様](https://www.postgresql.org/docs/17/sql-insert.html)と[DB制約](https://www.postgresql.org/docs/17/ddl-constraints.html)
 
-例えば以下のように空白をすべて削除できます。
+`NOT EXISTS`は、問い合わせ時点で同じSKUがない行を選びます。その確認だけでは、別の処理が直後に同じSKUを作ることまでは防げません。最後の`ON CONFLICT (sku) DO NOTHING`で、主キーに衝突した場合も既存行を上書きしない契約に合わせています。競合する別処理の値が正しいかまで、このSQLで判断するわけではありません。
 
-```text
-090 1234 5678
-↓
-09012345678
+`RETURNING`が返すのは、この文が実際に挿入した行です。初回はAの7とBの0を期待しますが、RETURNINGの行順は固定しません。比較するときはSKUで並べます。
+
+## 再投入しても同じ結果になる範囲を確かめます
+
+書き込み後は、このSELECTで現在値を読みます。
+
+```sql file=raw_summary/read.sql
+SELECT sku, quantity
+FROM raw_stock_levels
+ORDER BY sku;
 ```
 
-## UPPER
+初回の期待値はAが7、Bが0、Cが99です。続けて同じ`backfill.sql`をもう一度実行し、`read.sql`で再取得します。
 
-`UPPER(country_code)` は、文字列を大文字へ変換します。
+| 確認点 | 初回 | 2回目 |
+| --- | --- | --- |
+| 新たに挿入される行 | A、B | なし |
+| Aの現在値 | 7 | 7 |
+| Bの現在値 | 0 | 0 |
+| Cの現在値 | 99 | 99 |
 
-例えば `jp` は `JP` になります。
+この契約は不足行を補うためのものです。あとからAの新しい履歴が追加されても、Aの現在値は更新しません。最新履歴へ常に同期する処理が必要なら、更新を許す条件や古い履歴の再投入を別に設計します。
 
-Rubyでは `string.upcase` と同じような役割です。
+また、先に実行した`latest.sql`の確認結果と、後から実行する`backfill.sql`は別の文です。間で履歴が増える状況なら同じ候補集合になるとは限りません。このfixtureは入力を固定し、並行処理を走らせずに確認する範囲です。
 
-## CHAR_LENGTH と LENGTH
+## Railsから使うときに、構文以外で残る判断は何ですか
 
-見た目は似ていますが意味が異なります。
+実アプリでは、対象DB、トランザクションの範囲、一度に処理する量を決めます。一つのSQLで処理できても、大量の書き込みにはロックやログ出力などのコストがあります。この小さな例から、本番の処理時間や再開方法は判断できません。
 
-| 関数 | 意味 |
-| --- | --- |
-| `CHAR_LENGTH(column)` | 文字数 |
-| `LENGTH(column)` | バイト数 |
+外から受け取る値をSQL文字列へ直接埋め込まず、Active Recordの問い合わせAPIやbindを使う設計にします。接続APIの`exec_query`はbindを受け取れますが、テーブル名や並び順などの識別子を入力値用のbindで自由に置き換えられるわけではありません。[Railsの接続API](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-exec_query)
 
-例えば `ABC` なら、`CHAR_LENGTH = 3`、`LENGTH = 3` です。
+MySQLのSQLをPostgreSQLへ移す場合も、構文名だけで同じ処理だと考えない方が確実です。たとえばMySQLの`LENGTH`はバイト数、PostgreSQLでtextに使う`length`は文字数です。PostgreSQLでバイト数が必要なら`octet_length`を使います。文字数とバイト数の差だけで、全角文字の有無を判定することもできません。[MySQL 8.4の文字列関数](https://dev.mysql.com/doc/refman/8.4/en/string-functions.html#function_length)、[PostgreSQL 17の文字列関数](https://www.postgresql.org/docs/17/functions-string.html)
 
-ですが、`ＡＢＣ` なら、`CHAR_LENGTH = 3`、`LENGTH = 9` になります。
-
-そのため、以下のように書けば全角文字を含むデータだけ判定できます。
-
-```sql
-CHAR_LENGTH(column) <> LENGTH(column)
-```
-
-## SQLはRubyのようにループしていない
-
-例えば以下のようなSQLを見ると、Rubyで `User.find_each` しているように見えます。
-
-```sql
-INSERT INTO ...
-SELECT ...
-FROM users
-```
-
-しかし実際には違います。
-
-SQLは集合（Set）を扱う言語です。
-
-DBエンジンが内部で最適化して処理するため、Ruby側へ1件ずつ返しているわけではありません。
-
-そのため、数万件から数百万件のデータでも高速に処理できます。
-
-## ActiveRecordだけでは見えない世界
-
-普段のRails開発ではActiveRecordだけでも十分ですが、Migrationや大量データ更新では以下を知っているだけで、Rubyでループを書くよりも高速でシンプルに実装できるケースが多くあります。
-
-- `INSERT ... SELECT`
-- `ON DUPLICATE KEY UPDATE`
-- `ROW_NUMBER()`
-- Window Function
-- Derived Table
-- `LEFT JOIN ... IS NULL`
-- `REGEXP_REPLACE`
-
-今後もMigrationやバッチ処理を書く際には、ActiveRecordだけで実装を考えるのではなく、「SQLで一括処理できないか？」という視点も持ちながら設計していきたいと思います。
-
-## まとめ
-
-Railsで生SQLを書くときは、Rubyで1件ずつ処理する発想ではなく、DBに集合として処理させる発想が重要です。
-
-SQL構文や関数の意味を理解しておくと、Migrationやバッチ処理をより短く、安全に、速く書けます。
-
-## 参考文献
-
-- [Ruby on Rails Guides: Active Record Migrations](https://guides.rubyonrails.org/active_record_migrations.html)
-- [MySQL Reference Manual: SQL Statements](https://dev.mysql.com/doc/refman/8.4/en/sql-statements.html)
-- [PostgreSQL Documentation: SQL Commands](https://www.postgresql.org/docs/current/sql-commands.html)
+更新するUPSERTへ進む場合は[ON DUPLICATE KEY UPDATEとON CONFLICTの違い](/tech-note/articles/rails/sql/on-duplicate-key-update/)を確認します。今回のように既存行を維持する処理では、その契約を先に固定したうえで、候補の選択と書き込みを別々に読めるSQLにします。

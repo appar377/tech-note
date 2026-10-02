@@ -1,6 +1,6 @@
 ---
-title: "RSpecのスタブ・モックは本当に意味があるのか？実際の処理を使わないテストの役割を整理する"
-description: RSpecのスタブ・モックが何を保証し、何を保証しないのかを、状態確認と相互作用確認の違いから整理する。
+title: "RSpecのallow・receive・have_receivedは何を確かめるのか"
+description: "依存先の応答を設定するallow、呼び出しを事前に期待するreceive、実行後に記録を調べるhave_receivedを、同じ在庫判定の例で比べます。verifying doubleが確認する範囲も整理します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,395 +14,170 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-stub-mock-meaning.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+依存先が必ず3を返すように設定して、テストを通しても意味はあるのでしょうか。テスト対象まで3を返すように変えたのなら、確かめられることはほとんどありません。一方、在庫数を読む部分だけを置き換えれば、「在庫が3のとき、注文数に応じて正しく判定するか」は実際のコードで確認できます。
 
-Ruby on RailsでRSpecを書いていると、`allow` や `receive`、`instance_double` などを使って、実際のクラスやメソッドを呼ばずにテストを書くことがあります。
+RSpecでは、応答を設定することと、呼び出しを検証することを分けて書けます。同じ小さな例で、`allow`、`expect(...).to receive`、`have_received`の違いを見ます。
 
-例えば、次のようなコードです。
+例の対象はRuby 3.4.4、RSpec 3.13.0、rspec-mocks 3.13.8です。掲載した8例はローカルで実行し、すべて成功しました。商品コードと在庫数は説明用で、DBや外部APIには接続しません。Rubyブロックを上から一つのspecファイルへ並べると、クラス定義から各テストまでつながります。
 
-```ruby
-allow(PaymentClient).to receive(:charge).and_return(true)
-```
+## どの処理を本物のまま動かすか
 
-このような書き方を見ると、最初は次のような疑問が出てきます。
-
-> 実際の処理を動かしていないなら、それはテストとして意味があるのか？
-
-テストは本来、実際のコードが正しく動くことを確認するためのものです。
-それなのに、スタブやモックで偽物の戻り値を返してしまうと、実際の挙動を確認できていないように見えます。
-
-結論から言うと、**スタブやモックを使ったテストにも意味はあります**。
-ただし、何を保証していて、何を保証していないのかを理解せずに使うと、価値の低いテストになります。
-
-この記事では、RSpecにおけるスタブ・モックの意味を整理します。
-
-## この記事で学べること
-
-- RSpecにおけるスタブとモックの違い
-- 状態を確認するテストと相互作用を確認するテストの違い
-- 外部APIや異常系をスタブする理由
-- モックしすぎたテストが弱くなる理由
-
-## 前提知識
-
-- RSpecの基本的なexpect構文を見たことがある
-- Railsでservice objectやmodel specを書いたことがある
-- 外部APIや通知処理を含むテストに触れたことがある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
+在庫を取得する`InventoryReader`と、注文数を満たすか判定する`StockCheck`を分けます。今回は読み取りもHashで実装しています。短く副作用がないので、この実装をそのまま使うテストも書けます。
 
 ```ruby
-class UserNameService
-  def initialize(user:, full_name:)
-    @user = user
-    @full_name = full_name
+require "rspec"
+
+module MockMeaning
+  class InventoryReader
+    def initialize(counts)
+      @counts = counts
+    end
+
+    def count_for(sku:)
+      @counts.fetch(sku)
+    end
   end
 
-  def call
-    short_name = NameFormatter.new(@full_name).short
-    @user.update!(name: short_name)
-  end
-end
+  class StockCheck
+    def initialize(reader:)
+      @reader = reader
+    end
 
-RSpec.describe UserNameService do
-  it "短縮名でユーザー名を更新する" do
-    user = create(:user, name: nil)
-    formatter = instance_double(NameFormatter, short: "Nick")
+    def available?(sku:, quantity:)
+      unless quantity.is_a?(Integer) && quantity.positive?
+        raise ArgumentError, "quantity must be a positive integer"
+      end
 
-    allow(NameFormatter).to receive(:new).and_return(formatter)
-
-    described_class.new(user: user, full_name: "Nick Martin").call
-
-    expect(user.reload.name).to eq("Nick")
-  end
-end
-```
-
-## 本編
-
-### テストには大きく2種類ある
-
-RSpecのテストは、大きく分けると次の2種類があります。
-
-```text
-1. 状態を確認するテスト
-2. 相互作用を確認するテスト
-```
-
-#### 状態を確認するテスト
-
-状態を確認するテストとは、処理の結果として何が変わったかを見るテストです。
-
-例えば、ユーザー名が更新されたかを確認する場合です。
-
-```ruby
-user = create(:user, name: "Before")
-
-described_class.new(user: user, name: "After").call
-
-expect(user.reload.name).to eq("After")
-```
-
-このテストでは、内部でどのメソッドが呼ばれたかは気にしていません。
-最終的にDB上の `user.name` が `"After"` になったかを確認しています。
-
-これはかなり実際の挙動に近いテストです。
-
-#### 相互作用を確認するテスト
-
-一方で、相互作用を確認するテストでは、あるオブジェクトが別のオブジェクトに対して期待したメッセージを送ったかを確認します。
-
-例えば、通知サービスが呼ばれたかを確認する場合です。
-
-```ruby
-expect(NotificationService).to receive(:notify).with(user)
-
-described_class.new(user: user).call
-```
-
-このテストでは、通知が本当に送られたかではなく、`NotificationService.notify(user)` が呼ばれたかを確認しています。
-
-### スタブとは何か
-
-スタブは、メソッドの戻り値を差し替えるための仕組みです。
-
-```ruby
-allow(NameFormatter)
-  .to receive(:shorten)
-  .with("Nick Martin")
-  .and_return("Nick")
-```
-
-この例では、`NameFormatter.shorten("Nick Martin")` が呼ばれたとき、本物の処理を実行せずに `"Nick"` を返します。
-
-つまり、スタブは次のような用途で使います。
-
-```text
-この依存先の処理内容は、今回のテスト対象ではない。
-今回は固定の戻り値を返すものとして扱いたい。
-```
-
-### モックとは何か
-
-モックは、特定のメソッドが呼ばれることを期待する仕組みです。
-
-```ruby
-expect(NotificationService)
-  .to receive(:notify)
-  .with(user)
-```
-
-これは、`NotificationService.notify(user)` が呼ばれなければテストが失敗します。
-
-スタブが「戻り値の差し替え」に近いのに対して、モックは「呼び出しの検証」に近いです。
-
-### なぜ本物を使わないのか
-
-本物を使えるなら、本物を使った方がよい場面は多いです。
-
-特にRailsでは、以下のようなものは本物で確認した方が価値があります。
-
-```text
-- ActiveRecordのvalidation
-- scope
-- DB保存
-- DB更新
-- 業務上重要なモデルメソッド
-- request specでのレスポンス
-```
-
-しかし、常に本物を使うべきとは限りません。
-
-理由は、テスト対象以外の影響を排除したい場面があるからです。
-
-例えば、次のようなサービスを考えます。
-
-```ruby
-class UserNameService
-  def initialize(user:, full_name:)
-    @user = user
-    @full_name = full_name
-  end
-
-  def call
-    short_name = NameFormatter.new(full_name).short
-
-    user.update!(name: short_name)
-  end
-
-  private
-
-  attr_reader :user, :full_name
-end
-```
-
-このサービスの責務は、次の通りです。
-
-```text
-1. NameFormatterで短縮名を取得する
-2. 取得した短縮名でuser.nameを更新する
-```
-
-ここで、`NameFormatter#short` の中身まで本物で動かすと、`UserNameService` のテストでありながら、`NameFormatter` のバグにも影響されます。
-
-そのため、`NameFormatter` はスタブして、`UserNameService` の責務に絞ることがあります。
-
-```ruby
-RSpec.describe UserNameService do
-  describe "#call" do
-    it "短縮名でuser.nameを更新する" do
-      user = create(:user, name: nil)
-      formatter = instance_double(NameFormatter)
-
-      allow(NameFormatter)
-        .to receive(:new)
-        .with("Nick Martin")
-        .and_return(formatter)
-
-      allow(formatter)
-        .to receive(:short)
-        .and_return("Nick")
-
-      described_class.new(user: user, full_name: "Nick Martin").call
-
-      expect(user.reload.name).to eq("Nick")
+      @reader.count_for(sku: sku) >= quantity
     end
   end
 end
 ```
 
-このテストでは、`NameFormatter` の変換ロジックは確認していません。
-しかし、`UserNameService` が受け取った短縮名を保存することは確認しています。
-
-### 外部APIは基本的に本物を使わない
-
-スタブ・モックが特に有効なのは、外部APIを扱う場合です。
-
-例えば、決済APIを呼ぶ処理があるとします。
-
 ```ruby
-PaymentClient.charge(user: user, amount: 1000)
-```
-
-テストでこれを本当に実行すると、次のような問題があります。
-
-```text
-- 実際に課金される可能性がある
-- 外部APIの障害でテストが落ちる
-- ネットワーク環境に依存する
-- API制限に引っかかる
-- テストの実行が遅くなる
-```
-
-そのため、外部APIはスタブするのが一般的です。
-
-```ruby
-allow(PaymentClient)
-  .to receive(:charge)
-  .and_return(true)
-```
-
-このテストで確認するのは、決済APIそのものが正しいかではありません。
-決済が成功したときに、アプリケーション側が正しく動くかです。
-
-### 異常系を再現しやすい
-
-スタブは異常系のテストでも有効です。
-
-例えば、外部APIがタイムアウトしたケースを本物のAPIで再現するのは難しいです。
-しかし、スタブなら簡単に再現できます。
-
-```ruby
-allow(PaymentClient)
-  .to receive(:charge)
-  .and_raise(PaymentClient::TimeoutError)
-```
-
-これにより、次のようなテストを書けます。
-
-```ruby
-it "決済APIがタイムアウトした場合は失敗扱いにする" do
-  allow(PaymentClient)
-    .to receive(:charge)
-    .and_raise(PaymentClient::TimeoutError)
-
-  result = described_class.new(user: user, amount: 1000).call
-
-  expect(result).to be_failure
+RSpec.describe MockMeaning::StockCheck do
+  it "checks the boundary with the real in-memory reader" do
+    reader = MockMeaning::InventoryReader.new("SKU-1" => 3)
+    check = described_class.new(reader: reader)
+    expect(check.available?(sku: "SKU-1", quantity: 3)).to eq(true)
+    expect(check.available?(sku: "SKU-1", quantity: 4)).to eq(false)
+  end
 end
 ```
 
-これは、本物の外部APIを使うよりも安定しています。
+このテストは`InventoryReader#count_for`と数量比較の両方を動かします。在庫と同数ならtrue、一つ多ければfalseです。ただし、Hashを読んでいるだけなので、DBの保存や在庫の同時更新を確認したことにはなりません。
 
-### モックしすぎると危険
+## allowは応答の設定であり、呼び出しの要求ではない
 
-一方で、何でもモックすればよいわけではありません。
-
-例えば、次のようなテストは弱いです。
+読み取り側を切り離したいときは、同じ判定テストにdoubleを渡せます。`allow(...).to receive(...)`で受け付けるメソッドを設定し、`and_return(3)`でその応答を決めます。[RSpecのallowの説明](https://rspec.info/features/3-13/rspec-mocks/basics/allowing-messages/)でも、これはメッセージを許可する設定として扱われています。
 
 ```ruby
-user = instance_double(User)
+RSpec.describe MockMeaning::StockCheck do
+  it "uses a stub value while executing the real decision" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    allow(reader).to receive(:count_for).with(sku: "SKU-1").and_return(3)
+    check = described_class.new(reader: reader)
+    expect(check.available?(sku: "SKU-1", quantity: 3)).to eq(true)
+    expect(check.available?(sku: "SKU-1", quantity: 4)).to eq(false)
+  end
 
-allow(user)
-  .to receive(:update!)
-  .with(name: "Nick")
-
-described_class.new(user: user, full_name: "Nick Martin").call
-
-expect(user)
-  .to have_received(:update!)
-  .with(name: "Nick")
+  it "can leave an allowed message unused when invalid input is rejected first" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    allow(reader).to receive(:count_for).and_return(3)
+    check = described_class.new(reader: reader)
+    expect { check.available?(sku: "SKU-1", quantity: 0) }.to raise_error(ArgumentError)
+    expect(reader).not_to have_received(:count_for)
+  end
+end
 ```
 
-このテストで確認できるのは、`update!` が呼ばれたことだけです。
+最初の例では、doubleが3を返し、`StockCheck`の比較処理は本物のまま動きます。二つ目では、不正な数量を先に拒否するため読み取りません。`allow`だけなら、許可したメソッドが一度も呼ばれなくても、その理由では失敗しません。ここではさらに`not_to have_received`で、呼んでいないことも明示しています。
 
-確認できないことは多くあります。
-
-```text
-- 実際にDBに保存されたか
-- validationに通るか
-- callbackが正しく動くか
-- ActiveRecordとして正しく扱えるか
-```
-
-もし仕様として重要なのが「ユーザー名が保存されること」なら、次のようにDBまで確認した方がよいです。
+また、許可したメソッドの戻り値を指定しなければ、通常はnilです。元の実装が整数を返していても、自動で同じ型にはなりません。
 
 ```ruby
-user = create(:user, name: nil)
-
-described_class.new(user: user, full_name: "Nick Martin").call
-
-expect(user.reload.name).to eq("Nick")
+RSpec.describe MockMeaning::StockCheck do
+  it "does not infer an integer return value from the real implementation" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    allow(reader).to receive(:count_for)
+    expect(reader.count_for(sku: "SKU-1")).to be_nil
+  end
+end
 ```
 
-### メリット
+戻り値だけでなく、例外も設定できます。次は依存先の`KeyError`を呼び出し元へ伝えることを確かめています。このアプリケーションでは、取得失敗を「在庫なし」のfalseへ変換しない契約です。[and_raise](https://rspec.info/features/3-13/rspec-mocks/configuring-responses/raising-an-error/)による例外の発生は、実際の障害を起こすためのものではありません。
 
-スタブ・モックのメリットは次の通りです。
-
-```text
-- テスト対象の責務を切り分けられる
-- 外部APIに依存しない
-- テストが速くなる
-- 異常系を再現しやすい
-- 失敗原因を特定しやすい
+```ruby
+RSpec.describe MockMeaning::StockCheck do
+  it "propagates a configured dependency error instead of reporting no stock" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    allow(reader).to receive(:count_for).and_raise(KeyError, "unknown SKU")
+    check = described_class.new(reader: reader)
+    expect { check.available?(sku: "SKU-X", quantity: 1) }.to raise_error(KeyError, "unknown SKU")
+  end
+end
 ```
 
-### デメリット
+## expect(...).to receiveは実行前に呼び出しを期待する
 
-一方で、デメリットもあります。
+「この商品コードで一度問い合わせる」ことまで確認するなら、実行前にメッセージの期待を置きます。応答は同じように設定できます。
 
-```text
-- 実際の挙動とのズレに気づきにくい
-- 実装詳細に依存したテストになりやすい
-- モックしすぎると何も保証しないテストになる
-- リファクタリングで壊れやすくなる
+```ruby
+RSpec.describe MockMeaning::StockCheck do
+  it "expects one request with the product key before execution" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    expect(reader).to receive(:count_for).with(sku: "SKU-1").once.and_return(3)
+    check = described_class.new(reader: reader)
+    expect(check.available?(sku: "SKU-1", quantity: 2)).to eq(true)
+  end
+end
 ```
 
-## 図解
+`.with`は引数、`.once`は呼び出し回数を指定しています。期待した呼び出しがない場合、[RSpecはexample終了時の検証で失敗にします](https://rspec.info/features/3-13/rspec-mocks/basics/expecting-messages/)。この例から`available?`の実行を取り除けば、在庫照会の期待は満たせません。
 
-![RSpecのスタブ・モックは本当に意味があるのか？実際の処理を使わないテストの役割を整理する](/images/articles/rails-rspec-stub-mock-meaning.png)
+ただし、回数が仕様でなければ毎回固定する必要はありません。在庫判定の結果だけが関心事なら、前の戻り値を確かめるテストで十分な場合もあります。実装の全メソッドを順番どおりに呼ぶことまで期待すると、同じ結果を返す変更にもテストが反応します。
 
-```mermaid
-flowchart LR
-  A[テスト対象] --> B{依存先}
-  B --> C[内部の重要ロジックは本物]
-  B --> D[外部APIや異常系はスタブ]
-  C --> E[状態を確認]
-  D --> F[相互作用や戻り値を固定]
+## have_receivedは実行後に記録を調べる
+
+期待を最後にまとめたい場合は、先に記録できるように設定してから実行し、`have_received`で調べます。
+
+```ruby
+RSpec.describe MockMeaning::StockCheck do
+  it "checks a recorded request after execution" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    allow(reader).to receive(:count_for).and_return(3)
+    check = described_class.new(reader: reader)
+    check.available?(sku: "SKU-1", quantity: 2)
+    expect(reader).to have_received(:count_for).with(sku: "SKU-1").once
+  end
+end
 ```
 
-## 内部動作
+この例では`allow`で設定したメソッドの呼び出しが記録されます。実行後に初めて`allow`を置いても、過去の呼び出しは復元できません。RSpecには`spy`や`instance_spy`もありますが、ここでは通常のverifying doubleに記録対象を明示しています。
 
-RSpecのスタブは、依存先メソッドの戻り値をテスト用に固定します。モックは、指定したメッセージが送られたかを検証します。つまり、スタブは「依存先をどう振る舞わせるか」、モックは「依存先とどうやり取りしたか」を扱います。DB更新のように結果状態が重要なものは本物に寄せ、外部APIのように境界の外にあるものはスタブする、という切り分けが実務では扱いやすいです。
+[spyの公式説明](https://rspec.info/features/3-13/rspec-mocks/basics/spies/)には、受け取った引数が後から変更されると、`have_received(...).with(...)`が適切に照合できない場合があるとの注意もあります。渡したHashやStringを後で変更する例では、呼び出し時点の値が独立して保存されると考えないようにします。
 
-## まとめ
+## instance_doubleで分かる間違いと、分からない間違い
 
-スタブやモックは、実際の挙動確認を放棄するためのものではありません。
-テスト対象を明確に切り分けるための道具です。
+`instance_double(MockMeaning::InventoryReader)`は、読み込み済みのクラスを参照しています。[instance double](https://rspec.info/features/3-13/rspec-mocks/verifying-doubles/instance-doubles/)は、設定するメソッドが存在するか、受け付ける引数の形が合うかを確認します。
 
-基本方針は次の通りです。
-
-```text
-- 外部APIや重い処理はスタブする
-- 内部の重要な業務ロジックは本物で確認する
-- DB更新が重要ならDBの状態を見る
-- 呼び出し自体が仕様ならモックで確認する
+```ruby
+RSpec.describe MockMeaning::StockCheck do
+  it "rejects nonexistent methods and unsupported keyword arguments" do
+    reader = instance_double(MockMeaning::InventoryReader)
+    expect { allow(reader).to receive(:count_typo) }.to raise_error(RSpec::Mocks::MockExpectationError)
+    allow(reader).to receive(:count_for).and_return(3)
+    expect { reader.count_for(product: "SKU-1") }.to raise_error(ArgumentError)
+  end
+end
 ```
 
-重要なのは、テストごとに次を説明できることです。
+この例は、存在しないメソッド名と、誤ったキーワード引数を検出することを期待しています。文字列のクラス名を渡し、そのクラスを読み込まないまま使う場合は同じ検査が有効にならないことがあるため、ここではクラス定数を渡しています。
 
-```text
-このテストは何を保証しているのか
-このテストは何を保証していないのか
-```
+この検査があっても、「実際の在庫が3である」「元のメソッドもnilを返す」「DBから正しく読める」とは分かりません。verifying doubleは実装の結果や戻り値の型まで検証する仕組みではありません。
 
-この視点を持つと、スタブやモックを使うべき場面と避けるべき場面が判断しやすくなります。
-
-## 参考文献
-
-- [RSpec Mocks](https://rspec.info/features/3-13/rspec-mocks/)
-- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
+この例で確認する対象は、与えられた在庫数に対する判断と、指定した読み取り先とのやり取りです。実際の保存や外部サービスとの接続が要件に含まれるなら、その境界を動かす別の検証が必要です。複数の操作で状態が変わる依存先を置き換える場合は、[Stub・Mock・Fakeの選び方](/tech-note/articles/rails/rspec/stub-mock-fake-by-purpose/)で続きを扱います。

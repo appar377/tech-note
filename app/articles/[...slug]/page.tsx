@@ -1,25 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ArrowRight, CalendarDays, Clock, Folder, Tags } from "lucide-react";
+import { ArticleReader } from "@/components/article-reader";
 import { ArticleCard } from "@/components/article-card";
-import { ArticleThumbnail } from "@/components/article-thumbnail";
-import { Breadcrumbs } from "@/components/breadcrumbs";
-import { MdxContent } from "@/components/mdx-content";
-import { ShareLinks } from "@/components/share-links";
-import { TableOfContents } from "@/components/toc";
-import { formatArticleLevel, formatArticleType } from "@/lib/article-metadata";
 import {
-  displaySegment,
   getAdjacentArticles,
   getAllArticles,
   getArticleBySlug,
   getRelatedArticles,
 } from "@/lib/articles";
-import { formatDate } from "@/lib/format";
+import { getBookForSeries } from "@/lib/books";
 import { getSeriesBookDefinition } from "@/lib/series-books";
 import { absoluteUrl } from "@/lib/site";
-import { slugify } from "@/lib/slug";
 
 type PageProps = {
   params: Promise<{ slug: string[] }>;
@@ -33,7 +25,9 @@ export async function generateStaticParams() {
   }));
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const article = getArticleBySlug(slug);
 
@@ -83,196 +77,52 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function ArticlePage({ params }: PageProps) {
   const { slug } = await params;
   const article = getArticleBySlug(slug);
-
-  if (!article) {
-    notFound();
-  }
-
-  const relatedArticles = getRelatedArticles(article);
-  const adjacentArticles = getAdjacentArticles(article);
-  const visibleTags = article.tags.slice(0, 4);
-  const hiddenTagCount = Math.max(0, article.tags.length - visibleTags.length);
-  const publicSeries = article.series ? getSeriesBookDefinition(article.series.slug) : undefined;
-  const crumbs = [
-    { label: "ホーム", href: "/" },
-    { label: article.category, href: `/categories/${article.categorySlug}` },
-    ...article.slugSegments.slice(0, -1).map((segment) => ({
-      label: displaySegment(segment),
-    })),
-  ];
-
+  if (!article) notFound();
+  const related = getRelatedArticles(article, 3);
+  const adjacent = getAdjacentArticles(article);
+  const series = article.series
+    ? getSeriesBookDefinition(article.series.slug)
+    : undefined;
+  const book = article.series
+    ? getBookForSeries(article.series.name)
+    : undefined;
   return (
-    <article className="page-shell">
-      <Breadcrumbs items={crumbs} />
-      <header className="article-hero mt-8 border-b pb-8">
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="inline-flex items-center rounded-lg border border-zinc-200 px-3 py-1.5 font-mono text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-            {formatArticleLevel(article.level)}
-          </span>
-          <span className="inline-flex items-center rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-            {formatArticleType(article.articleType)}
-          </span>
-          <Link
-            href={`/categories/${article.categorySlug}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-          >
-            <Folder aria-hidden size={15} />
-            {article.category}
+    <article className="page-shell reader-shell">
+      <ArticleReader article={article} />
+      {series || book ? (
+        <section className="reading-context">
+          <h2>{series ? "シリーズを読み進める" : "ブックでまとめて読む"}</h2>
+          <Link href={series ? `/series/${series.slug}` : book!.url}>
+            {series?.name ?? book!.title} →
           </Link>
-          {publicSeries ? (
-            <Link
-              href={`/series/${publicSeries.slug}`}
-              className="max-w-full truncate rounded-lg bg-cyan-50 px-3 py-1.5 font-medium text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300"
-            >
-              {`シリーズ: ${publicSeries.name}`}
-            </Link>
-          ) : null}
-        </div>
-        <h1 className="max-w-4xl break-words text-2xl font-semibold leading-tight tracking-tight text-zinc-950 dark:text-zinc-50 sm:text-5xl">
-          <ResponsiveText text={article.title} maxUnits={15} />
-        </h1>
-        <p className="mt-5 max-w-3xl text-base leading-8 text-zinc-600 dark:text-zinc-400 sm:text-lg">
-          <ResponsiveText text={article.description} maxUnits={22} />
-        </p>
-        <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
-          <span className="inline-flex items-center gap-1.5">
-            <CalendarDays aria-hidden size={16} />
-            {formatDate(article.date)}
-          </span>
-          {article.updated ? <span>更新 {formatDate(article.updated)}</span> : null}
-          <span className="inline-flex items-center gap-1.5">
-            <Clock aria-hidden size={16} />
-            {article.readingTimeMinutes}分
-          </span>
-        </div>
-        <div className="mt-6 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-2 sm:max-w-none">
-          <Tags aria-hidden size={16} className="text-zinc-400" />
-          {visibleTags.map((tag) => (
-            <Link
-              key={tag}
-              href={`/tags/${slugify(tag)}`}
-              className="max-w-full break-words rounded-md border border-zinc-200 bg-white/40 px-2 py-1 text-xs text-zinc-600 hover:border-cyan-300 hover:text-zinc-950 dark:border-zinc-800 dark:bg-white/[0.03] dark:text-zinc-400 dark:hover:border-cyan-700 dark:hover:text-zinc-50"
-            >
-              #{tag}
-            </Link>
-          ))}
-          {hiddenTagCount > 0 ? (
-            <span className="rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              +{hiddenTagCount}
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-6">
-          <ShareLinks title={article.title} url={article.canonicalUrl} />
-        </div>
-        {article.thumbnail ? (
-          <div className="mt-8 w-full max-w-4xl">
-            <ArticleThumbnail article={article} priority />
-          </div>
-        ) : null}
-      </header>
-
-      <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
-        <div className="prose min-w-0 max-w-none">
-          <MdxContent source={article.content} />
-        </div>
-        <aside className="order-first lg:sticky lg:top-24 lg:order-none lg:self-start">
-          <TableOfContents headings={article.headings} />
-        </aside>
-      </div>
-
-      <nav className="mt-12 grid gap-4 border-t border-zinc-200 pt-8 dark:border-zinc-800 md:grid-cols-2">
-        {adjacentArticles.previous ? (
-          <Link
-            className="tech-card min-w-0 rounded-lg border p-4 transition hover:-translate-y-0.5"
-            href={adjacentArticles.previous.url}
-          >
-            <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
-              <ArrowLeft aria-hidden size={15} />
-              前の記事
-            </span>
-            <span className="mt-2 block break-words font-semibold text-zinc-950 dark:text-zinc-50">
-              {adjacentArticles.previous.title}
-            </span>
+        </section>
+      ) : null}
+      <nav className="reading-adjacent" aria-label="関連する前後の記事">
+        {adjacent.previous ? (
+          <Link href={adjacent.previous.url}>
+            <span>← 同じテーマの前の記事</span>
+            <strong>{adjacent.previous.title}</strong>
           </Link>
         ) : (
-          <span className="hidden md:block" />
+          <span />
         )}
-        {adjacentArticles.next ? (
-          <Link
-            className="tech-card min-w-0 rounded-lg border p-4 text-right transition hover:-translate-y-0.5"
-            href={adjacentArticles.next.url}
-          >
-            <span className="inline-flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
-              次の記事
-              <ArrowRight aria-hidden size={15} />
-            </span>
-            <span className="mt-2 block break-words font-semibold text-zinc-950 dark:text-zinc-50">
-              {adjacentArticles.next.title}
-            </span>
+        {adjacent.next ? (
+          <Link href={adjacent.next.url}>
+            <span>同じテーマの次の記事 →</span>
+            <strong>{adjacent.next.title}</strong>
           </Link>
         ) : null}
       </nav>
-
-      {relatedArticles.length > 0 ? (
-        <section className="mt-12">
-          <h2 className="section-title">関連記事</h2>
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            {relatedArticles.map((relatedArticle) => (
-              <ArticleCard key={relatedArticle.slug} article={relatedArticle} />
-            ))}
+      {related.length ? (
+        <section className="related-reading">
+          <div className="section-heading">
+            <h2>あわせて読む</h2>
           </div>
+          {related.map((item) => (
+            <ArticleCard key={item.slug} article={item} compact />
+          ))}
         </section>
       ) : null}
     </article>
   );
-}
-
-function ResponsiveText({ text, maxUnits }: { text: string; maxUnits: number }) {
-  const chunks = chunkText(text, maxUnits);
-
-  return chunks.map((chunk, index) => (
-    <span key={`${chunk}-${index}`} className="block sm:inline">
-      {chunk}
-      {index < chunks.length - 1 ? " " : null}
-    </span>
-  ));
-}
-
-function chunkText(text: string, maxUnits: number) {
-  const chunks: string[] = [];
-  let current = "";
-  let units = 0;
-  const tokens = text.match(/[A-Za-z0-9_./+-]+|\s+|./gu) ?? [];
-
-  for (const token of tokens) {
-    const tokenUnits = displayTextUnits(token);
-
-    if (current.trim() && units + tokenUnits > maxUnits) {
-      chunks.push(current.trim());
-      current = "";
-      units = 0;
-    }
-
-    if (!current && /^\s+$/.test(token)) {
-      continue;
-    }
-
-    current += token;
-    units += tokenUnits;
-  }
-
-  if (current.trim()) {
-    chunks.push(current.trim());
-  }
-
-  return chunks;
-}
-
-function displayTextUnits(text: string) {
-  return Array.from(text).reduce((total, character) => total + displayUnits(character), 0);
-}
-
-function displayUnits(character: string) {
-  return /^[\x00-\x7F]$/.test(character) ? 0.55 : 1;
 }

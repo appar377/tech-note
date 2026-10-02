@@ -1,7 +1,7 @@
 ---
 title: Rails Raw SQL
 subtitle: ActiveRecordの外側で、DBに任せるべき処理を設計する
-description: RailsのMigrationやバッチ処理で生SQLを書く場面を、集合処理、Window Function、UPSERTの順に再構成して理解するBook。
+description: 商品名履歴の採用・集合での反映・再実行を一つの例で追い、RailsとDBのどちらへ処理を置くか判断するBook。
 date: 2026-06-27
 category: Rails
 level: 1
@@ -20,217 +20,207 @@ references:
     note: ROW_NUMBERの個別メモ。
   - articleSlug: rails/sql/on-duplicate-key-update
     note: ON DUPLICATE KEY UPDATEの個別メモ。
+updated: 2026-10-02
 ---
 
-## はじめに
+「生SQLへ置き換えるか」を考える前に、入力から何を選び、既存の行をどう扱うかを決めます。この本では商品名の履歴を一つの例として、重複キー、最新行、集合での反映、再実行を順に追います。
 
-RailsではActiveRecordを使うことで、多くのDB操作をRubyのコードとして書けます。
+関連記事は構文や境界条件を調べる場所として使います。この本での課題は、その知識を組み合わせ、取り込み後の状態を説明できるようにすることです。
 
-普段のCRUDであれば、それで十分です。
+SQLはPostgreSQL 17.10で実行し、履歴の選択、初回と同入力の再適用後の状態、最後の一時表の不在が期待値と一致しました。本文から取り出したSQLでも一致しています。数値や商品名は合成データです。Rails 8.1.3の接続APIは公式仕様を参照しますが、この本のコードをRailsアプリへ組み込む実行検証は行っていません。
 
-しかし、Migration、データ移行、バッチ処理、大量更新では、ActiveRecordだけに閉じると遅くなったり、意図が見えにくくなったりします。
+<span id="はじめに"></span>
+<span id="このbookで身につける判断軸"></span>
 
-このBookでは、生SQLの構文を単発で覚えるのではなく、Railsから見て「どの処理をDBに任せるべきか」という判断軸で再構成します。
+## 取り込み後の状態を先に決める
 
-```mermaid
-flowchart TD
-  A[Rails Migration / Batch] --> B{Where should work happen?}
-  B --> C[Ruby loop]
-  B --> D[Set-based SQL]
-  D --> E[INSERT SELECT]
-  D --> F[Window Function]
-  D --> G[UPSERT]
-  E --> H[Database Engine]
-  F --> H
-  G --> H
+同じ商品番号`007`でも、供給元が違えば別の商品として扱います。この例のキーは`source`と`external_id`の組で、商品番号の先頭の0も保持します。入力は固定した5行で、並行した取り込みは扱いません。
+
+取り込み規則は次のとおりです。
+
+- 同じキーの履歴から、記録時刻が新しい1行を選びます。
+- 同時刻ならidが大きい行を選びます。実世界の時系列をidだけで保証する規則ではありません。
+- 現在値がなければ追加し、あれば選んだ商品名と履歴idへ置き換えます。
+- 入力にないキーの削除は行いません。
+
+同じ接続で掲載順に実行するための一時表を作ります。
+
+```sql file=rails_raw_sql/01_setup.sql
+BEGIN;
+SET LOCAL TIME ZONE 'UTC';
+CREATE TEMP TABLE brs_events (
+  id integer PRIMARY KEY,
+  source text NOT NULL,
+  external_id text NOT NULL,
+  label text NOT NULL,
+  recorded_at timestamptz NOT NULL
+) ON COMMIT DROP;
+CREATE TEMP TABLE brs_current (
+  source text NOT NULL,
+  external_id text NOT NULL,
+  label text NOT NULL CHECK (length(label) > 0),
+  source_event_id integer NOT NULL,
+  PRIMARY KEY (source, external_id)
+) ON COMMIT DROP;
+INSERT INTO brs_events (id, source, external_id, label, recorded_at) VALUES
+  (1, 'catalog-a', '007', 'Old A',  '2026-10-01 00:00:00+00'),
+  (2, 'catalog-a', '007', 'Label A', '2026-10-02 00:00:00+00'),
+  (3, 'catalog-a', '007', 'Label B', '2026-10-02 00:00:00+00'),
+  (4, 'catalog-b', '007', 'Other',   '2026-10-02 00:00:00+00'),
+  (5, 'catalog-a', '008', 'Label C', '2026-10-02 00:00:00+00');
+INSERT INTO brs_current (source, external_id, label, source_event_id)
+VALUES ('catalog-a', '007', 'Existing', 0);
 ```
 
-## このBookで身につける判断軸
+`brs_current`の`catalog-a / 007`には既存の値があります。ここを維持するのか更新するのかで、投入のSQLが変わります。この本ではLabel Bへ更新する契約です。
 
-Railsで生SQLを書く目的は、ActiveRecordを避けることではありません。
+**判断してみる:** `external_id`だけを主キーにすると何が困りますか。catalog-aの007とcatalog-bの007を別々に保存できなくなります。キーを決めてからSQLへ進みます。
 
-目的は、処理の責務を正しい場所に置くことです。
+<span id="3-グループ内の最新レコードを取る"></span>
 
-- 1件ずつ検証や副作用が必要ならRubyで処理する
-- 大量データを同じルールで移すならSQLに寄せる
-- グループ内の順位や最新レコード抽出はWindow Functionを使う
-- 再実行に強い投入処理はUPSERTを検討する
+## 複合キーごとに採用する履歴を選ぶ
 
-この判断軸があると、「ActiveRecordで書けるか」ではなく「どこで処理するのが自然か」を考えられます。
+まず候補が複数あるキーを調べます。
 
-## 1. RubyループとSQL集合処理
-
-Railsでデータ移行を書くと、最初に思いつきやすいのはRubyでループする方法です。
-
-```ruby
-User.find_each do |user|
-  UserProfile.create!(
-    email: user.email,
-    name: user.name
-  )
-end
+```sql file=rails_raw_sql/02_keys.sql
+SELECT source, external_id, COUNT(*) AS candidates
+FROM brs_events
+GROUP BY source, external_id
+HAVING COUNT(*) > 1
+ORDER BY source, external_id;
 ```
 
-この書き方は分かりやすいですが、件数が増えるとDBとの往復が増えます。
+期待する結果は`catalog-a / 007`の候補3件です。これは削除してよい行が3件あるという意味ではありません。採用する履歴をこれから選ぶための確認です。NULLや複合キーの集約に迷ったら、[GROUP BY・HAVINGの記事](/tech-note/articles/rails/sql/sql-group-by-having-duplicates/)へ戻ります。
 
-また、処理の本質が「usersからuser_profilesへ同じ形で移す」だけなら、Rubyを経由する必要はありません。
-
-その場合は、SQLの集合処理として書けます。
-
-```sql
-INSERT INTO user_profiles (
-  email,
-  name,
-  created_at,
-  updated_at
-)
-SELECT
-  email,
-  name,
-  NOW(),
-  NOW()
-FROM users;
-```
-
-これは、`users` の検索結果をまとめて `user_profiles` に投入する処理です。
-
-DB内部で完結するため、Ruby側へ1件ずつデータを戻す必要がありません。
-
-## 2. Railsから実行する
-
-Migrationでは、`execute` を使ってSQLを実行できます。
-
-```ruby
-class BackfillUserProfiles < ActiveRecord::Migration[7.2]
-  def up
-    execute(<<~SQL)
-      INSERT INTO user_profiles (
-        email,
-        name,
-        created_at,
-        updated_at
-      )
-      SELECT
-        email,
-        name,
-        NOW(),
-        NOW()
-      FROM users
-    SQL
-  end
-end
-```
-
-`<<~SQL` はRubyのヒアドキュメントです。
-
-複数行のSQLを読みやすく書けるため、Migrationで生SQLを書くときによく使います。
-
-重要なのは、SQLを文字列として埋め込むだけで満足しないことです。
-
-そのSQLがどのテーブルを読み、どの条件で絞り、どれくらいの件数に影響するのかまで確認する必要があります。
-
-## 3. グループ内の最新レコードを取る
-
-実務では、単純な移行だけでなく「ユーザーごとの最新レコードだけ使いたい」という処理もあります。
-
-Rubyで書くと、ユーザーごとにレコードを集めて、更新日時で並べて、先頭を取るような処理になります。
-
-SQLでは、Window Functionを使って表現できます。
-
-```sql
-SELECT *
-FROM (
-  SELECT
-    user_events.*,
+```sql file=rails_raw_sql/03_latest.sql
+WITH ranked AS (
+  SELECT id, source, external_id, label,
     ROW_NUMBER() OVER (
-      PARTITION BY user_id
-      ORDER BY created_at DESC
-    ) AS row_num
-  FROM user_events
-) ranked
-WHERE row_num = 1;
-```
-
-`PARTITION BY user_id` は、`user_id` ごとに区切るという意味です。
-
-`ORDER BY created_at DESC` は、その区切りの中で新しい順に並べるという意味です。
-
-`ROW_NUMBER()` は、その並びに1から番号を付けます。
-
-そのため、`row_num = 1` だけを残すと、ユーザーごとの最新レコードを取得できます。
-
-## 4. 再実行に強い投入処理
-
-Migrationやバッチ処理では、途中で失敗して再実行することがあります。
-
-そのとき、単純なINSERTだけだと、すでに投入済みの行で重複エラーになることがあります。
-
-MySQLでは、`ON DUPLICATE KEY UPDATE` を使うとUPSERTできます。
-
-```sql
-INSERT INTO user_profiles (
-  email,
-  name,
-  updated_at
+      PARTITION BY source, external_id
+      ORDER BY recorded_at DESC, id DESC
+    ) AS rn
+  FROM brs_events
 )
-VALUES (
-  'alice@example.com',
-  'Alice',
-  NOW()
+SELECT id, source, external_id, label
+FROM ranked
+WHERE rn = 1
+ORDER BY source, external_id;
+```
+
+| id | source | external_id | label |
+|---:|---|---|---|
+| 3 | catalog-a | 007 | Label B |
+| 5 | catalog-a | 008 | Label C |
+| 4 | catalog-b | 007 | Other |
+
+window内の`ORDER BY`は採用順、最後の`ORDER BY`は結果の表示順です。時刻だけではid=2と3の順番が決まらないため、説明用の採用規則をSQLにも含めています。`rn = 1`は外側のSELECTで絞ります。[PostgreSQLのwindow function](https://www.postgresql.org/docs/17/tutorial-window.html)
+
+**判断してみる:** 同時刻の履歴をすべて採用する要件なら、今の規則でよいでしょうか。一つの現在値へ入れる前提から見直す必要があります。`ROW_NUMBER`と同順位の違いは[最新1件を選ぶ記事](/tech-note/articles/rails/sql/row-number/)で確認できます。
+
+<span id="1-rubyループとsql集合処理"></span>
+
+## 選んだ行をDBでまとめて反映する
+
+採用した3行を、現在値のテーブルへ渡します。今回の入力・採用規則は、投入先の複合キーごとに1行へ絞るところまでが一組です。
+
+```sql file=rails_raw_sql/04_apply.sql
+WITH ranked AS (
+  SELECT id, source, external_id, label,
+    ROW_NUMBER() OVER (
+      PARTITION BY source, external_id
+      ORDER BY recorded_at DESC, id DESC
+    ) AS rn
+  FROM brs_events
 )
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  updated_at = VALUES(updated_at);
+INSERT INTO brs_current (source, external_id, label, source_event_id)
+SELECT source, external_id, label, id FROM ranked WHERE rn = 1
+ON CONFLICT (source, external_id) DO UPDATE
+SET label = EXCLUDED.label,
+    source_event_id = EXCLUDED.source_event_id
+RETURNING source, external_id, label, source_event_id;
 ```
 
-ここで重複判定に使われるのは、SQL内で指定した任意のキーではありません。
+`INSERT`の列と`SELECT`の値は位置で対応します。選んだ履歴のidが、投入先の`source_event_id`へ入ります。`ON CONFLICT`には複合キーを指定し、競合した場合に使う新しい値を`EXCLUDED`から参照します。[PostgreSQLのINSERTとON CONFLICT](https://www.postgresql.org/docs/17/sql-insert.html)
 
-PRIMARY KEYまたはUNIQUE KEYです。
+同じ文が一つの既存行を複数回更新しようとする入力は、PostgreSQLの`ON CONFLICT DO UPDATE`では認められません。ここでは`ROW_NUMBER`による選択で、その入力を先に1行へ決めています。単にUPSERTを付ければ入力の重複も解決する、という構成ではありません。
 
-例えば `email` にUNIQUE INDEXがある場合、同じemailが来たときにINSERTではなくUPDATEへ切り替わります。
+`RETURNING`の行順を前提にせず、保存後の状態を並べて読みます。
 
-## 5. 生SQLを書く前に確認すること
-
-Railsから生SQLを書くときは、次の順番で確認すると事故を減らせます。
-
-1. その処理はRubyで1件ずつ扱う必要があるか
-2. DB内部で集合処理にできるか
-3. 対象件数はどれくらいか
-4. 再実行したときに壊れないか
-5. IndexやUNIQUE制約は期待通りか
-6. 本番データで実行時間が問題にならないか
-
-SQLは強力ですが、強力だからこそ影響範囲も大きくなります。
-
-Migrationでは、事前にSELECTで対象件数を確認し、必要ならトランザクション、ロック、バッチ分割も検討します。
-
-## 6. ActiveRecordとSQLを対立させない
-
-ActiveRecordと生SQLは、どちらが上という関係ではありません。
-
-ActiveRecordは、ドメインロジックや通常のアプリケーション操作に向いています。
-
-一方で、生SQLは、DB内部で完結する大量データ処理や、SQLにしか自然に書けない集合処理に向いています。
-
-Railsで大事なのは、どちらか一方に寄せることではなく、処理の性質に合わせて境界を決めることです。
-
-```text
-Validation / Callback / Business Logic
-=> Rails / ActiveRecord
-
-Bulk insert / Ranking / Upsert / Data migration
-=> SQL / Database Engine
+```sql file=rails_raw_sql/05_read.sql
+SELECT source, external_id, label, source_event_id
+FROM brs_current
+ORDER BY source, external_id;
 ```
 
-## まとめ
+| source | external_id | label | source_event_id |
+|---|---|---|---:|
+| catalog-a | 007 | Label B | 3 |
+| catalog-a | 008 | Label C | 5 |
+| catalog-b | 007 | Other | 4 |
 
-Railsで生SQLを書くときは、構文を暗記するよりも、処理をどこで実行するべきかを考えることが重要です。
+これが初回反映後の期待値です。既存の007は更新され、残り2行が追加されます。各モデルを生成して保存する操作を行っていないため、モデルのvalidationやcallbackを通す処理とは区別します。
 
-- 1件ずつの副作用が必要ならRubyで処理する
-- 大量データの同型変換はSQL集合処理に寄せる
-- 検索結果を投入するなら `INSERT SELECT` を使う
-- グループ内の順位付けは `ROW_NUMBER()` を使う
-- 再実行に強くしたいならUPSERTを検討する
-- 生SQLは実行前に対象件数、制約、Index、再実行性を確認する
+コピー条件やNULLの扱いを掘り下げる場合は、[INSERT SELECTの記事](/tech-note/articles/rails/sql/insert-select/)を読んでから、今回の入力表と投入先の制約に戻ってください。
 
-この判断軸があると、Railsの中でもDBの力を自然に使えるようになります。
+<span id="4-再実行に強い投入処理"></span>
+
+## 再実行で保つものと変わるものを分ける
+
+同じ接続で`rails_raw_sql/04_apply.sql`と`rails_raw_sql/05_read.sql`をもう一度実行します。入力を増減させていなければ、保存される4列の期待値は上の表と同じです。
+
+ただし、2回目も競合した行へのUPDATEは行われます。今回のSQLの`RETURNING`は、2回目にも3行を返す想定です。「最終的な列の値が同じ」と「2回目は更新処理が起きない」を同じ意味で使わないようにします。[INSERTの返却行](https://www.postgresql.org/docs/17/sql-insert.html)
+
+この表には更新時刻の自動変更やtriggerを置いていません。実テーブルでそれらがあるなら、同じ入力でも別の列や副作用が変わる可能性があります。古い入力だけをあとから流す方式へ変更する場合も、新しい現在値を上書きしない条件を別途決めます。今回のSQLは入力表の全履歴から選び直す範囲です。
+
+**判断してみる:** 既存の007をExistingのまま残したい場合も、このSQLでよいでしょうか。更新する契約が合わないため、[不足行だけを補う記事](/tech-note/articles/rails/sql/raw-sql-summary/)へ戻ります。更新、補完、加算では再実行後の状態がそれぞれ異なります。
+
+MySQLの`ON DUPLICATE KEY UPDATE`は、PRIMARY KEYまたはUNIQUE indexへの衝突で更新へ進みます。PostgreSQLのように今回の競合対象を指定する書き方とは異なり、このSQLをそのまま移植するものではありません。[MySQL 8.4の公式仕様](https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html)
+
+違いを確かめたいときは[UPSERTの比較記事](/tech-note/articles/rails/sql/on-duplicate-key-update/)へ進みます。
+
+<span id="2-railsから実行する"></span>
+<span id="6-activerecordとsqlを対立させない"></span>
+
+## Railsへ組み込む境界を決める
+
+SQLで入力と保存後の状態を説明できたら、Rails側で担う処理を確認します。今回のような固定SQLをDBへ送る接続APIには`execute`や`exec_query`があります。`exec_query`はbindを受け取り、読み取りだけの問い合わせには`select_all`を検討するという区別もあります。[Rails 8.1.3のDatabaseStatements](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html)
+
+SQL文字列へ外部入力を直接埋め込まず、値はbindなどで渡す設計にします。ただし、値用のbindをテーブル名や任意の並び順の指定へ流用することはできません。この本の例は、固定の表名と合成値だけです。
+
+| 今回のSQLで担っていること | Railsへ組み込む前に決めること |
+|---|---|
+| 同じキーから採用する行を選ぶ | 入力を受け付ける形式と、採用規則の妥当性 |
+| 主キーやCHECK制約を満たして保存する | モデルvalidationやcallbackにだけある条件をどう扱うか |
+| 一つの文で挿入・更新する | ほかの書き込みと合わせたtransactionの範囲 |
+| 現在値を更新する | 通知や外部送信をどこで扱うか |
+
+Railsの`upsert_all`もモデルを生成せず、validationやcallbackを実行しません。API名をRailsのメソッドへ変えれば通常の`save!`と同じ経路になるわけではないため、処理の責務から選びます。[Rails 8.1.3のupsert_all](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-upsert_all)
+
+複数のDB変更を一まとまりにするならtransactionを設計しますが、外部送信の取り消しまでDBの`ROLLBACK`で保証することはできません。今回のfixtureでは外部送信や並行処理を扱っていません。[PostgreSQLのtransaction](https://www.postgresql.org/docs/17/tutorial-transactions.html)
+
+**判断してみる:** 商品名が変わるたびにメールを送るcallbackがあるアプリで、そのままこのSQLへ置き換えてよいでしょうか。必要な通知を別に設計するか、モデル経由の保存を残すかを決める必要があります。ここでは高速化を理由にその責務を省略しません。
+
+<span id="5-生sqlを書く前に確認すること"></span>
+<span id="まとめ"></span>
+
+## 要件が変わったときの判断を練習する
+
+同じ5行の例でも、要件が変わればSQLの選択は変わります。次の問いに、結果の行と値で答えます。
+
+| 変わった要件 | 今のSQLから見直す場所 |
+|---|---|
+| catalog-bの007をcatalog-aと統合したい | 業務上のキー。既存の複合主キーから先に見直す |
+| 同時刻の違う商品名は保留したい | ROW_NUMBERで1行へ決める前の候補検査 |
+| 既存の商品名を保全したい | DO UPDATEによる置き換え方針 |
+| 空の商品名が一つあっても他の商品は進めたい | CHECK違反の扱いとtransaction・処理単位 |
+| 入力が大きく、一度に終わらない | 分割の境界、入力の固定方法、再開と再適用の契約 |
+
+これらの変更版は、この本のSQLには実装していません。とくに「先にSELECTで見た候補」と「後で投入する文が見る候補」は、並行更新があると同じとは限りません。PostgreSQLの既定のRead Committedでは、文ごとに見えるsnapshotが更新されるためです。[分離レベルの仕様](https://www.postgresql.org/docs/17/transaction-iso.html)
+
+処理の回数が気になるなら、[Active RecordとSQLの観測](/tech-note/articles/rails/sql/rails-engineer-needs-sql/)へ戻ります。一つの問い合わせの中を読む必要があれば、[Database Internal](/tech-note/books/database-internal/)で結果の契約から実行計画へ進めます。
+
+この例で確かめるのは、採用する3行と、初回・同入力の再適用後に残る状態です。実データの処理時間、ロック待ち、並行した取り込み、Railsへの組み込みは別の検証として残ります。最後に、この接続で作った表と変更を戻します。
+
+```sql file=rails_raw_sql/06_finish.sql
+ROLLBACK;
+```

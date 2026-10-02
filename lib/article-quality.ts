@@ -1,4 +1,5 @@
 import type { Article } from "./articles";
+import { validateQuestionLedArticle } from "./editorial-quality";
 
 type QualityIssue = {
   article: string;
@@ -84,6 +85,9 @@ const categoryRules: Record<string, CategoryRule> = {
 };
 
 export function validateArticleQuality(article: Article): ArticleQualityReport {
+  if (article.editorialProfile === "question-led-v1") {
+    return validateQuestionLedArticle(article);
+  }
   const errors: QualityIssue[] = [];
   const warnings: QualityIssue[] = [];
   const headingTexts = new Set(article.headings.map((heading) => heading.text));

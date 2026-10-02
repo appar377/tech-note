@@ -1,6 +1,6 @@
 ---
-title: SQLのView・派生テーブル・CTE・一時テーブルは何が違うのか？内部動作から理解する
-description: View、派生テーブル、CTE、Temporary Tableの違いを、SQLが解析・最適化・実行される流れに沿って整理する。
+title: View・派生テーブル・CTE・一時テーブルは何が残るのか
+description: PostgreSQL 17の小さな例で、名前とデータの寿命、元表への更新の反映、CTEの実体化と取り込み、一時表の統計を比較します。
 date: 2026-06-26
 tags:
   - SQL
@@ -16,572 +16,182 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/sql-view-derived-cte-temp-table.png
 popular: true
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+同じ抽出条件を、派生テーブル、CTE、View、一時テーブルで書けるとき、何を基準に選べばよいのでしょうか。問い合わせの中に名前が欲しいのか、定義を複数のSQLから使いたいのか、ある時点の結果を保存したいのかで選択が変わります。
 
-View、派生テーブル、CTE、Temporary Tableは、どれも「テーブルのように扱える」構文です。
+ここではPostgreSQL 17を対象に、商品の在庫という説明用データで違いを見ます。掲載SQLはPostgreSQL 17.10で実行し、結果と計画を確認しました。MySQLとの違いは最後に範囲を分けて扱います。
 
-ただし、SQLだけを保存するのか、Optimizerで展開されるのか、実際に一時テーブルを作るのかは大きく異なります。
+## 名前とデータは、いつまで残りますか？
 
-## この記事で学べること
+| 形式 | 名前を使える範囲 | 保存するもの |
+| --- | --- | --- |
+| 派生テーブル | `FROM` のサブクエリを含む問い合わせのスコープ | そのSQLの一部。後続の別SQLから使う表は作りません |
+| CTE | `WITH` を含む1つのSQL文と、その中で参照が認められる範囲 | 名前付きの問い合わせ。実行時に中間結果を保持するかは別の判断です |
+| 通常のView | 作成後、削除するまで。TEMP viewはセッション内 | 問い合わせの定義。通常のViewは結果を保存しません |
+| 一時テーブル | セッション内。`ON COMMIT` で短くすることもできます | 独立した表の行。インデックスを作り、行を更新できます |
 
-- View、派生テーブル、CTE、Temporary Tableの違い
-- OptimizerがMergeまたはMaterializeする考え方
-- `EXPLAIN` で実体化されたかどうかを見る方法
-- どの場面でどの構文を選ぶべきか
+派生テーブルとCTEはSQL文内の構造です。通常のViewは定義がDBに残り、参照時にその問い合わせが使われます。Viewの名前が残ることと、結果の行が保存されることを分けて考えます。[PostgreSQL 17: SELECT](https://www.postgresql.org/docs/17/sql-select.html)、[CREATE VIEW](https://www.postgresql.org/docs/17/sql-createview.html)
 
-## 前提知識
+## 同じ抽出を3通りで書くと、何が変わりますか？
 
-- `SELECT`、`FROM`、`WITH` の基本を知っている
-- 実行計画という言葉を聞いたことがある
-- MySQLまたはPostgreSQLでSQLを実行したことがある
-
-## 図解
-
-```mermaid
-flowchart TD
-  A[SQL] --> B[Parser]
-  B --> C[Resolver / Rewrite]
-  C --> D[Optimizer]
-  D --> E{Merge possible?}
-  E -- yes --> F[Inline / Merge]
-  E -- no --> G[Materialize]
-  F --> H[Execution]
-  G --> H
-```
-
-## SQL例
+コードは新しいpsql接続で上から続けて実行する構成です。既存表を使わず、最後に `ROLLBACK` します。
 
 ```sql
-WITH active_users AS (
-  SELECT *
-  FROM users
-  WHERE deleted_at IS NULL
-)
-SELECT *
-FROM active_users;
+BEGIN;
+CREATE TEMP TABLE vt_products (
+  id integer PRIMARY KEY,
+  status text NOT NULL,
+  stock integer NOT NULL
+) ON COMMIT DROP;
+INSERT INTO vt_products (id, status, stock) VALUES
+  (1, 'active', 10), (2, 'active', 20), (3, 'archived', 30);
+ANALYZE vt_products;
 ```
 
-## EXPLAIN
+派生テーブルでは、サブクエリの結果に `p` という別名を付けます。
 
 ```sql
-EXPLAIN
-WITH active_users AS (
-  SELECT *
-  FROM users
-  WHERE deleted_at IS NULL
-)
-SELECT *
-FROM active_users;
-```
-
-```text
-Seq Scan on users  (cost=0.00..1820.00 rows=1000 width=128)
-  Filter: (deleted_at IS NULL)
-```
-
-## 実際の性能比較
-
-```text
-単純なCTE: Optimizerでインライン化され、元テーブルへのアクセスだけに見える
-MaterializeされるCTE: 一時結果を作るため、読み書きコストが増える場合がある
-Temporary Table: 明示的に中間結果を保存できるが、作成と管理のコストがある
-```
-
-## 内部動作
-
-```text
-SQL
-↓
-Parser
-↓
-Resolver / Rewrite
-↓
-Optimizer
-↓
-Merge または Materialize
-↓
-Execution
-```
-
-## 本編
-
-SQLには「テーブルのように扱えるもの」が複数存在します。
-
-例えば次の4つです。
-
-```sql title="view.sql"
-SELECT *
-FROM active_users;
-```
-
-```sql title="derived_table.sql"
-SELECT *
+SELECT p.id, p.stock
 FROM (
-  SELECT *
-  FROM users
-) u;
+  SELECT id, stock FROM vt_products WHERE status = 'active'
+) AS p
+ORDER BY p.id;
 ```
 
-```sql title="cte.sql"
-WITH active_users AS (
-  SELECT *
-  FROM users
+CTEでは、そのSQL文の中で参照する問い合わせに `vt_selected_products` という名前を付けます。
+
+```sql
+WITH vt_selected_products AS (
+  SELECT id, stock FROM vt_products WHERE status = 'active'
 )
-SELECT *
-FROM active_users;
+SELECT id, stock FROM vt_selected_products ORDER BY id;
 ```
 
-```sql title="temporary_table.sql"
-SELECT *
-FROM temp_users;
+Viewでは、定義を保存して、別のSQL文からも名前で参照します。今回は片付けやすいTEMP viewを使います。
+
+```sql
+CREATE TEMP VIEW vt_current_products AS
+SELECT id, stock FROM vt_products WHERE status = 'active';
+SELECT id, stock FROM vt_current_products ORDER BY id;
 ```
 
-どれもテーブルのように扱えますが、内部ではまったく同じものではありません。
+いずれも、この時点では `id` が1・2、`stock` が10・20の2行が期待結果です。CTEの名前は次のSQL文では使えませんが、作成済みのViewは使えます。この違いだけでは、どれが速いかまでは決まりません。
 
-- データは保存されるのか
-- SQLだけ保存されるのか
-- 毎回SELECTが実行されるのか
-- 本当にテーブルが作られるのか
-- Optimizerはそれをどう扱うのか
+通常のViewは結果を物理的に保存しません。TEMP viewもその点は同じで、「TEMPだから結果をコピーする」という意味ではありません。[PostgreSQL 17: CREATE VIEW](https://www.postgresql.org/docs/17/sql-createview.html)
 
-この記事では、SQLが実行される流れに沿って、View、派生テーブル、CTE、Temporary Tableの違いを整理します。
+## 一時テーブルへコピーした後、元の行が変わるとどうなりますか？
 
-> [!NOTE]
-> ここでは通常のViewを扱います。データを保存するMaterialized Viewは別物です。
+ここで、現在の抽出結果を別の表へコピーします。
 
-## SQLが実行される流れ
-
-まず、SQLは大きく次のような流れで処理されます。
-
-```mermaid
-flowchart TD
-  A[SQL] --> B[Parser]
-  B --> C[Resolver / Rewrite]
-  C --> D[Optimizer]
-  D --> E[Execution Plan]
-  E --> F[Executor]
-  F --> G[Storage Engine / Table Access]
-  G --> H[Result]
+```sql
+CREATE TEMP TABLE vt_snapshot ON COMMIT DROP AS
+SELECT id, stock FROM vt_current_products;
+CREATE INDEX vt_snapshot_id_idx ON vt_snapshot (id);
+ANALYZE vt_snapshot;
+SELECT id, stock FROM vt_snapshot ORDER BY id;
 ```
 
-細かい名称はDBによって異なりますが、ざっくり見ると以下の流れです。
+作成直後の期待結果は同じ2行です。続いて元表の在庫を変え、商品3も公開中にします。
 
-| 段階 | 役割 |
-| --- | --- |
-| Parser | SQL文字列を構文として解析する |
-| Resolver / Rewrite | テーブル名、カラム名、Viewなどを解決する |
-| Optimizer | どの順序で、どの方法でアクセスするかを決める |
-| Execution Plan | 実行計画を作る |
-| Executor | 実行計画に沿って処理する |
-| Storage Engine / Table Access | 実テーブルや一時領域へアクセスする |
-
-この記事では、それぞれの機能がこの流れのどこで登場するのかを見ていきます。
-
-## まず結論
-
-| 種類 | データ保持 | SQL保持 | 独自Index | 有効期間 |
-| --- | --- | --- | --- | --- |
-| 派生テーブル | 原則なし | なし | 作れない | クエリ中 |
-| CTE | 原則なし | なし | 作れない | クエリ中 |
-| View | なし | あり | 作れない | 永続 |
-| Temporary Table | あり | なし | 作れる | セッション |
-
-ただし、ここで注意があります。
-
-派生テーブルやCTEは、常に完全に消えるわけではありません。Optimizerがインライン展開できる場合は元SQLへ統合されますが、条件によっては内部的にMaterializeされることがあります。
-
-このとき作られるのは、ユーザーが参照できるTemporary Tableではなく、DB内部の一時的な結果です。
-
-## 派生テーブル
-
-派生テーブルは、`FROM` 句の中に書くサブクエリです。
-
-```sql title="derived_table.sql"
-SELECT *
-FROM (
-  SELECT *
-  FROM users
-) u;
+```sql
+UPDATE vt_products SET stock = 15 WHERE id = 1;
+UPDATE vt_products SET status = 'active' WHERE id = 3;
+SELECT id, stock FROM vt_current_products ORDER BY id;
+SELECT id, stock FROM vt_snapshot ORDER BY id;
 ```
 
-初心者のうちは「一時的なテーブルが作られている」と考えがちです。
+View側の期待結果は、`(id, stock)` が `(1, 15)`・`(2, 20)`・`(3, 30)` の3行です。一時テーブル側は作成時の `(1, 10)`・`(2, 20)` のままです。Viewの結果は、その問い合わせから見える元表に基づきます。元表を変更しても、コピー済みの一時テーブルは自動更新されません。[PostgreSQL 17: CREATE TABLE AS](https://www.postgresql.org/docs/17/sql-createtableas.html)
 
-しかし、単純なケースではOptimizerが次のように展開します。
+この例は同じトランザクション内の自分自身の更新を読むものです。別接続の変更がいつ見えるかはトランザクションの分離レベルにも関係するので、「Viewなら他の接続の最新値が常に見える」とは一般化しません。[PostgreSQL 17: Transaction Isolation](https://www.postgresql.org/docs/17/transaction-iso.html)
 
-```sql title="optimized.sql"
-SELECT *
-FROM users;
+## 更新できるのは一時テーブルだけですか？
+
+一時テーブルへの更新は、そのコピーを変えます。
+
+```sql
+UPDATE vt_snapshot SET stock = 999 WHERE id = 1;
+SELECT p.stock AS base_stock, v.stock AS view_stock, s.stock AS copied_stock
+FROM vt_products AS p
+JOIN vt_current_products AS v USING (id)
+JOIN vt_snapshot AS s USING (id)
+WHERE p.id = 1;
 ```
 
-つまり、派生テーブルという実体が常に作られるわけではありません。
+期待値は `base_stock = 15`、`view_stock = 15`、`copied_stock = 999` です。次にViewを通して更新します。
 
-MySQLでは、派生テーブル、View参照、CTEに対して、主に次の2つの戦略を取ります。
-
-- 外側のクエリへMergeする
-- 内部一時テーブルへMaterializeする
-
-単純な派生テーブルであれば、Mergeされて外側のSELECTに統合されることが多いです。
-
-## EXPLAINしてみる
-
-例えば次のSQLを考えます。
-
-```sql title="explain_derived_table.sql"
-EXPLAIN
-SELECT *
-FROM (
-  SELECT *
-  FROM users
-) u;
+```sql
+UPDATE vt_current_products SET stock = 17 WHERE id = 1;
+SELECT p.stock AS base_stock, v.stock AS view_stock, s.stock AS copied_stock
+FROM vt_products AS p
+JOIN vt_current_products AS v USING (id)
+JOIN vt_snapshot AS s USING (id)
+WHERE p.id = 1;
 ```
 
-Mergeされる場合、実行計画上は `users` への単純なアクセスとして見えます。
+このViewは単一の表から列をそのまま選んだ単純な定義なので、自動更新可能です。期待値は元表とViewが17、コピーは999のままになります。集約、`DISTINCT`、結合などを含むViewまで同様に更新できるわけではありません。自動更新の条件や、条件外の行を作らせない `CHECK OPTION` は別途確認します。[PostgreSQL 17: Updatable Views](https://www.postgresql.org/docs/17/sql-createview.html#SQL-CREATEVIEW-UPDATABLE-VIEWS)
 
-```text
-id | select_type | table
----+-------------+-------
-1  | SIMPLE      | users
-```
+`WITH` 自体にはデータ変更文を含める機能もありますが、この記事のCTE例は読み取り専用のSELECTです。SELECTのCTEに名前を付けただけで、更新可能な表が作られるわけではありません。[PostgreSQL 17: データ変更文を含むWITH](https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-MODIFYING)
 
-この場合、派生テーブルは実行計画上ほぼ消えています。
+## CTEは毎回、一時的な表へ実体化されますか？
 
-一方で、次のような要素があるとMergeできず、Materializeされることがあります。
+PostgreSQL 17では、非再帰でvolatile関数を含まないSELECTのCTEが外側から1回だけ参照される場合、通常は外側の問い合わせへ取り込まれて、まとめて最適化されます。同じCTEを複数回参照する場合は、既定では別に計算して結果を共有します。
 
-- `GROUP BY`
-- `DISTINCT`
-- `HAVING`
-- `LIMIT`
-- 集約関数
-- Window Function
-- `UNION`
+`MATERIALIZED` は別計算を指定し、`NOT MATERIALIZED` は条件を満たすCTEを外側へ取り込む指定です。後者には重複計算が増える可能性があります。再帰CTEや、副作用のないSELECTという条件を満たさないCTEでは `NOT MATERIALIZED` は無視されます。PostgreSQL 12より前には、この取り込みは行われませんでした。[PostgreSQL 17: WITHの最適化](https://www.postgresql.org/docs/17/sql-select.html#SQL-WITH)
 
-その場合は、内部的な一時結果として扱われます。
+次の3つは、同じCTEを2回参照し、指定だけを変えています。いずれも結果として期待するのは `id = 2, stock = 20` の1行です。`EXPLAIN ANALYZE` の表示では結果行が計画情報に置き換わります。
 
-> [!IMPORTANT]
-> 派生テーブルは「必ず実体がない」ではなく、「OptimizerがMergeできれば実体化しない」と理解すると安全です。
-
-## CTE
-
-CTEは、`WITH` で名前を付けた問い合わせです。
-
-```sql title="cte.sql"
-WITH active_users AS (
-  SELECT *
-  FROM users
+```sql
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+WITH vt_selected_products AS (
+  SELECT id, stock FROM vt_products WHERE status = 'active'
 )
-SELECT *
-FROM active_users;
-```
+SELECT a.id, a.stock
+FROM vt_selected_products AS a
+JOIN vt_selected_products AS b USING (id)
+WHERE b.id = 2;
 
-CTEも「一時テーブル」と説明されることがありますが、必ず物理的なテーブルが作られるわけではありません。
-
-単純なCTEであれば、Optimizerによって次のように扱われます。
-
-```text
-WITH
-↓
-Optimizer
-↓
-インライン展開
-↓
-通常のSELECT
-```
-
-つまり、次のSQLに近い実行計画になることがあります。
-
-```sql title="expanded_cte.sql"
-SELECT *
-FROM users;
-```
-
-## PostgreSQLだけ少し違う
-
-PostgreSQLでは、CTEの扱いがバージョンによって大きく変わりました。
-
-PostgreSQL 11以前では、CTEは最適化の境界として扱われ、Materializeされやすいものでした。
-
-一方、PostgreSQL 12以降では、非再帰で副作用のないCTEは、条件を満たすと親クエリへ折りたたまれるようになりました。
-
-例えば次のようなCTEです。
-
-```sql title="postgres_cte.sql"
-WITH active_users AS (
-  SELECT *
-  FROM users
-  WHERE deleted_at IS NULL
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+WITH vt_selected_products AS MATERIALIZED (
+  SELECT id, stock FROM vt_products WHERE status = 'active'
 )
-SELECT *
-FROM active_users
-WHERE id = 1;
-```
+SELECT a.id, a.stock
+FROM vt_selected_products AS a
+JOIN vt_selected_products AS b USING (id)
+WHERE b.id = 2;
 
-インライン化される場合、実行計画は次のような問い合わせに近くなります。
-
-```sql title="folded_cte.sql"
-SELECT *
-FROM users
-WHERE deleted_at IS NULL
-  AND id = 1;
-```
-
-これにより、外側の `WHERE id = 1` を元テーブルのアクセスに押し込める可能性があります。
-
-## EXPLAIN ANALYZEしてみる
-
-PostgreSQLで次のSQLを実行します。
-
-```sql title="explain_analyze_cte.sql"
-EXPLAIN ANALYZE
-WITH active_users AS (
-  SELECT *
-  FROM users
+EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+WITH vt_selected_products AS NOT MATERIALIZED (
+  SELECT id, stock FROM vt_products WHERE status = 'active'
 )
-SELECT *
-FROM active_users;
+SELECT a.id, a.stock
+FROM vt_selected_products AS a
+JOIN vt_selected_products AS b USING (id)
+WHERE b.id = 2;
 ```
 
-インライン化される場合は、`Seq Scan on users` や `Index Scan using ... on users` のように、元テーブルへのアクセスだけが見えます。
+`CTE Scan` やCTEを計算する枝があるか、外側の絞り込みがどこで行われるかを読みます。`Materialize` という計画ノードを見つけただけで、「このCTEが実体化された」とは判定しません。ノードとCTE名の対応まで追ってください。計画の読み方は[EXPLAINとEXPLAIN ANALYZE](/tech-note/articles/sql/internal/explain-analyze/)で扱います。
 
-一方、Materializeされる場合は、`CTE Scan` や `Materialize` に近いノードが現れます。
+このデータを17.10で実行した際は、既定と `MATERIALIZED` の計画に `CTE vt_selected_products` の枝と、同じCTE名を読む2つの `CTE Scan` がありました。`NOT MATERIALIZED` にはそのCTEの枝がなく、元表を読む2つの走査がありました。3種類とも返す行は同じでしたが、この観測だけで一般的な速度差までは判断していません。
 
-ここを見ると、CTEが実行計画上どのように扱われたかを確認できます。
+条件を早く適用できる利点と、共通の計算を再利用できる利点は、問い合わせによって変わります。この3行の表では速度の優劣を決めません。また、CTEの実体化はそのSQL文の実行中の処理であり、後続のSQLから使えるTEMP TABLEの作成とは違います。[PostgreSQL 17: CTE Materialization](https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-CTE-MATERIALIZATION)
 
-## CTEはいつ便利か
+## 一時テーブルを選ぶと、何を管理する必要がありますか？
 
-CTEの主な価値は、物理的に速くすることではなく、SQLを読みやすく分割できることです。
+コピーの作成、必要なインデックス、統計、使い終わった後の寿命まで管理します。PostgreSQLのautovacuumは一時表を処理できないため、この例では投入後に明示的な `ANALYZE vt_snapshot` を実行しています。元表にある統計やインデックスが、`CREATE TABLE AS SELECT` のコピーへそのまま引き継がれると考えないようにします。[PostgreSQL 17: Temporary Tables](https://www.postgresql.org/docs/17/sql-createtable.html)
 
-```sql title="readable_cte.sql"
-WITH latest_orders AS (
-  SELECT
-    user_id,
-    MAX(created_at) AS latest_ordered_at
-  FROM orders
-  GROUP BY user_id
-)
-SELECT
-  users.id,
-  latest_orders.latest_ordered_at
-FROM users
-LEFT JOIN latest_orders
-  ON latest_orders.user_id = users.id;
+PostgreSQLの一時表は既定ではコミット後も行を保持します。`ON COMMIT DELETE ROWS` は行を空にし、`ON COMMIT DROP` は表を削除します。セッションが終われば一時表もなくなります。接続プールを使うアプリケーションでは、アプリケーションの1リクエストとDBセッションの寿命が同じとは限らないため、同じ接続で処理を完結させる設計が必要です。[PostgreSQL 17: ON COMMIT](https://www.postgresql.org/docs/17/sql-createtable.html#SQL-CREATETABLE-ON-COMMIT)
+
+この例では作成したトランザクション全体を戻すため、表やViewの作成も取り消されます。セッション終了やコミット時の削除そのものを、このコードで再現しているわけではありません。
+
+```sql
+ROLLBACK;
 ```
 
-複雑なSQLを段階的に読めるようになるため、レビューや保守で役立ちます。
+## MySQLでも同じ指定を使えますか？
 
-ただし、同じCTEを複数回参照する場合や、DBのバージョンによってはMaterializeされる可能性があります。
+MySQL 8.4にも派生テーブル、View、CTEを外側へ取り込む処理と、中間結果を保持する処理があります。ただし制御に使う `MERGE` / `NO_MERGE` ヒントや `derived_merge` 設定などは、PostgreSQLの `AS MATERIALIZED` とは別の仕様です。集約や `DISTINCT` などが取り込みを妨げる条件も、対象DBの資料で確認します。この記事ではMySQLの実行検証は行っていません。[MySQL 8.4: Derived Tables, Views, CTEsの最適化](https://dev.mysql.com/doc/refman/8.4/en/derived-table-optimization.html)
 
-## View
-
-Viewは、名前を付けて保存したSELECTです。
-
-```sql title="create_view.sql"
-CREATE VIEW active_users AS
-SELECT *
-FROM users
-WHERE deleted_at IS NULL;
-```
-
-初心者のうちは「Viewというテーブルが作られる」と思いがちです。
-
-しかし通常のViewで保存されるのは、データではなくSQL定義です。
-
-```sql title="stored_definition.sql"
-SELECT *
-FROM users
-WHERE deleted_at IS NULL;
-```
-
-つまり、ViewはSQLのショートカットに近いものです。
-
-```sql title="select_view.sql"
-SELECT *
-FROM active_users;
-```
-
-このSQLを実行すると、DBはView定義を解決し、元のSQLへ展開して実行計画を作ります。
-
-## Viewだから速いわけではない
-
-次のSQLを考えます。
-
-```sql title="explain_view.sql"
-EXPLAIN
-SELECT *
-FROM active_users;
-```
-
-多くの場合、実行計画では `users` へのアクセスが現れます。
-
-これは実質的に次のSQLを実行しているのに近いからです。
-
-```sql title="expanded_view.sql"
-SELECT *
-FROM users
-WHERE deleted_at IS NULL;
-```
-
-そのため、通常のViewは「よく使うSQLを共通化する」ための仕組みであり、Viewにしただけで速くなるわけではありません。
-
-> [!TIP]
-> Viewの性能は、View定義の中身と元テーブルのIndexに大きく依存します。
-
-## Temporary Table
-
-Temporary Tableだけは、実際にテーブルを作ります。
-
-```sql title="create_temporary_table.sql"
-CREATE TEMPORARY TABLE temp_users AS
-SELECT *
-FROM users;
-```
-
-この瞬間、セッション内で参照できる `temp_users` が作成されます。
-
-そのため、次のような操作ができます。
-
-```sql title="temporary_table_operations.sql"
-CREATE INDEX idx_temp_users_id ON temp_users(id);
-
-UPDATE temp_users
-SET name = 'Alice'
-WHERE id = 1;
-
-DELETE FROM temp_users
-WHERE deleted_at IS NOT NULL;
-```
-
-ここがView、派生テーブル、CTEとの大きな違いです。
-
-## EXPLAINしてみる
-
-```sql title="explain_temporary_table.sql"
-EXPLAIN
-SELECT *
-FROM temp_users;
-```
-
-この場合、Optimizerは元の `users` ではなく、作成済みの `temp_users` へアクセスします。
-
-つまり、Temporary Tableは中間結果を明示的に保存し、その後のSQLで再利用するための仕組みです。
-
-MySQLのTemporary Tableは作成したセッション内でのみ見え、セッションが閉じると自動的に削除されます。
-
-## 4つの内部動作を比較する
-
-派生テーブルは、基本的にクエリの一部です。
-
-```text
-SELECT
-↓
-Parser
-↓
-Optimizer
-↓
-Merge または Materialize
-↓
-Execution
-```
-
-CTEは、名前付きの問い合わせです。
-
-```text
-WITH
-↓
-Parser
-↓
-Optimizer
-↓
-インライン展開 または Materialize
-↓
-Execution
-```
-
-Viewは、保存されたSQL定義です。
-
-```text
-SELECT View
-↓
-View定義を解決
-↓
-Optimizer
-↓
-Merge または Materialize
-↓
-Execution
-```
-
-Temporary Tableは、実際に作成済みのテーブルです。
-
-```text
-CREATE TEMPORARY TABLE
-↓
-Storage Engine / Temporary Area
-↓
-物理的な中間データを保持
-↓
-SELECT temp_users
-↓
-Execution
-```
-
-## EXPLAINを見比べる
-
-| 種類 | 実行計画の特徴 |
-| --- | --- |
-| 派生テーブル | Mergeされると元テーブルへのアクセスだけに見える |
-| CTE | インライン化されると通常のSELECTに近い。MaterializeされるとCTE Scanなどが現れる |
-| View | View定義が展開され、元テーブルへのアクセスとして見えることが多い |
-| Temporary Table | Temporary Tableそのものへアクセスする |
-
-> [!TIP]
-> `EXPLAIN` や `EXPLAIN ANALYZE` の読み方自体は、[SQLのEXPLAINとEXPLAIN ANALYZEを理解する](../explain-analyze/) で整理しています。
-
-## どれを使えばいい？
-
-最後は用途で考えると分かりやすいです。
-
-| 使いたいこと | おすすめ |
-| --- | --- |
-| 1回だけ使う中間問い合わせを書きたい | 派生テーブル |
-| 複雑なSQLを読みやすく分割したい | CTE |
-| 共通SQLをDB側で管理したい | View |
-| 中間結果を保存して何度も使いたい | Temporary Table |
-| 中間結果へIndexを張りたい | Temporary Table |
-
-## 実務での考え方
-
-実務では、まずCTEで読みやすく書き、遅い場合に実行計画を見ることが多いです。
-
-```text
-読みやすさを優先
-↓
-EXPLAIN / EXPLAIN ANALYZE
-↓
-Mergeされているか確認
-↓
-Materializeが重いなら書き換えを検討
-↓
-何度も再利用するならTemporary Tableも検討
-```
-
-特に大量データを扱う場合は、「SQLの見た目」ではなく「実行計画」を見ることが重要です。
-
-## まとめ
-
-「テーブルのように扱える」という点は共通していますが、内部では異なる仕組みで動いています。
-
-- 派生テーブルは、クエリ中だけ存在する問い合わせの構造。OptimizerがMergeできれば実体化しない。
-- CTEは、可読性や再利用のための名前付き問い合わせ。DBや参照回数によってインライン化またはMaterializeされる。
-- Viewは、SQL定義を永続化したもの。通常はデータを保存せず、実行時に定義が展開される。
-- Temporary Tableは、実際に中間データを保持するテーブル。セッション内でIndex作成や更新もできる。
-
-`EXPLAIN` や `EXPLAIN ANALYZE` を見ることで、見た目は似ていても、データベース内部では違う処理が行われていることが分かります。
-
-## 参考文献
-
-- [MySQL 8.4 Reference Manual: Optimizing Derived Tables, View References, and Common Table Expressions](https://dev.mysql.com/doc/refman/8.4/en/derived-table-optimization.html)
-- [MySQL 8.0 Reference Manual: CREATE TEMPORARY TABLE Statement](https://dev.mysql.com/doc/refman/8.0/en/create-temporary-table.html)
-- [PostgreSQL Documentation: WITH Queries](https://www.postgresql.org/docs/current/queries-with.html)
-- [PostgreSQL 12 Release Notes](https://www.postgresql.org/docs/12/release-12.html)
+1つのSQLを読みやすく分けたいなら派生テーブルやCTE、複数のSQLへ共通の定義を提供したいならView、コピーを後続の処理で使い回したいなら一時テーブルが候補になります。名前の寿命、更新を反映させたい時点、再利用する単位を先に決めると、実行計画で比較すべき点も絞れます。

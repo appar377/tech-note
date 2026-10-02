@@ -1,6 +1,6 @@
 ---
-title: "RSpecのlet_it_beは高速化手段だが、データ汚染を起こしやすい"
-description: "`let_it_be`はデータ作成回数を減らす代わりに、テスト間分離の責任を呼び出し側へ移す。読み取り専用のfixtureとして使い、変更するデータは各exampleで作る。"
+title: "let_it_beの共有状態をreload・refind・freezeでどう扱うか"
+description: "DBのロールバックとRubyオブジェクトの状態を分け、TestProf 1.6.3のmodifierが戻すもの・戻さないものを確認します。"
 date: 2026-07-20
 tags:
   - "RSpec"
@@ -13,137 +13,213 @@ articleType: practical
 draft: false
 thumbnail: "/images/articles/let-it-be-shared-state-pollution.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`let_it_be`で用意したレコードを一つのexampleで更新すると、次のexampleではDBとRubyオブジェクトの値が食い違うことがあります。DBの変更をロールバックしても、同じRubyインスタンスに残った属性値まで戻るとは限らないためです。
 
-大量のDBセットアップを高速化するため`let_it_be`を使ったが、共有レコードを更新・削除するテストが混ざると、実行順で結果が変わる不安定なSpecになった。
+まず、group終了時のDBの後片付けと、example単位のDB分離を区別します。その上で、共有したまま読める値なのか、参照時に読み直すのか、各exampleで新しく作るのかを選びます。
 
-`let_it_be`はデータ作成回数を減らす代わりに、テスト間分離の責任を呼び出し側へ移す。読み取り専用のfixtureとして使い、変更するデータは各exampleで作る。
+## before_allは、いつDBを戻すか
 
-## この記事で学べること
+TestProfの`let_it_be`は、内部で`before_all`を使います。TestProf 1.6.3ではgroup全体のトランザクションを開始し、group終了時にロールバックします。各exampleの間にロールバックを追加する仕組みではありません。[before_allの実装](https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/before_all.rb)
 
-- `let`、`let!`、`before`、`let_it_be`の生成タイミング
-- TestProfの機能であることを明示
-- 同じDB行・同じRubyオブジェクトの共有範囲
-- 更新、削除、関連追加による汚染
-- 実行順依存と単体実行では再現しない問題
-- `reload`、`refind`、`freeze`/immutableオプション等を利用バージョンで確認
+RSpec Railsのtransactional fixturesを使う場合と、素のRSpecにActive Recordだけを組み合わせる場合では、example単位の分離がどう用意されるかを確認する必要があります。`let_it_be`を読み込んだだけで、その分離まで有効になるわけではありません。[TestProfの注意点](https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/let_it_be.md#caveats)
 
-## 前提知識
+以下はRuby 3.4.4、RSpec 3.13.0（core 3.13.6）、TestProf 1.6.3、Active Record 8.1.3、PostgreSQL 17.10を対象にしています。通常の検証13例はすべて成功しました。別に実行した順序依存の再現は2例中1例が、想定した属性値の違いで失敗しました。本文では切り分けの中心になる例を抜粋します。
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+## DBが戻っても、オブジェクトには何が残るか
 
-## 図解
+使い捨てDBへ接続し、次の二表を準備してからRubyブロックを順に読み込みます。Active Recordの接続設定は別途必要です。
 
-![RSpecのlet_it_beは高速化手段だが、データ汚染を起こしやすい](/images/articles/let-it-be-shared-state-pollution.png)
+- `shared_state_accounts`：主キー`id`、`name:string NOT NULL`。
+- `shared_state_notes`：主キー`id`、`shared_state_account_id:bigint NOT NULL`、`body:string NOT NULL`。account IDには外部キーとインデックスを付けます。
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+`memo`はDBの列ではなく、アプリが独自に持つRubyの値を表します。テスト専用の`SharedStateIsolation`は、呼び出し範囲のDB変更をsavepointまで戻すヘルパーです。
 
 ```ruby
-RSpec.describe UserSearch, type: :model do
-  let_it_be(:user) { create(:user, name: "Taro") }
+require "rspec/autorun"
+require "active_record"
+gem "test-prof", "1.6.3"
+require "test_prof/recipes/rspec/let_it_be"
 
-  it "finds the user" do
-    expect(described_class.call("Taro")).to include(user)
-  end
+class SharedStateAccount < ActiveRecord::Base
+  self.table_name = "shared_state_accounts"
+  attr_accessor :memo
 
-  it "does not mutate shared records" do
-    expect { user.update!(name: "Jiro") }.to change { user.reload.name }
+  has_many :notes,
+    class_name: "SharedStateNote",
+    foreign_key: "shared_state_account_id",
+    inverse_of: :account
+end
+
+class SharedStateNote < ActiveRecord::Base
+  self.table_name = "shared_state_notes"
+
+  belongs_to :account,
+    class_name: "SharedStateAccount",
+    foreign_key: "shared_state_account_id",
+    inverse_of: :notes
+end
+
+module SharedStateIsolation
+  def self.run
+    SharedStateAccount.transaction(requires_new: true) do
+      yield
+      raise ActiveRecord::Rollback
+    end
   end
 end
 ```
 
-## 本編
+次のgroupでは、各exampleを`around`で囲んでDBを戻します。さらにexample内でも更新をロールバックし、その直後のDBとメモリを比べます。冒頭の削除は検証用テーブルの初期化なので、実データのあるDBでは実行しません。
 
-### 発生した状況
+```ruby
+RSpec.describe "let_it_beのmodifier" do
+  before(:context) do
+    SharedStateNote.delete_all
+    SharedStateAccount.delete_all
+  end
 
-大量のDBセットアップを高速化するため`let_it_be`を使ったが、共有レコードを更新・削除するテストが混ざると、実行順で結果が変わる不安定なSpecになった。
+  around do |example|
+    SharedStateIsolation.run { example.run }
+  end
 
-### 当初の理解・誤解
+  context "modifierを付けない場合" do
+    let_it_be(:account) { SharedStateAccount.create!(name: "Original") }
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`let_it_be`はデータ作成回数を減らす代わりに、テスト間分離の責任を呼び出し側へ移す。読み取り専用のfixtureとして使い、変更するデータは各exam... という観点で見る必要がありました。
+    it "DBをsavepointまで戻しても同じオブジェクトの変更は残る" do
+      SharedStateIsolation.run { account.update!(name: "Changed") }
 
-### 観測したこと
+      expect(SharedStateAccount.find(account.id).name).to eq("Original")
+      expect(account.name).to eq("Changed")
+    end
+  end
+end
+```
 
-- 汚染が起きる最小RSpec
-- random orderで失敗する例
-- 変更対象だけ`let!`へ戻した修正版
-- 共有レコードを更新しないことをlint的に守る案
+DBから読み直すと`Original`ですが、`account.name`は`Changed`のままです。これはロールバックが失敗したという意味ではありません。DBの状態と、保持したRubyオブジェクトの状態が別であることを示しています。Railsのトランザクション文書も、インスタンスのデータが以前の状態へ戻るわけではないと説明しています。[Active Recordのロールバック](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Transactions/ClassMethods.html)
 
-### 修正案の比較
+## reloadとrefindは、何を読み直すか
 
-| 方針 | 見るべき点 |
+TestProfのmodifierを使うには、Active Recordを先に読み込み、その後で`test_prof/recipes/rspec/let_it_be`を読み込みます。`reload: true`と`refind: true`は初期化ブロックを毎回やり直す指定ではなく、各exampleで初めて値を参照するときの処理です。同じexampleの二度目の参照では、`let`のキャッシュが使われます。[modifierの実装](https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/let_it_be.rb)
+
+```ruby
+RSpec.describe "let_it_beのmodifier" do
+  before(:context) do
+    SharedStateNote.delete_all
+    SharedStateAccount.delete_all
+  end
+
+  around do |example|
+    SharedStateIsolation.run { example.run }
+  end
+
+  context "reloadを使う場合" do
+    let_it_be(:account, reload: true) do
+      record = SharedStateAccount.create!(name: "Original")
+      record.notes.create!(body: "First")
+      record.notes.load
+      record
+    end
+    before_all do
+      @original = account
+      @old_note = account.notes.first
+      account.name = "Unsaved setup"
+      account.memo = "Ruby memo"
+    end
+
+    it "同じinstanceの属性と関連cacheを更新し、独自ivarは保持する" do
+      expect(account).to equal(@original)
+      expect(account.name).to eq("Original")
+      expect(account.memo).to eq("Ruby memo")
+      expect(account.association(:notes)).not_to be_loaded
+      expect(account.notes.first).not_to equal(@old_note)
+    end
+
+    it "同じexampleで再参照するたびにreloadするわけではない" do
+      first = account
+      SharedStateAccount.where(id: first.id).update_all(name: "DB change")
+
+      expect(account).to equal(first)
+      expect(account.name).to eq("Original")
+      expect(account.reload.name).to eq("DB change")
+    end
+  end
+
+  context "refindを使う場合" do
+    let_it_be(:account, refind: true) { SharedStateAccount.create!(name: "Original") }
+    before_all do
+      @original = account
+      account.memo = "Ruby memo"
+    end
+
+    it "同じ行を新しいinstanceで読み、独自ivarを持ち越さない" do
+      expect(account.id).to eq(@original.id)
+      expect(account).not_to equal(@original)
+      expect(account.memo).to be_nil
+      account.memo = "Only in this example"
+      expect(account.memo).to eq("Only in this example")
+    end
+  end
+end
+```
+
+`reload`は同じオブジェクトの属性と関連キャッシュをDBからの値へ置き換えます。そのため未保存の属性変更は失われますが、独自に追加した`@memo`のような変数すべてを初期化する処理ではありません。[Rails 8.1.3のreload](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Persistence.html#method-i-reload)
+
+TestProfの`refind`は、モデルクラスから`unscoped.find`で同じ主キーを検索し、新しいインスタンスを返します。元のオブジェクトの独自変数や、読み込み済み関連をそのまま引き継ぐ方法ではありません。[TestProf 1.6.3のrefind実装](https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/ext/active_record_refind.rb)
+
+どちらもDBの行を作り直しません。example単位のDB分離がなく、前のテストが行を削除したままなら、次の読み直しは`ActiveRecord::RecordNotFound`になり得ます。更新済みの行が残っていれば、その更新後の値を読みます。modifierはDBの後片付けの代わりにはなりません。
+
+## freezeで防げる変更はどこまでか
+
+`let_it_be(:account, freeze: true)`は、初期化したオブジェクトを凍結して、共有した属性を変更しようとした場所で`FrozenError`を出すための指定です。TestProf 1.6.3の処理は、初期化時にすでに読み込まれている関連にも再帰的に適用されます。まだ読み込んでいない関連を、後から取得したときに自動凍結する仕組みではありません。[freezeの対象を決める実装](https://github.com/test-prof/test-prof/blob/v1.6.3/lib/test_prof/recipes/rspec/let_it_be.rb#L155-L240)
+
+| 操作 | この構成での扱い |
 | --- | --- |
-| 高速化 | 大量fixture作成を削減／分離性と理解コストを失う |
-| exampleごと作成 | 安全／遅い |
+| 凍結したレコードの`name=` | 属性変更でFrozenError |
+| 初期化時に読み込んだ関連レコードの属性変更 | 凍結対象ならFrozenError |
+| 初期化後に初めて読む関連 | 自動凍結の対象外 |
+| 別instanceやRelationからDBを更新 | Ruby側のfreezeでは禁止できない |
+| `freeze: true, reload: true`を併用 | reload後の属性は再び変更できる |
 
-## 内部動作
+最後の行は、Active Recordの`freeze`が属性の入れ物を凍結し、`reload`がその属性を置き換えることによります。`freeze`と`reload`を併用しても、読み直したレコードが引き続き変更禁止になるとは扱えません。[Active Recordのfreeze](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Core.html#method-i-freeze)、[reloadの属性交換](https://github.com/rails/rails/blob/v8.1.3/activerecord/lib/active_record/persistence.rb#L773-L790)
 
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+共有する基準データへ`freeze: true`を明示する方法は、意図せぬ属性変更を早く見つける助けになります。ただし、SQL更新、外部状態、未読み込み関連まで監視する検査ではありません。すべての可変状態を防ぐlintの代替にはしないようにします。
 
-- `let_it_be`はRSpec標準ではなくtest-prof由来
-- トランザクショナルテスト設定との相互作用を確認する
-- RubyオブジェクトをreloadしてもDB行の共有自体は残る
+## 順序依存を再現し、変更するデータを分ける
 
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
+次は、二つ目のexampleを意図的に失敗させる再現です。通常の実行へ混ぜないよう、環境変数を指定した場合だけ定義します。このgroup内だけ`order: :defined`にして、更新する例を先に実行します。
 
-## 調査手順
+```ruby expected-failure
+if ENV["SHARED_STATE_EXPECT_FAILURE"] == "1"
+  RSpec.describe "共有instanceの順序依存を再現する", order: :defined do
+    before(:context) do
+      SharedStateNote.delete_all
+      SharedStateAccount.delete_all
+    end
+    let_it_be(:account) { SharedStateAccount.create!(name: "Original") }
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+    around do |example|
+      SharedStateIsolation.run { example.run }
+    end
 
-- `let_it_be`はRSpec標準ではなくtest-prof由来
-- トランザクショナルテスト設定との相互作用を確認する
-- RubyオブジェクトをreloadしてもDB行の共有自体は残る
+    it "先に同じinstanceを更新する" do
+      account.update!(name: "Changed")
+      expect(account.name).to eq("Changed")
+    end
 
-## 再発防止テスト
-
-```ruby
-RSpec.describe "let-it-be-shared-state-pollution" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
-
-    expect(result).to be_present
+    it "DBだけが戻った後のRuby属性へ元の値を期待すると失敗する" do
+      expect(SharedStateAccount.find(account.id).name).to eq("Original")
+      expect(account.name).to eq("Original")
+    end
   end
 end
 ```
 
-## 一般化できる設計原則
+全ブロックを連結した検証ファイルを使う場合、Active Recordの接続とschemaを用意した上で、`SHARED_STATE_EXPECT_FAILURE=1`を設定し、`--example '共有instanceの順序依存を再現する'`でこのgroupだけを選びます。期待しているのは「2例のうち、二つ目が`Changed`と`Original`の違いで失敗する」結果です。これは正常系の成功件数には数えません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+この失敗を見えなくするために実行順を固定し続けるのではなく、変更する行を各example用に作るか、DB分離と読み直しの両方を整えます。`let!(:account) { SharedStateAccount.create!(name: "Original") }`へ分ければ、同じRubyインスタンスの持ち越しを避けられます。その場合も、example終了後のDB変更を戻す設定は必要です。
 
-## まとめ
-
-テスト高速化は隔離レベルを下げる最適化であり、共有してよい状態を明示する必要がある、と締める。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- すべてのFactoryを`let_it_be`へ置き換えない
-- `reload`だけであらゆる汚染が解消すると書かない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+この稿では性能値を測っていません。共有前後で同じテスト集合を実行し、作成回数、所要時間、順序を変えたときの結果を比べてから共有する範囲を決めます。評価タイミングそのものは[let・let!・let_it_be](/tech-note/articles/rails/rspec/let-let-bang-let-it-be)、example定義の再利用は[shared_examples](/tech-note/articles/rails/rspec/shared-examples)で扱います。

@@ -1,6 +1,6 @@
 ---
-title: "RSpecのlet・let!・let_it_beはどう使い分けるべきか？全テストでlet_it_beを使わない方がよい理由"
-description: RSpecのlet、let!、let_it_beの実行タイミングと再利用の違いを整理し、速度と独立性のバランスを考える。
+title: "RSpecのlet・let!・let_it_beはいつ評価されるか"
+description: "遅延評価、before hook、group単位の初期化を分け、純Rubyの呼び出し記録とTestProfのDB例から使い分けを考えます。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,343 +14,155 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-let-let-bang-let-it-be.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+一覧のテストで、`let(:entry) { create(:entry) }`と書いたのに、一覧が空のままになることがあります。`let`は値を使うまで評価しないため、対象を検索しただけではそのレコードは作られません。
 
-RSpecでは、テストデータを定義するために `let` や `let!` をよく使います。
+`let!`に変えるとexampleの前に評価されます。さらにTestProfの`let_it_be`を使うと、初期化の範囲がexample groupへ変わります。この三つは、評価する時点と結果を使い回す範囲を分けて選びます。
 
-```ruby
-let(:user) { create(:user) }
-let!(:post) { create(:post) }
-```
+## letとlet!は、いつ評価されるか
 
-また、test-profを導入しているプロジェクトでは、`let_it_be` を使うこともあります。
+まずDBを使わず、記事の追加とその順序を記録するクラスで比べます。以下の最初の二つのRubyブロックだけなら、RSpecを使える純Ruby環境で実行できます。
 
 ```ruby
-let_it_be(:user) { create(:user) }
-```
+require "rspec/autorun"
 
-`let_it_be` はテストデータの作成回数を減らせるため、specの高速化に有効です。
-しかし、すべてのテストで `let_it_be` を使えばよいわけではありません。
+class LifecycleCatalog
+  attr_reader :entries, :events
 
-この記事では、`let`、`let!`、`let_it_be` の使い分けを整理します。
-
-## この記事で学べること
-
-- letとlet!の違い
-- let_it_beが高速化に効く理由
-- 全テストでlet_it_beを使うべきではない理由
-- reload/refindが必要になるケース
-
-## 前提知識
-
-- RSpecのletを使ったことがある
-- テストの速度改善に関心がある
-- TestProfのlet_it_beという名前を聞いたことがある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class UserService
-  def call(user)
-    user.update!(name: "updated")
+  def initialize
+    @entries = []
+    @events = []
   end
-end
 
-RSpec.describe UserService do
-  let(:user) { create(:user) }
-
-  it "ユーザーを更新する" do
-    described_class.new.call(user)
-
-    expect(user.reload.name).to eq("updated")
+  def add(label)
+    events << [:add, label]
+    entries << label
+    label
   end
 end
 ```
 
-## 本編
-
-### letとは
-
-`let` は、参照されたタイミングで初めて評価されます。
+`let`と`let!`のどちらも、値を繰り返し参照したときは同じexample内の結果を再利用します。違いは、最初の評価を待つか、before hookで呼び出すかです。[RSpecのletとlet!](https://rspec.info/features/3-13/rspec-core/helper-methods/let/)
 
 ```ruby
-let(:user) { create(:user) }
+RSpec.describe LifecycleCatalog do
+  let(:catalog) { described_class.new }
 
-it "ユーザー名を確認する" do
-  expect(user.name).to eq("Taro")
-end
-```
+  context "letで記事を追加する場合" do
+    let(:entry) { catalog.add("Ruby") }
 
-この場合、`user` が呼ばれたタイミングで `create(:user)` が実行されます。
-
-もし、そのexample内で `user` が使われなければ、作成されません。
-
-```ruby
-let(:user) { create(:user) }
-
-it "userを使わないテスト" do
-  expect(1 + 1).to eq(2)
-end
-```
-
-この場合、`user` は作成されません。
-
-### let!とは
-
-`let!` は、各exampleの前に必ず評価されます。
-
-```ruby
-let!(:user) { create(:user) }
-
-it "ユーザー数を確認する" do
-  expect(User.count).to eq(1)
-end
-```
-
-`user` を直接参照していなくても、exampleの前に作成されます。
-
-事前にDBへデータを作っておきたい場合に使います。
-
-### letとlet!の使い分け
-
-基本的には、必要になるまで作成しなくてよいものは `let` を使います。
-
-```ruby
-let(:user) { create(:user) }
-```
-
-一方で、テスト実行前にDB上に存在している必要があるものは `let!` を使います。
-
-```ruby
-let!(:published_post) { create(:post, published: true) }
-let!(:draft_post) { create(:post, published: false) }
-
-it "公開済み記事だけを返す" do
-  expect(Post.published).to include(published_post)
-  expect(Post.published).not_to include(draft_post)
-end
-```
-
-このように、scopeのテストでは `let!` を使うことがあります。
-
-### let_it_beとは
-
-`let_it_be` は、test-profが提供する機能です。
-RSpec標準の機能ではありません。
-
-`let` や `let!` はexampleごとに評価されます。
-一方で、`let_it_be` はexample group内で一度だけ作成し、それを使い回します。
-
-```ruby
-let_it_be(:user) { create(:user) }
-
-it "case 1" do
-  expect(user).to be_present
-end
-
-it "case 2" do
-  expect(user).to be_persisted
-end
-```
-
-この場合、`user` は各exampleごとに作成されるのではなく、example group内で1回だけ作成されます。
-
-### let_it_beの目的
-
-`let_it_be` の主な目的は、テストの高速化です。
-
-FactoryBotでDBレコードを大量に作成しているspecでは、データ作成がボトルネックになることがあります。
-
-例えば、次のようなspecです。
-
-```ruby
-let!(:category) { create(:category) }
-
-it "case 1" do
-end
-
-it "case 2" do
-end
-
-it "case 3" do
-end
-```
-
-この場合、`category` は各exampleで作成されます。
-3exampleあれば3回作成されます。
-
-`category` が読み取り専用で、各exampleで変更されないなら、`let_it_be` にすることで作成回数を減らせます。
-
-```ruby
-let_it_be(:category) { create(:category) }
-```
-
-### let_it_beが向いているケース
-
-`let_it_be` が向いているのは、次のようなデータです。
-
-```text
-- 複数exampleで共通して使う
-- 各exampleで変更しない
-- 作成コストが高い
-- 参照専用のデータ
-```
-
-例えば、検索対象の固定データです。
-
-```ruby
-RSpec.describe ProductSearchService do
-  let_it_be(:published_product) { create(:product, published: true) }
-  let_it_be(:draft_product) { create(:product, published: false) }
-
-  describe "#call" do
-    it "公開済み商品を返す" do
-      result = described_class.new(published: true).call
-
-      expect(result).to include(published_product)
+    it "参照しない間は一覧へ追加しない" do
+      expect(catalog.entries).to eq([])
+      expect(catalog.events).to eq([])
     end
 
-    it "非公開商品を返さない" do
-      result = described_class.new(published: true).call
+    it "最初の参照で追加し、再参照では追加しない" do
+      expect(catalog.events).to eq([])
+      expect(entry).to eq("Ruby")
+      expect(entry).to eq("Ruby")
+      expect(catalog.entries).to eq(["Ruby"])
+      expect(catalog.events).to eq([[:add, "Ruby"]])
+    end
+  end
 
-      expect(result).not_to include(draft_product)
+  context "let!で記事を追加する場合" do
+    let!(:entry) { catalog.add("RSpec") }
+
+    it "entryを呼ばなくてもexampleの開始前に追加する" do
+      expect(catalog.entries).to eq(["RSpec"])
+      expect(catalog.events).to eq([[:add, "RSpec"]])
+    end
+
+    it "別exampleでは新しい一覧へ一度だけ追加する" do
+      expect(entry).to eq("RSpec")
+      expect(catalog.entries).to eq(["RSpec"])
+      expect(catalog.events).to eq([[:add, "RSpec"]])
+    end
+  end
+
+  context "beforeとlet!を並べる場合" do
+    before { catalog.events << :before_first }
+    let!(:entry) { catalog.add("Hooks") }
+    before { catalog.events << :before_last }
+
+    it "同じgroupでは登録したbefore hookの順で準備する" do
+      expect(catalog.events).to eq([:before_first, [:add, "Hooks"], :before_last])
+      expect(catalog.entries).to eq(["Hooks"])
     end
   end
 end
 ```
 
-このように、データを変更せず参照するだけなら、`let_it_be` は有効です。
+最初のcontextでは、`catalog`は読んでも`entry`は呼んでいません。そのため追加は起きません。次のexampleで`entry`を二度読んでも、`add`の呼び出しは一度です。
 
-### let_it_beが向いていないケース
+`let!`のcontextでは、example内から`entry`を読まなくても記事が追加されています。この性質は、検索・集計・件数のテストで「実行前にデータが存在すること」が前提になる場合に役立ちます。
 
-一方で、次のような場合は `let_it_be` に向いていません。
+最後の例は、`let!`が「ほかのbeforeより必ず先」ではないことを示すためのものです。RSpec 3.13.6の実装では、`let!`は`let`を定義し、それを呼ぶ`before`を登録します。同じgroupでの登録順が、この例の準備順になります。[let!の実装](https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/memoized_helpers.rb#L400-L403)
 
-```text
-- example内で更新するデータ
-- example内で削除するデータ
-- callbackで状態が変わるデータ
-- テストごとに状態を変えたいデータ
-- updated_atやstatusが変わるデータ
-```
+親groupや`prepend_before`なども組み合わせる場合は、そのhookの順序も含めて確認します。[RSpecのbefore/after hooks](https://rspec.info/features/3-13/rspec-core/hooks/before-and-after-hooks/)
 
-危険な例です。
+## let_it_beでは、何が共有されるか
+
+`let_it_be`はRSpec標準ではなく、TestProfが提供します。初期化ブロックをgroup開始時の`before_all`で実行し、その結果を各exampleから参照できるようにします。DBレコードを毎exampleで作り直す方法とは、共有の範囲が違います。[TestProf 1.6.3のlet_it_be](https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/let_it_be.md)
+
+| 定義 | 初期化される時点 | この例での値の範囲 |
+| --- | --- | --- |
+| `let` | example内の最初の参照 | そのexample内で再利用 |
+| `let!` | example前のbefore hook | そのexample内で再利用 |
+| `let_it_be` | group開始時のbefore_all | group内で初期値を共有 |
+
+ここからはDBを使います。Ruby 3.4.4、RSpec 3.13.0（core 3.13.6）、TestProf 1.6.3、Active Record 8.1.3、PostgreSQL 17.10を対象にしています。前節を含む7例をローカルで実行し、すべて成功しました。
+
+使い捨てDBへ接続し、`let_lifecycle_records`に主キー`id`と`label:string NOT NULL`を用意してから、後続のコードを読み込みます。全ブロックを連結して実行する場合も、事前にActive Recordの接続とschemaを設定してください。TestProfのmodifierを登録するため、Active Recordを先に読み込みます。
 
 ```ruby
-let_it_be(:user) { create(:user, name: "Taro") }
+require "active_record"
+gem "test-prof", "1.6.3"
+require "test_prof/recipes/rspec/let_it_be"
 
-it "名前を変更する" do
-  user.update!(name: "Jiro")
-
-  expect(user.name).to eq("Jiro")
+class LetLifecycleRecord < ActiveRecord::Base
+  self.table_name = "let_lifecycle_records"
 end
+```
 
-it "元の名前である" do
-  expect(user.name).to eq("Taro")
+次は読み取り専用のカテゴリ一件を共有する例です。`before(:context)`の削除は検証専用テーブルを空にするためのもので、本番DBでは実行しません。
+
+```ruby
+RSpec.describe "let_it_beで読み取り用のDB行を共有する" do
+  before(:context) { LetLifecycleRecord.delete_all }
+  let_it_be(:category, freeze: true) { LetLifecycleRecord.create!(label: "Reference") }
+  before_all { @original_category = category }
+
+  it "exampleから参照する前にDB行が用意されている" do
+    expect(LetLifecycleRecord.pluck(:label)).to eq(["Reference"])
+  end
+
+  it "初期化で作った同じインスタンスを読み取る" do
+    expect(category).to equal(@original_category)
+    expect(category.label).to eq("Reference")
+    expect(category).to be_frozen
+    expect(LetLifecycleRecord.count).to eq(1)
+  end
 end
 ```
 
-この場合、1つ目のexampleで `user` オブジェクトの状態が変わります。
-DBのtransactionがrollbackされても、Rubyオブジェクトのメモリ上の状態が残ることがあります。
+`category`を参照する前でもDBに行があり、参照した場合は初期化で作ったオブジェクトを使っています。`freeze: true`は、その共有オブジェクトの属性変更を検出するために付けています。DBの行を他の経路から更新できなくする制約ではありません。
 
-そのため、2つ目のexampleに影響する可能性があります。
+## groupの後片付けと、exampleの分離は同じか
 
-### reloadやrefindを使う場合
+TestProfの`before_all`は、group全体をDBトランザクションで包み、groupの終了時に戻します。しかし、各exampleの間でDBを戻す処理までは追加しません。書き込みを含むspecでは、RSpec Railsのtransactional fixturesなど、example単位の分離を別に用意する必要があります。[before_allの適用範囲](https://github.com/test-prof/test-prof/blob/v1.6.3/docs/recipes/before_all.md)
 
-`let_it_be` には、`reload: true` や `refind: true` のようなオプションがあります。
+さらに、DBを戻しても、Rubyオブジェクトの属性やキャッシュが自動で元に戻るとは限りません。`let_it_be`が返した同じオブジェクトを更新すると、次のexampleが変更後の値を見る場合があります。[共有状態とreload/refind/freeze](/tech-note/articles/rails/rspec/let-it-be-shared-state-pollution)では、DBの行とRubyのメモリを分けて扱います。
 
-```ruby
-let_it_be(:user, reload: true) { create(:user) }
-```
+`let`でも、外側で一度作ったオブジェクトを返すだけなら、それを自動複製はしません。今回の純Ruby例が独立しているのは、`let(:catalog)`の中で`new`しているためです。「letならどの値でも独立する」という意味ではありません。
 
-これは、各exampleで `reload` して新しいDB状態を読む用途です。
+## 置き換える前に、何を確認するか
 
-```ruby
-let_it_be(:user, refind: true) { create(:user) }
-```
+必要なときだけ作るなら`let`、検索や集計の前提として先に存在させたいなら`let!`を使うと、準備の意図を表せます。`let_it_be`は、複数exampleが共通して読むデータについて、初期化の繰り返しが負担になっているときに検討します。
 
-これは、各exampleで `find` し直すようなイメージです。
+この例で記録しているのは`add`の呼び出し順と回数で、性能測定ではありません。置き換えを判断する際は、同じ環境・同じexample集合で実行時間とデータ作成回数を計測し、順序を変えても結果が変わらないことを確かめます。速さの数値や改善率はここでは示していません。
 
-ただし、これらを多用するくらいなら、普通に `let` を使った方が分かりやすい場合もあります。
-
-### 全テストでlet_it_beを使うべきではない
-
-`let_it_be` は便利ですが、デフォルトの書き方にするべきではありません。
-
-理由は次の通りです。
-
-```text
-- example間で状態が漏れる可能性がある
-- 更新系のテストと相性が悪い
-- テストの独立性が下がる
-- 読み手がライフサイクルを意識する必要がある
-```
-
-基本的には、まず `let` / `let!` で安全に書きます。
-その上で、データ作成が明確にボトルネックになっている箇所だけ `let_it_be` を検討するのがよいです。
-
-### 使い分けの目安
-
-```text
-let:
-必要になったときだけ作成したいデータ
-
-let!:
-example前に必ずDBへ作っておきたいデータ
-
-let_it_be:
-複数exampleで使い回せる読み取り専用の重いデータ
-```
-
-表にすると次の通りです。
-
-| 用途               | 推奨             |
-| ---------------- | -------------- |
-| 必要になったら作る        | `let`          |
-| 必ず事前に作る          | `let!`         |
-| 読み取り専用で使い回す      | `let_it_be`    |
-| 更新・削除する          | `let`          |
-| exampleごとに状態を変える | `let` / `let!` |
-| 大量の参照データ         | `let_it_be`を検討 |
-
-## 図解
-
-![RSpecのlet・let!・let_it_beはどう使い分けるべきか？全テストでlet_it_beを使わない方がよい理由](/images/articles/rails-rspec-let-let-bang-let-it-be.png)
-
-```mermaid
-flowchart LR
-  A[let] --> B[必要なときに評価]
-  C[let!] --> D[各テスト開始時に評価]
-  E[let_it_be] --> F[example groupで一度作成]
-  F --> G[速いが状態共有に注意]
-```
-
-## 内部動作
-
-letは遅延評価され、使われたときに初めて値を作ります。let!は各exampleの前に必ず評価されます。let_it_beはexample group全体で一度だけデータを作るため高速ですが、同じデータを複数テストで共有します。そのため、テスト内で破壊的に変更するデータには向きません。速度よりも独立性を優先すべき場面があります。
-
-## まとめ
-
-`let_it_be` は、RSpecの高速化に有効な道具です。
-しかし、すべてのテストで使うものではありません。
-
-基本方針は次の通りです。
-
-```text
-通常は let / let! を使う
-作成コストが問題になる箇所だけ let_it_be を検討する
-let_it_beは読み取り専用データに限定する
-更新・削除するデータには使わない
-```
-
-テストでは、速さだけでなく独立性も重要です。
-
-`let_it_be` はパフォーマンス最適化として使い、デフォルトの書き方にはしない方が安全です。
-
-## 参考文献
-
-- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
-- [TestProf let_it_be](https://test-prof.evilmartians.io/#/let_it_be)
+更新や削除の対象まで共有する必要があるか、callbackが共有レコードを書き換えていないかも確認します。条件の分け方は[describe・context・it](/tech-note/articles/rails/rspec/describe-context-it)、example定義を再利用する話は[shared_examples](/tech-note/articles/rails/rspec/shared-examples)へ分けています。定義の共有と、テストデータの共有は別の判断です。

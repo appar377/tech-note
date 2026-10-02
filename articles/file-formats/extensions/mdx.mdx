@@ -1,6 +1,6 @@
 ---
-title: ".mdxとは何か：Markdownにコンポーネントを埋め込める拡張子"
-description: .mdxファイルの用途、Markdownとの違い、Reactコンポーネントを埋め込める理由、技術記事サイトで使うときの注意点を整理する。
+title: ".mdxとは何か：文章・コンポーネント・公開処理を分けて読む"
+description: "MDXの小さな描画例から、Markdownとの違い、コンポーネントの登録、frontmatter、コンパイルと描画の失敗、利用ツールによる記法の違いを整理します。"
 date: 2026-06-30
 tags:
   - File Extension
@@ -18,381 +18,129 @@ series:
 draft: false
 thumbnail: /images/articles/file-extension-mdx.svg
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`.mdx`は、Markdownの文章にJSXの要素やコンポーネントを組み込めるテキスト形式です。ただ拡張子を付け替えれば、ブラウザやMarkdownビューアで同じように表示できるわけではありません。MDXを処理するツールと、本文が使うコンポーネントの定義が必要です。[MDX: What is MDX?](https://mdxjs.com/docs/what-is-mdx/)
 
-`.mdx` は、MarkdownにJSXやコンポーネントを埋め込めるファイル形式です。
+ファイルを見つけたときは、「文章にどの記法があるか」に加えて、「どの処理が読み込んでいるか」を確認します。ここではReactを使う小さな例で、本文、描画、frontmatterの役割を分けます。
 
-普通のMarkdownは、見出し、本文、リスト、コードブロック、リンク、画像などを書くための軽量な記法です。一方でMDXは、Markdownの読みやすさを残しながら、ReactコンポーネントのようなUI部品を本文内で使えるようにします。
+## Markdownの文章に、何を足せますか？
 
-たとえば、技術記事の中で次のような要素を扱いたい場合に便利です。
+次が説明用の`example.mdx`です。見出し、太字、インラインコードはMarkdownの記法で、`Notice`がコンポーネントです。
 
-```text
-Callout
-Accordion
-Mermaid
-YouTube embed
-Interactive component
-Custom code block
+```mdx file=mdx-workbench/example.mdx
+## 読み込みの確認
+
+<Notice label="説明用">
+
+本文は **Markdown** です。
+
+</Notice>
+
+型は `Array<T>` と書きます。
 ```
 
-このTech Noteでも、記事は `.mdx` として管理しています。文章だけなら `.md` でも足りますが、記事内で独自コンポーネントや拡張表示を使いたい場合、`.mdx` はかなり相性が良い形式です。
+`Notice`という名前に、MDX共通の特別な意味はありません。この例で用意する部品の名前です。コンポーネントはimportする、文書内で定義する、描画側から渡すといった方法で利用します。どの方法が使えるかはMDXの統合方法にも依存します。[MDX: Using components](https://mdxjs.com/docs/using-mdx/#components)
 
-ただし、`.mdx` は単なる文章ファイルではありません。ビルド時にMarkdownとして解析され、JSXとして変換され、最終的にはWebページの一部として描画されます。そのため、Markdownより表現力が高い分、構文エラーやビルドエラーも起きやすくなります。
+Markdownのコードブロックへ`<Notice />`と書いた場合は、コードとして表示されます。本文のJSXとして書いた場合とは違います。説明したいタグまで実行対象にしないよう、文章とコード例の境界を明示します。
 
-## この記事で学べること
+## コンポーネントを書けば、その場でHTMLになりますか？
 
-- `.mdx` が何のための拡張子なのか
-- `.md` と `.mdx` の違い
-- MDXがビルド時にどのようにHTMLやReact要素へ変換されるのか
-- 技術記事サイトでMDXを使うメリット
-- MDXで壊れやすいポイント
-- `.mdx` ファイルを扱うときの実務上の注意点
+一般には、MDXのコンパイラがソースをJavaScriptへ変換し、その結果をReactなどのランタイムが描画します。HTMLを配信するサイトでは、この描画をビルド時に行うこともできます。ブラウザが`.mdx`を直接解釈する仕組みではありません。[MDX: How MDX works](https://mdxjs.com/docs/using-mdx/#how-mdx-works)
 
-## 前提知識
+次の`render.mjs`はNode.jsからHTML文字列を作る小さな例です。`next-mdx-remote` 6.0.0、React / React DOM 19.2.4を前提とします。先ほどの`example.mdx`を同じディレクトリへ置き、`Notice`を描画側から渡します。
 
-- Markdownで見出しやコードブロックを書いたことがある
-- HTMLタグを見たことがある
-- Reactコンポーネントという言葉を聞いたことがある
-- この記事ではMDXコンパイラの完全な実装ではなく、拡張子としての役割と実務上の扱いを整理する
+```js file=mdx-workbench/render.mjs
+import { readFile } from "node:fs/promises";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { compileMDX } from "next-mdx-remote/rsc";
 
-## 図解
+function Notice({ label, children }) {
+  return createElement("aside", { "aria-label": label }, children);
+}
 
-![MDX file extension thumbnail](/images/articles/file-extension-mdx.svg)
+export async function renderExample(source, components = { Notice }) {
+  const { content } = await compileMDX({ source, components });
+  return renderToStaticMarkup(content);
+}
 
-```mermaid
-flowchart LR
-  A[".mdx file"] --> B["Markdown parser"]
-  A --> C["JSX parser"]
-  B --> D["Markdown AST"]
-  C --> E["Component nodes"]
-  D --> F["Compiled module"]
-  E --> F
-  F --> G["React / HTML output"]
+const source = await readFile(new URL("./example.mdx", import.meta.url), "utf8");
+console.log(await renderExample(source));
 ```
 
-`.mdx` は、Markdown本文とJSXコンポーネントを同じファイルの中に置ける形式です。ビルド時には、Markdownとしての構文と、JSXとしての構文の両方が解釈されます。
+生成されるHTMLには、`aside`の`aria-label="説明用"`、太字に対応する`strong`、型名に対応する`code`が含まれることを期待します。`Array<T>`は画面ではそのままの型表記になり、HTML文字列では山括弧がエスケープされます。
 
-## 本編
+この例は自分で管理する文書を対象にしています。MDXにはJavaScriptへ変換される記法があるため、任意の投稿内容を通常の文章データと同じつもりで評価しません。公式コンパイラも、評価APIがJavaScriptを実行することを明記しています。[MDX compilerの評価API](https://mdxjs.com/packages/mdx/#evaluatefile-options)
 
-### .mdxは何の拡張子か
+## 同じMDXなのに、式が表示されないのはなぜですか？
 
-`.mdx` は、MDXファイルを表す拡張子です。
+MDXの形式としては、次のようなJavaScriptの式も書けます。
 
-MDXは、MarkdownにJSXを組み合わせた形式です。
-
-```text
-Markdown + JSX = MDX
+```mdx file=mdx-workbench/expression.mdx
+答え: {2 + 3}
 ```
 
-Markdownだけなら次のように書きます。
+`@mdx-js/mdx`を使ってこの説明用の式を評価した場合は、`答え: 5`を期待します。一方、`next-mdx-remote` 6.0.0は既定で`blockJS: true`になっており、本文のJavaScript式を除去します。この設定では同じ入力でも`5`は表示されません。構文エラーになるのとは違い、式が取り除かれる挙動です。[next-mdx-remote 6.0.0の設定](https://github.com/hashicorp/next-mdx-remote/blob/v6.0.0/README.md#javascript-expressions-in-mdx)
 
-```md
-## 注意点
+Tech Noteも、この既定値を変更せずに使っています。属性値の式も対象なので、たとえば文字列属性の`label="説明用"`と、式を使う`label={value}`を同じ条件で使えるとは考えません。MDX一般の機能一覧だけでなく、利用中のライブラリと設定を見ます。
 
-この設定を変更すると、ビルド結果が変わります。
-```
+このサイトでは、描画側の`components/mdx-content.tsx`から`Accordion`、`YouTube`、`Video`などを渡しています。`Notice`はこの記事の独立したサンプル用で、サイト本体へ登録した部品ではありません。本文中のimportを使う`@next/mdx`の構成とも分けています。[Next.js: MDX](https://nextjs.org/docs/app/guides/mdx)
 
-MDXでは、同じ文章の中にコンポーネントを置けます。
+## frontmatterを書けば、下書きは自動で非公開になりますか？
 
-```mdx
-## 注意点
+次はfrontmatterを付けた説明用の文書です。
 
-<Callout type="warning">
-  この設定を変更すると、ビルド結果が変わります。
-</Callout>
-```
-
-このように、文章を中心にしながら、必要なところだけUI部品を差し込めるのが `.mdx` の特徴です。
-
-### .mdとの違い
-
-`.md` と `.mdx` は似ていますが、責務が違います。
-
-| 拡張子 | 主な用途 | コンポーネント | 向いているもの |
-|---|---|---|---|
-| `.md` | Markdown文書 | 基本的には不可 | README、メモ、シンプルな記事 |
-| `.mdx` | Markdown + JSX文書 | 可能 | 技術記事、Docs、コンポーネント付き記事 |
-
-`.md` はプレーンなMarkdown文書として扱いやすいです。GitHub上でも読みやすく、エディタでも扱いやすいです。
-
-一方、`.mdx` は表現力が高い代わりに、実行環境やビルド環境に依存します。MDXを理解できるツールチェーンがなければ、ただのテキストとしては読めても、最終的な表示結果は再現できません。
-
-そのため、次のように使い分けると分かりやすいです。
-
-```text
-READMEや単純なメモ:
-.md
-
-Webページとして表現を作り込みたい記事:
-.mdx
-```
-
-### .mdxの中身はテキストファイル
-
-`.mdx` はバイナリファイルではなく、基本的にはテキストファイルです。
-
-そのため、エディタで開いて編集できます。Gitでも差分を追いやすく、レビューもしやすいです。
-
-ただし、テキストファイルだからといって、何を書いてもよいわけではありません。
-
-MDXはMarkdownとJSXの両方のルールを受けます。
-
-たとえば、JSXタグの閉じ忘れがあると、Markdown記事としては自然に見えても、ビルド時にエラーになることがあります。
-
-```mdx
-<Callout type="info">
-  これは閉じタグがありません。
-```
-
-このような場合、Markdownとしては文章に見えても、MDXとしては不正です。
-
-### MDXが使われる場所
-
-`.mdx` は、次のような場所で使われます。
-
-```text
-技術ブログ
-ドキュメントサイト
-コンポーネントカタログ
-プロダクトのヘルプページ
-社内ナレッジベース
-チュートリアル
-```
-
-特に、文章だけでなく「動くサンプル」や「独自UI」を見せたいドキュメントと相性が良いです。
-
-たとえば、UIライブラリのドキュメントで、説明文の直後に実際のボタンコンポーネントを表示できます。
-
-```mdx
-## Button
-
-フォーム送信などの主要アクションに使います。
-
-<Button variant="primary">保存する</Button>
-```
-
-Markdownの読みやすさを保ちながら、Webページとしての表現力を足せるのがMDXです。
-
-### .mdxは記事の正本に向いているか
-
-技術記事サイトでは、`.mdx` は記事の正本として使いやすい形式です。
-
-理由は、次の3つです。
-
-```text
-Gitで管理しやすい
-Markdownとして本文を書きやすい
-必要に応じてコンポーネントを差し込める
-```
-
-このTech Noteのように、記事をGitHub Repositoryで管理し、pushすると自動で静的サイトとして公開する構成では、`.mdx` は相性が良いです。
-
-一方で、コンポーネントを使いすぎると、記事が特定のサイト実装に強く依存します。
-
-たとえば、`<Callout>` や `<Mermaid>` のような独自コンポーネントを本文に多用すると、そのコンポーネントが存在しない別サイトへ移植しにくくなります。
-
-そのため、記事の本文はMarkdown中心にし、必要なところだけMDXコンポーネントを使うのが扱いやすいです。
-
-## 内部動作
-
-`.mdx` は、保存された瞬間に特別な動きをするわけではありません。
-
-重要なのは、ビルド時や実行時にMDX対応ツールがどう処理するかです。
-
-一般的には、次のような流れになります。
-
-```text
-.mdx file
-↓
-frontmatterを読む
-↓
-Markdown構文を解析する
-↓
-JSX構文を解析する
-↓
-見出し、段落、コードブロック、コンポーネントをASTとして扱う
-↓
-ReactコンポーネントまたはHTMLへ変換する
-↓
-Webページとして描画する
-```
-
-ここで大事なのは、`.mdx` は「そのままブラウザが理解するファイル」ではないということです。
-
-ブラウザは `.mdx` を直接記事ページとして表示しているわけではありません。Next.jsやMDX compilerのようなツールが、ビルド時に `.mdx` をページとして使える形へ変換します。
-
-つまり、`.mdx` は次のような位置づけです。
-
-```text
-人間が書く入力ファイル:
-.mdx
-
-ビルドツールが変換する中間表現:
-AST / module
-
-ブラウザが受け取る出力:
-HTML / CSS / JavaScript
-```
-
-### FrontMatterとの組み合わせ
-
-技術記事サイトでは、`.mdx` の先頭にFrontMatterを書くことが多いです。
-
-```mdx
+```mdx file=mdx-workbench/frontmatter.mdx
 ---
-title: ".mdxとは何か"
-description: MDXの用途を整理する
-date: 2026-06-30
-tags:
-  - MDX
-  - Markdown
+title: 説明用ノート
+draft: true
 ---
 
-## 概要
-
-本文を書きます。
+## メタデータとは別の本文
 ```
 
-FrontMatterは、記事タイトル、説明文、投稿日、タグ、カテゴリ、サムネイルなどのメタデータを管理するために使います。
+先頭のYAMLをメタデータとして扱う処理は、MDXの標準動作とは別に必要です。`@mdx-js/mdx`だけで、`title`や`draft`の意味まで決まるわけではありません。[MDX: Frontmatter](https://mdxjs.com/guides/frontmatter/)
 
-本文とは別にメタデータを持てるため、一覧ページ、検索、SEO、関連記事、シリーズページを生成しやすくなります。
+たとえば`next-mdx-remote`には`parseFrontmatter: true`という選択肢があります。Tech Noteではそれを使わず、`lib/mdx-source.ts`でYAMLと本文を先に分けています。本文の描画は`parseFrontmatter: false`、メタデータの型や用途は別の処理が受け持ちます。
 
-### MDXで壊れやすいポイント
+`draft: true`を公開一覧や静的ルートから除外するのも、サイト側の実装です。ファイルの拡張子やfrontmatterを書いただけでは公開を止められません。出力するURLや検索データまで含めて、どこへ渡されるかを確認します。[Next.jsの静的exportとdraftの除外](/tech-note/articles/nextjs/github-pages/static-export/)も、この区別が必要になる例です。
 
-`.mdx` は便利ですが、Markdownより壊れやすいところがあります。
+## コンパイルと表示のどちらで失敗していますか？
 
-代表的には次のようなものです。
+閉じタグのない次のファイルは、意図的な構文エラーの例です。正常な本文とは別に保存して扱います。
 
-```text
-JSXタグの閉じ忘れ
-コンポーネント名のtypo
-importできないコンポーネントを使う
-Markdown内の < や { } がJSXとして解釈される
-空行の位置で意図しない構文になる
+```mdx expected-error file=mdx-workbench/expected-errors/unclosed.mdx
+<Notice label="説明用">
+
+閉じタグを忘れた例です。
 ```
 
-特に、`<` や `{}` を本文中にそのまま書くと、MDXがJSXとして解釈しようとすることがあります。
+これはMDXをJavaScriptへ変換する段階で失敗することを期待します。一方、次はJSXとしての形は整っています。
 
-たとえば、説明文として次のように書きたい場合があります。
-
-```text
-Array<T> のような型を書く
+```mdx expected-error file=mdx-workbench/expected-errors/unknown-component.mdx
+<MissingNotice />
 ```
 
-MDXでは、文脈によっては `<T>` がタグのように見える場合があります。
+コンパイルが通っても、`MissingNotice`を渡さずに描画すれば、そのコンポーネントが見つからないというエラーになります。構文だけの検査と、実際の部品を使う描画の検査を分ける理由です。
 
-そのため、コードとして表したいものはインラインコードやコードブロックに入れるのが安全です。
+本文に型名や記号を書くときも注意します。MDXではエスケープされていない左山括弧や左波括弧がJSXや式の開始として解釈されるため、`Array<T>`のようなコード表記はインラインコードへ入れます。通常のMarkdownで使えるHTML記法や字下げによるコードブロックにも差があり、Markdown文書の名前だけを`.mdx`へ変更して互換性を保証することはできません。[MDXのMarkdownとの差](https://mdxjs.com/docs/what-is-mdx/#markdown)
 
-```mdx
-`Array<T>` のような型を書く
-```
+## .mdと.mdxは、何を基準に選びますか？
 
-### 編集してよいファイルか、生成物か
+文章だけを複数のMarkdownビューアで読みたいなら、まず`.md`で足りるかを考えます。文書の途中に独自UIを置き、その実装と一緒に管理するなら、`.mdx`が候補になります。MDXはReact専用のファイル形式ではなく、JSXを扱うほかの統合もありますが、このサンプルとTech NoteはReactを使っています。
 
-`.mdx` は多くの場合、開発者や執筆者が直接編集するソースファイルです。
+移動や引き継ぎの際は、本文だけでなく次の対応を見ます。
 
-一方、`.html`、`.js`、`.json` などに変換されたビルド結果は、通常は直接編集しません。
+| ファイルや設定 | 確認すること |
+| --- | --- |
+| MDX本文 | 独自コンポーネント、式、import、frontmatterがあるか |
+| 描画側のコード | どの名前のコンポーネントを提供するか |
+| プラグイン | 表・数式・コード装飾などをどう追加しているか |
+| ページ生成処理 | どのURLにし、どの文書を公開対象にするか |
 
-```text
-編集する:
-articles/example.mdx
+Node.js 21.6.1、`@mdx-js/mdx` 3.1.1、`next-mdx-remote` 6.0.0、React / React DOM 19.2.4で掲載例を実行しました。登録コンポーネントとMarkdown、型のインラインコード、式の評価と既定設定による除去、frontmatterの明示処理、未閉鎖JSXのコンパイルエラー、未登録コンポーネントの描画エラーを確認しています。別のMDX統合との互換性や、任意の外部入力の安全性を検証したものではありません。
 
-直接編集しない:
-out/articles/example/index.html
-```
-
-この区別は重要です。
-
-静的サイト生成では、`.mdx` を編集し、ビルドして、出力されたHTMLを公開します。公開後にHTMLを直接修正しても、次回ビルドで上書きされます。
-
-### .mdxを見つけたときの確認ポイント
-
-プロジェクト内で `.mdx` を見つけたら、まず次の順番で確認すると整理しやすいです。
-
-```text
-1. どのディレクトリに置かれているか
-2. FrontMatterに何が書かれているか
-3. 本文に独自コンポーネントが使われているか
-4. importが必要なMDXか
-5. どのページ生成処理から読み込まれているか
-6. 公開URLや検索インデックスに含まれるか
-```
-
-たとえば、`articles/` 配下にある `.mdx` は記事本文である可能性が高いです。`docs/` 配下ならドキュメント、`pages/` や `app/` 配下ならルーティングと結びついたページかもしれません。
-
-また、FrontMatterがある場合は、本文だけでなくメタデータも重要です。
-
-```mdx
----
-title: "Example"
-description: "Example description"
-draft: false
----
-```
-
-`draft: true` なら公開対象から外れるかもしれません。`category` や `tags` があれば一覧ページや検索に影響します。`thumbnail` があれば記事カードやOGPの見え方に関わります。
-
-つまり、`.mdx` を読むときは「文章ファイル」としてだけではなく、「Webページを生成するための入力ファイル」として見る必要があります。
-
-### .mdxを使わない方がよいケース
-
-`.mdx` は便利ですが、すべての文書に向いているわけではありません。
-
-たとえば、次のような用途では `.md` の方が扱いやすいことがあります。
-
-```text
-GitHub上でそのまま読みたいREADME
-外部ツールでも確実に表示したいメモ
-コンポーネントを使わない単純な仕様書
-ビルド環境に依存させたくない文書
-```
-
-`.mdx` は、MDXを処理できる環境がある前提で力を発揮します。逆に言えば、その環境がない場所では、`<Callout>` や `<Button>` のような記述がそのまま文字列として見えたり、表示できなかったりします。
-
-そのため、プロジェクト外へ持ち出す可能性が高い文書や、GitHub上で完結して読ませたい文書は、あえて `.md` にする判断もあります。
-
-判断軸は次のように考えると分かりやすいです。
-
-| 判断 | 向いている拡張子 |
-|---|---|
-| 文章だけで完結する | `.md` |
-| GitHub上で読みやすくしたい | `.md` |
-| Webページとして表現を作りたい | `.mdx` |
-| コンポーネントや埋め込みを使いたい | `.mdx` |
-
-`.mdx` はMarkdownの上位互換というより、Webページ生成に寄せた拡張形式だと考えると扱いやすいです。
-
-## まとめ
-
-`.mdx` は、MarkdownにJSXやコンポーネントを埋め込める拡張子です。
-
-普通のMarkdownより表現力が高く、技術ブログ、ドキュメントサイト、ナレッジベース、コンポーネントカタログと相性が良いです。
-
-一方で、Markdownだけのファイルよりもビルド環境に依存します。JSXタグの閉じ忘れ、コンポーネント名の間違い、`<` や `{}` の扱いなどでビルドエラーになることもあります。
-
-覚えるポイントは次の通りです。
-
-```text
-.md:
-文章中心のMarkdownファイル
-
-.mdx:
-Markdown本文にコンポーネントを埋め込めるファイル
-
-使いどころ:
-技術記事、Docs、UI付きナレッジベース
-
-注意点:
-Markdownではなく、Markdown + JSXとして解析される
-```
-
-`.mdx` は、単なるメモというより「Webページとして育てる記事」に向いた拡張子です。
-
-## 参考文献
-
-- [MDX Documentation](https://mdxjs.com/)
-- [Next.js Docs: MDX](https://nextjs.org/docs/pages/guides/mdx)
-- [Markdown Guide: Basic Syntax](https://www.markdownguide.org/basic-syntax/)
-- [MDN Web Docs: MIME types](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types)
+[世界の拡張子](/tech-note/series/world-file-extensions/)から、同じシリーズの入口へ戻れます。拡張子から用途を推測した後、実際の中身と読み込み処理までたどる、という見方で読むと他の形式も整理しやすくなります。

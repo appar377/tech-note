@@ -1,6 +1,6 @@
 ---
-title: "RailsエンジニアがSQLを避けられない理由"
-description: "Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある。"
+title: "Active Recordの結果を、SQLで確かめるタイミング"
+description: "JOINで増える行、関連読み込みのSELECT数、実行計画を小さなデータで確認し、Active Recordの使い方を判断します。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -14,133 +14,209 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/rails-engineer-needs-sql.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+公開済みの記事を持つ著者を一人ずつ取得したいのに、JOINした結果には同じ著者のidが二度現れることがあります。こうした結果を調べるときは、Active Recordのメソッド名だけでなく、生成されたSQLが何行を返すかを確認します。SQLを読めると、条件の誤り、関連の読み込み方、DBの実行計画を分けて考えられます。
 
-Active Recordだけで機能を実装できても、遅いクエリ、重複、ロック、集計、N+1を調べる段階ではSQLとDB実行計画が必要になった。
+以下は説明用の著者3行・記事5行を使う再現例です。Ruby 3.4.4、Active Record 8.1.3、PostgreSQL 17.10で実行し、行集合・SELECT数・集計結果を確認しました。実案件のデータや性能測定ではありません。
 
-Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある。
+## JOINが増やしているのは、どの行でしょうか
 
-## この記事で学べること
+一人の著者に公開記事が二つあれば、その著者は記事とのJOIN結果に二度現れます。著者を一度ずつ返したい検索なら、期待する単位が「著者一人」であることを先に決めます。
 
-- Active Recordが提供する生産性
-- 生成SQLをログで確認する
-- N+1と`includes`/`preload`/`eager_load`の違いをバージョンに合わせて説明
-- Indexが効く条件
-- `EXPLAIN`/`EXPLAIN ANALYZE`の読み方の入口
-- GROUP BY、CTE、Window Function
+次を`rails_engineer/setup.sql`として保存します。一時テーブルは接続ごとに作られるため、このあとのRubyと同じ接続で使用します。
 
-## 前提知識
+```sql file=rails_engineer/setup.sql
+CREATE TEMPORARY TABLE sql_note_authors (
+  id integer PRIMARY KEY,
+  name text NOT NULL
+);
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
+CREATE TEMPORARY TABLE sql_note_posts (
+  id integer PRIMARY KEY,
+  author_id integer NOT NULL REFERENCES sql_note_authors(id),
+  published boolean NOT NULL,
+  published_at timestamp
+);
 
-## 図解
+INSERT INTO sql_note_authors (id, name) VALUES
+  (1, 'Author A'), (2, 'Author B'), (3, 'Author C');
 
-![RailsエンジニアがSQLを避けられない理由](/images/articles/rails-engineer-needs-sql.png)
+INSERT INTO sql_note_posts (id, author_id, published, published_at) VALUES
+  (11, 1, true,  '2026-09-01 10:00:00'),
+  (12, 1, true,  '2026-09-02 10:00:00'),
+  (21, 2, false, NULL),
+  (22, 2, true,  '2026-09-03 10:00:00'),
+  (31, 3, false, NULL);
 
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
+ANALYZE sql_note_authors;
+ANALYZE sql_note_posts;
 ```
 
-## 実装コード例
+モデルはこの2つです。説明用テーブルへ対応させており、実アプリのモデルを置き換えるコードではありません。
 
-```ruby
-class PublishedPostQuery
-  def call
-    User
-      .joins(:posts)
-      .where(posts: { published: true })
-      .select("users.id, COUNT(posts.id) AS posts_count")
-      .group("users.id")
+```ruby file=rails_engineer/models.rb
+require "active_record"
+
+class SqlNoteAuthor < ActiveRecord::Base
+  self.table_name = "sql_note_authors"
+
+  has_many :posts, -> { order(:id) },
+    class_name: "SqlNotePost",
+    foreign_key: :author_id,
+    inverse_of: :author
+end
+
+class SqlNotePost < ActiveRecord::Base
+  self.table_name = "sql_note_posts"
+
+  belongs_to :author,
+    class_name: "SqlNoteAuthor",
+    foreign_key: :author_id,
+    inverse_of: :posts
+end
+```
+
+次の観測コードでは、`joins`で得るidと、`distinct`を加えたidを比べます。併せて、後で使う関連読み込みのSQLも収集します。
+
+```ruby file=rails_engineer/observe.rb
+require_relative "models"
+
+module RailsEngineerSql
+  def self.capture_selects
+    queries = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql]
+      if !payload[:cached] && sql.match?(/\b(?:FROM|JOIN) "sql_note_(?:authors|posts)"/)
+        queries << sql if sql.lstrip.start_with?("SELECT")
+      end
+    end
+
+    value = nil
+    ActiveRecord::Base.uncached do
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        value = yield
+      end
+    end
+    [value, queries]
+  end
+
+  def self.observe
+    relation = SqlNoteAuthor.joins(:posts).
+      where(sql_note_posts: { published: true }).select(:id).order(:id)
+
+    joined_ids = relation.pluck(:id)
+    unique_ids = relation.distinct.pluck(:id)
+
+    lazy_rows, lazy_sql = capture_selects do
+      SqlNoteAuthor.order(:id).map do |author|
+        [author.id, author.posts.map(&:id)]
+      end
+    end
+
+    preload_rows, preload_sql = capture_selects do
+      SqlNoteAuthor.preload(:posts).order(:id).map do |author|
+        [author.id, author.posts.map(&:id)]
+      end
+    end
+
+    {
+      joined_ids: joined_ids,
+      unique_ids: unique_ids,
+      lazy_rows: lazy_rows,
+      preload_rows: preload_rows,
+      lazy_select_count: lazy_sql.length,
+      preload_select_count: preload_sql.length,
+      generated_sql: relation.to_sql,
+      lazy_sql: lazy_sql,
+      preload_sql: preload_sql
+    }
   end
 end
 ```
 
-## 本編
+検証用PostgreSQLへActive Recordが接続済みの環境で、次の`example.rb`を読み込みます。setup.sqlを別途実行せず、このファイルから一度だけ読み込む構成です。
 
-### 発生した状況
+```ruby file=rails_engineer/example.rb
+require_relative "observe"
 
-Active Recordだけで機能を実装できても、遅いクエリ、重複、ロック、集計、N+1を調べる段階ではSQLとDB実行計画が必要になった。
+ActiveRecord::Base.connection_pool.with_connection do |connection|
+  connection.execute(File.read(File.join(__dir__, "setup.sql")))
+  result = RailsEngineerSql.observe
 
-### 当初の理解・誤解
+  puts result.fetch(:generated_sql)
+  p result.slice(:joined_ids, :unique_ids)
+  p result.slice(:lazy_rows, :preload_rows)
+  p result.slice(:lazy_select_count, :preload_select_count)
+  puts result.fetch(:lazy_sql)
+  puts result.fetch(:preload_sql)
+end
+```
 
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、Active RecordはSQLを消すのではなく生成する抽象化である。抽象化を使い続けるためにも、生成SQL、インデックス、実行計画、ロックを読める必要がある... という観点で見る必要がありました。
+`joined_ids`の期待値は`[1, 1, 2]`、`unique_ids`は`[1, 2]`です。Author Aに公開記事が二つあるため、JOINだけでは重複します。ここでは著者idだけを返すので`distinct`で目的に合いますが、記事の列まで選択すれば行全体の異なり方も変わります。何を一意にしたいかを決めずに`distinct`を足すのは避けます。
 
-### 観測したこと
+`generated_sql`はその環境で生成されたSQLです。`to_sql`だけでは、実行時間や全ての関連読み込みまでは分かりません。[Railsのto_sql](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-to_sql)
 
-- 同じActive Recordクエリの生成SQL
-- N+1のログ比較
-- インデックス追加前後の実行計画例は架空値で断定せず、サンプルとして明示
-- CTEまたはWindow Functionを1例
+## 関連を読んだとき、追加のSELECTは発生していますか
 
-### 修正案の比較
+上のコードは、全著者とその記事idを二通りで読みます。どちらも同じ行集合を返すことが先に確認する条件です。
 
-| 方針 | 見るべき点 |
+| 項目 | このデータで確認した結果 |
 | --- | --- |
-| Active Record中心 | 可読性・保守性／高度なSQLで限界 |
-| 生SQL | 表現力・性能制御／移植性と安全なbindが必要 |
+| 両方の読み込み結果 | `[[1, [11, 12]], [2, [21, 22]], [3, [31]]]` |
+| 事前読み込みなし | 著者1回＋著者ごとの記事3回＝4 SELECT |
+| `preload(:posts)`あり | 著者1回＋関連する記事1回＝2 SELECT |
 
-## 内部動作
+この比較は、query cacheを無効にし、読み込み済みの著者やassociationを使い回さずに行います。購読対象も説明用2表のSELECTに限定し、schema取得やキャッシュの応答を件数へ混ぜません。`lazy_sql`と`preload_sql`で、数だけでなく発行されたSQLを確認できます。[SQLの通知](https://guides.rubyonrails.org/v8.1/active_support_instrumentation.html#sql-active-record)
 
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
+Rails 8.1.3では、`preload`は関連を別の問い合わせで取得し、`eager_load`はLEFT OUTER JOINで読み込みます。`includes`は条件に応じてJOINが必要になるため、「必ず2回のSELECTになる」という意味ではありません。関連テーブルの条件によって、取得する親や関連の範囲も変わります。[関連の読み込みAPI](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/QueryMethods.html#method-i-includes)
 
-- 性能はデータ量・分布・DB設定で変わる
-- `EXPLAIN ANALYZE`は実行を伴うことがあるため本番利用に注意
+4回と2回は、この合成データと条件で確認したSELECT数です。SELECT数が少ないことだけで、実行時間やメモリ使用量が小さくなるとは言えません。JOINで同じ親の列が繰り返し返る量や、取得する関連行の多さも見ます。
 
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
+## 一つの問い合わせが重いときは、何を計画で確認しますか
+
+問い合わせの回数を把握したら、一回の問い合わせが何を読んでいるかを調べます。このSELECTなら、まず通常の`EXPLAIN`で計画を確認します。
+
+```sql file=rails_engineer/explain_before.sql
+EXPLAIN
+SELECT id
+FROM sql_note_posts
+WHERE author_id = 1 AND published = true;
 ```
 
-## 調査手順
+比較用に、著者idと公開状態のindexを追加して統計を更新するSQLも用意します。その後、同じEXPLAINをもう一度実行します。
 
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
+```sql file=rails_engineer/add_index.sql
+CREATE INDEX sql_note_posts_author_published_idx
+  ON sql_note_posts (author_id, published);
 
-- 性能はデータ量・分布・DB設定で変わる
-- `EXPLAIN ANALYZE`は実行を伴うことがあるため本番利用に注意
-
-## 再発防止テスト
-
-```ruby
-RSpec.describe "rails-engineer-needs-sql" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
-
-    expect(result).to be_present
-  end
-end
+ANALYZE sql_note_posts;
 ```
 
-## 一般化できる設計原則
+この5行のテーブルでは、indexがあっても順次走査を選ぶことがあります。index追加の前後で特定の計画になるという期待は置きません。`Index Cond`と`Filter`の位置、推定行数、JOINやSortの有無を見て、どこに作業が残っているかを読みます。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+実データでは、行数だけでなく値の偏りや統計情報でも計画が変わります。EXPLAINのcostはミリ秒ではありません。実行を伴う`EXPLAIN ANALYZE`は、推定と実際の行数などを比較するための別の手順です。UPDATEやDELETEに付ければ変更処理も実行されるため、今回の確認は通常のEXPLAINだけにしています。[PostgreSQL 17のEXPLAIN](https://www.postgresql.org/docs/17/using-explain.html)
 
-## まとめ
+## 集計が必要なら、まず返したい行の単位を決めます
 
-抽象化を捨てるためではなく、抽象化のコストと限界を判断するためにSQLを学ぶ、とまとめる。
+著者ごとの公開記事数が必要なら、記事オブジェクトを全てRubyへ読み込まず、SQLで著者ごとに集計する表現もあります。
 
+```sql file=rails_engineer/counts.sql
+WITH published_counts AS (
+  SELECT author_id, COUNT(*) AS posts_count
+  FROM sql_note_posts
+  WHERE published = true
+  GROUP BY author_id
+)
+SELECT author_id, posts_count
+FROM published_counts
+ORDER BY author_id;
+```
 
-この記事では、次のような短絡的な一般化は避けます。
+期待する行は`(1, 2)`と`(2, 1)`です。公開記事のない著者3は、このWHEREとGROUP BYの結果に現れません。0件の著者も返す要件なら、著者を起点にした外部JOINなど、別の問い合わせを設計します。`WITH`はこの集計へ名前を付けているもので、常に一時表を作って速くする指定ではありません。[PostgreSQLのCTE](https://www.postgresql.org/docs/17/queries-with.html)
 
-- SQLを知れば常に生SQLを書くべき、としない
-- インデックスを増やせば速くなると単純化しない
+最新履歴の一行を選ぶような用途は、集計で行をまとめる場合と区別します。[ROW_NUMBERからINSERT SELECTへつなぐ例](/tech-note/articles/rails/sql/raw-sql-summary/)では、その単位を具体的に扱います。
 
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+Active Recordで意図が伝わる問い合わせなら、その表現を保ちつつ生成SQLを確認できます。生SQLを選ぶ際も、結果の粒度、入力値のbind、DB固有の構文、モデルのvalidationやcallbackを通す必要があるかを先に確認します。一括更新の衝突条件は[UPSERTの比較](/tech-note/articles/rails/sql/on-duplicate-key-update/)、待ちが起きる処理はトランザクションやロックの調査へ分けます。この例で確認したSELECT数や計画だけでは、同時更新の安全性までは判断できません。

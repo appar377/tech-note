@@ -1,6 +1,6 @@
 ---
-title: "DartのFutureとasyncとawaitを混同していた"
-description: "`Future<T>`は将来得られる値を表す型、`async`は関数本体を非同期に書くための修飾子、`await`はFutureの完了まで現在のasync関数を一時停止する式である。宣言・実装・呼び出しを分けて理解する。"
+title: "DartのFuture・async・awaitは、それぞれ何を表すか"
+description: "Futureは完了結果を表す型、asyncは関数本体の書き方、awaitは完了を待つ式。直接returnする場合とreturn awaitでエラーを捕捉する場合を分けて読む。"
 date: 2026-07-20
 tags:
   - "Dart"
@@ -14,140 +14,123 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/dart-future-async-await.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
+`Future<String> read();`という宣言に、なぜ`async`や`await`が付いていないのでしょうか。この宣言が示すのは、呼び出し元へ返す値の型だからです。どのように処理し、どこで完了を待つかは、実装と呼び出し側が決めます。
 
-## 概要
+| 書き方 | 表していること |
+| --- | --- |
+| `Future<T>` | 完了時の値またはエラーを受け取るためのオブジェクトの型 |
+| `async` | 関数本体を非同期処理として記述する指定 |
+| `await` | Futureの完了を待ち、その結果を使う式 |
 
-interfaceに`Future&lt;String?&gt; readRefreshToken();`と書かれているのに`await`がなく、なぜ非同期なのか分からなかった。戻り値の型、実装側の修飾子、呼び出し側の待機構文を同じものとして捉えていた。
+ここではDart SDK 3.11.5を使い、ネットワークへ接続しない小さな例で確かめます。[Dartの非同期処理の説明](https://dart.dev/libraries/async/async-await)
 
-`Future&lt;T&gt;`は将来得られる値を表す型、`async`は関数本体を非同期に書くための修飾子、`await`はFutureの完了まで現在のasync関数を一時停止する式である。宣言・実装・呼び出しを分けて理解する。
-
-## この記事で学べること
-
-- interface/abstract methodは実装を持たないため`async`不要
-- `Future&lt;T&gt;`を返す同期的な関数宣言
-- `async`関数が返り値をFutureで包むこと
-- 呼び出し側の`await`
-- Futureをそのままreturnする場合
-- `return await`が必要になるtry/catch等の文脈
-
-## 前提知識
-
-- Dart、Flutter、Future、ProviderやHTTP通信の基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![DartのFutureとasyncとawaitを混同していた](/images/articles/dart-future-async-await.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+## Futureを返す関数にasyncは必須ではない
 
 ```dart
-class UserRepository {
-  Future<String> fetchName() async {
-    final response = await Future<String>.delayed(
-      const Duration(milliseconds: 10),
-      () => 'Taro',
-    );
+abstract interface class LabelStore {
+  Future<String> read();
+}
 
-    return response;
+class MemoryLabelStore implements LabelStore {
+  @override
+  Future<String> read() => Future.value('ready');
+}
+
+Future<String> readDirectly(LabelStore store) => store.read();
+
+Future<String> readMessage(LabelStore store) async {
+  final label = await store.read();
+  return 'status: $label';
+}
+
+Future<void> main() async {
+  final store = MemoryLabelStore();
+  print(await readDirectly(store)); // ready
+  print(await readMessage(store)); // status: ready
+}
+```
+
+`readDirectly`は、受け取ったFutureをそのまま返します。`readMessage`は、その完了後に値を使って文字列を組み立てます。後者のreturnに書いた文字列は、async関数の返すFutureの結果になります。
+
+interfaceの宣言には実装がありません。ここで必要なのは返り値の契約であり、呼び出し元は返されたFutureを待つか、さらに別の関数へ返すかを選べます。
+
+## awaitは現在の処理の続きを待たせる
+
+次の例では、まだ完了していないFutureを`Completer`で作ります。
+
+```dart
+import 'dart:async';
+
+Future<void> main() async {
+  final pending = Completer<void>();
+  final events = <String>[];
+
+  Future<void> waitForResult() async {
+    events.add('start');
+    await pending.future;
+    events.add('resume');
+  }
+
+  final task = waitForResult();
+  events.add('caller');
+  pending.complete();
+  await task;
+  print(events); // [start, caller, resume]
+}
+```
+
+`waitForResult`の続きが待機している間に、呼び出し側は`caller`を追加できます。`await`はスレッド全体を停止する説明にはなりません。また、`async`を付けただけで処理が別スレッドへ移るわけでもありません。重い同期計算をasync関数へ移しただけでは、その計算による占有を解決できません。[非同期関数の実行順序](https://dart.dev/libraries/async/async-await#execution-flow-with-async-and-await)
+
+## return awaitが必要になるのは、ここでエラーを扱いたいとき
+
+単に結果を渡すなら直接returnできますが、Futureのエラーをその場の`try`で捕捉したい場合は違います。
+
+```dart
+Future<String> failLater() =>
+    Future<String>.error(StateError('unavailable'));
+
+Future<String> withoutAwait() async {
+  try {
+    return failLater();
+  } on StateError {
+    return 'fallback';
   }
 }
+
+Future<String> withAwait() async {
+  try {
+    return await failLater();
+  } on StateError {
+    return 'fallback';
+  }
+}
+
+Future<void> main() async {
+  try {
+    await withoutAwait();
+  } on StateError {
+    print('呼び出し側で捕捉');
+  }
+  print(await withAwait()); // fallback
+}
 ```
 
-## 本編
+この`failLater`は呼び出し時に同期的にthrowせず、エラーで完了するFutureを返します。`withoutAwait`の内部では、その完了を待つ前にFutureを返しているため、エラーは呼び出し側へ伝わります。`withAwait`ではawaitした箇所でエラーを受け取り、同じtry内のcatchで回復できます。[async/awaitでのエラー処理](https://dart.dev/libraries/async/async-await#handling-errors)
 
-### 発生した状況
+この違いから、`return await`を一律に不要とすることはできません。逆に、すべての中継関数に付ける必要もありません。完了後の処理や、その場所でのエラー処理があるかで判断できます。
 
-interfaceに`Future&lt;String?&gt; readRefreshToken();`と書かれているのに`await`がなく、なぜ非同期なのか分からなかった。戻り値の型、実装側の修飾子、呼び出し側の待機構文を同じものとして捉えていた。
+## 独立した処理は、まとめて完了を待てる
 
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、`Future&lt;T&gt;`は将来得られる値を表す型、`async`は関数本体を非同期に書くための修飾子、`await`はFutureの完了まで現在のasync関数を... という観点で見る必要がありました。
-
-### 観測したこと
-
-- `Future&lt;String?&gt; read()`のinterfaceと実装
-- `return storage.read(...)`と`return await storage.read(...)`比較
-- `Future.wait`で並列化する例
-- エラー伝播のunit test
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| Futureを直接返す | 簡潔・スタックが明確／局所try-catchしにくい |
-| `async/await` | 読みやすい／不要なasyncは層を増やす |
-
-## 内部動作
-
-FlutterやDartでは、UIのライフサイクル、非同期処理、HTTP通信、状態管理が同時に動きます。画面が閉じたこと、Futureが完了したこと、Providerが更新されたこと、通信がキャンセルされたことは、それぞれ別のイベントです。
-
-- `await`はスレッドをブロックする説明にしない
-- `async`を付けるだけで別スレッド実行になるわけではない
-- イベントループ/Isolateの詳細へ必要以上に広げない
-
-```text
-Widget lifecycle
-  -> state owner
-  -> async operation
-  -> network/storage boundary
-  -> UI update
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- `await`はスレッドをブロックする説明にしない
-- `async`を付けるだけで別スレッド実行になるわけではない
-- イベントループ/Isolateの詳細へ必要以上に広げない
-
-## 再発防止テスト
+先ほどの`store`が使える場所では、次のように書けます。
 
 ```dart
-void main() {
-  test('dart-future-async-await', () async {
-    final subject = TestSubject();
-
-    expect(await subject.call(), isNotNull);
-  });
-}
-
-class TestSubject {
-  Future<Object> call() async => Object();
-}
+final values = await Future.wait([store.read(), store.read()]);
+print(values); // [ready, ready]
 ```
 
-## 一般化できる設計原則
+この書き方では、どちらかの完了をawaitする前に二つの呼び出しを行います。結果のListは、完了の順ではなくFutureを渡した順になります。片方が失敗すれば、`Future.wait`自体もエラーで完了します。[Future.waitのAPI](https://api.dart.dev/dart-async/Future/wait.html)
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
-
-## まとめ
-
-型、関数の書き方、待ち方を分離すると、非同期コードの責務が読めるようになる、とまとめる。
-
-
-この記事では、次のような短絡的な一般化は避けます。
-
-- 非同期=並列と書かない
-- `await`がUIスレッドを物理的に停止すると説明しない
-
-## 参考文献
-
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+後続の処理が先行処理の結果に依存するなら、順にawaitする方が自然です。FutureをまとめることはCPU計算の並列実行を保証しません。「型」「関数の実装」「待つ場所」を分けると、処理の依存関係とエラーを扱う場所が読み取りやすくなります。

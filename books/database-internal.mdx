@@ -1,7 +1,7 @@
 ---
 title: Database Internal
 subtitle: SQLが実行される流れから、実行計画を読めるようになる
-description: Parser、Optimizer、Execution Plan、Storage Engineの流れを軸に、SQLがどのように解釈・最適化・実行されるのかを体系的に整理するBook。
+description: 5行の入力から集計結果を確かめながら、PostgreSQLの問い合わせ処理、Viewと一時表、実行計画の読み方を判断演習でつなぐBook。
 date: 2026-06-27
 category: Database
 level: 2
@@ -16,232 +16,209 @@ references:
     note: View、派生テーブル、CTE、一時テーブルの比較メモ。
   - articleSlug: sql/internal/explain-analyze
     note: EXPLAINとEXPLAIN ANALYZEの調査メモ。
+updated: 2026-10-02
 ---
 
-## はじめに
+SQLがDB内部でどのように処理されるかを調べる前に、そのSQLが返すべき行を決めます。結果が変わる書き換えを、速くなったという理由だけで採用しないためです。
 
-SQLを理解するとき、最初は構文を覚えるだけでも十分です。
+この本ではPostgreSQL 17を対象に、5行の説明用データから集計を作り、View・一時表・実行計画へ進みます。構文の詳細は関連記事へ戻れるようにし、ここでは同じ結果を追いながら判断を練習します。ストレージ形式やWAL、MVCCの実装全体を解説する本ではありません。
 
-しかし実務で遅いSQLを調べたり、View、CTE、派生テーブル、一時テーブルを使い分けたりする段階になると、構文だけでは判断できません。
+SQLはPostgreSQL 17.10で実行し、結果の行・Viewと一時表の違い・計画の必要項目・最後の一時オブジェクトの不在を確認しました。本文から取り出したSQLでも同じ結果です。計画の費用や時間を性能の基準値にはしていません。コードは同じ検証用接続で掲載順に実行し、最後に`ROLLBACK`する構成です。
 
-重要なのは、SQLがDB内部でどのように処理されるかです。
+<span id="はじめに"></span>
+<span id="このbookで扱う問い"></span>
 
-```mermaid
-flowchart TD
-  A[Application] --> B[SQL]
-  B --> C[Parser]
-  C --> D[Resolver / Rewrite]
-  D --> E[Optimizer]
-  E --> F[Execution Plan]
-  F --> G[Executor]
-  G --> H[Storage Engine]
-  H --> I[Buffer Pool / Disk]
+## まず返したい2行を決める
+
+作業をqueueごとに集計します。欲しいのは「状態がreadyの作業量を足し、合計8以上になったqueue」です。最終結果の1行は作業1件ではなく、queue一つに対応します。
+
+```sql file=database_internal/01_setup.sql
+BEGIN;
+CREATE TEMP TABLE bi_tasks (
+  id integer PRIMARY KEY,
+  queue text NOT NULL,
+  status text NOT NULL,
+  units integer NOT NULL CHECK (units >= 0)
+) ON COMMIT DROP;
+INSERT INTO bi_tasks (id, queue, status, units) VALUES
+  (1, 'alpha', 'ready', 4),
+  (2, 'alpha', 'ready', 6),
+  (3, 'alpha', 'held', 100),
+  (4, 'beta', 'ready', 8),
+  (5, 'beta', 'held', 200);
+ANALYZE bi_tasks;
 ```
 
-このBookでは、個別記事で得た知識をそのまま並べるのではなく、SQLが実行される流れに沿って再構成します。
+`held`の100と200は合計に入れません。`ANALYZE bi_tasks`は表の統計を集める操作であり、この後の集計SQLの実行時間を測っているわけではありません。[PostgreSQLのANALYZE](https://www.postgresql.org/docs/17/sql-analyze.html)
 
-目標は、`EXPLAIN` を見たときに「何となく速そう・遅そう」と眺めるのではなく、DBがどの段階で何を判断したのかを説明できる状態になることです。
-
-## このBookで扱う問い
-
-- SQLはいつ解析され、いつ最適化されるのか
-- ViewやCTEは本当にテーブルとして存在するのか
-- `EXPLAIN` は何を表示しているのか
-- `EXPLAIN ANALYZE` はなぜ実測値を出せるのか
-- 推定行数と実行時間がずれるとき、何を疑えばよいのか
-
-記事は調査メモとして役立ちますが、Bookでは問いの順番を作り直します。
-
-最初に全体の処理フローを押さえ、その後に「テーブルのように見えるもの」と「実行計画の読み方」をつなげます。
-
-## 1. SQLはそのまま実行されない
-
-SQLを書くと、DBはその文字列をそのまま上から順番に実行しているように見えます。
-
-しかし実際には、まずParserがSQLを解析し、構文として正しいかを確認します。
-
-次にResolverやRewriteの段階で、参照しているテーブル、カラム、Viewなどが解決されます。
-
-例えばViewを使ったSQLは、ここでView定義のSQLへ展開されます。
-
-```sql
-SELECT *
-FROM active_users;
+```sql file=database_internal/02_result.sql
+SELECT queue, SUM(units) AS total
+FROM bi_tasks
+WHERE status = 'ready'
+GROUP BY queue
+HAVING SUM(units) >= 8
+ORDER BY queue;
 ```
 
-`active_users` が次のViewだとします。
+| queue | totalの期待値 | 計算 |
+|---|---:|---|
+| alpha | 10 | readyの4と6を足す |
+| beta | 8 | readyの8を使う |
 
-```sql
-CREATE VIEW active_users AS
-SELECT *
-FROM users
-WHERE deleted_at IS NULL;
+`WHERE`は合計前の行を選び、`HAVING`は合計後のグループを選びます。結果の並びも契約に含めるため、外側に`ORDER BY queue`を置きます。[GROUP BYとHAVING](https://www.postgresql.org/docs/17/queries-table-expressions.html#QUERIES-GROUP)
+
+**判断してみる:** `HAVING SUM(units) >= 8`を消し、代わりに`WHERE`へ`units >= 8`を足しても同じですか。alphaの4と6はどちらも落ちるので、同じ結果にはなりません。この違いを説明してから次へ進みます。行とグループの区別に迷ったら、[GROUP BY・HAVINGの記事](/tech-note/articles/rails/sql/sql-group-by-having-duplicates/)で確認できます。
+
+<span id="1-sqlはそのまま実行されない"></span>
+
+## SQLから実行計画へ進む
+
+問い合わせの意味が決まったら、それを実行する方法を見ます。PostgreSQLではおおむね次の段階を通ります。
+
+| 段階 | この例で見る役割 |
+|---|---|
+| 構文解析と変換 | SQLを解析し、列や演算の意味を解決して問い合わせの木を作る |
+| 書き換え | Viewなどの規則を問い合わせへ組み込む |
+| Planner / Optimizer | 行数や費用を見積もり、走査・集約・ソートなどの計画を選ぶ |
+| Executor | 計画の木に沿って処理し、結果を返す |
+
+この表はPostgreSQLの処理を読むための整理です。Viewを文字列として検索置換する説明や、すべてのDBで同じStorage Engineの構造を持つという説明にはしていません。[PostgreSQLの問い合わせの流れ](https://www.postgresql.org/docs/17/query-path.html)、[構文解析と変換](https://www.postgresql.org/docs/17/parser-stage.html)
+
+たとえば今回の結果は2行ですが、その2行を作るまでには対象行の選択と集約が必要です。「結果が少ない」と「途中の仕事が少ない」は別なので、後の章では木の各段が受け渡す行数を見ます。
+
+**判断してみる:** 結果が2行なら、DBも2行だけ読めば十分でしょうか。必要な合計を出すためにどの入力を見るかを、結果の件数だけから決めることはできません。
+
+<span id="3-テーブルのように見えるものを整理する"></span>
+
+## 定義を残すか結果を残すか
+
+この集計を次のSQLでも使うなら、何を再利用したいかを決めます。まず定義をTEMP viewとして保存し、その結果を一時表にもコピーします。
+
+```sql file=database_internal/03_store.sql
+CREATE TEMP VIEW bi_ready_totals AS
+SELECT queue, SUM(units) AS total
+FROM bi_tasks
+WHERE status = 'ready'
+GROUP BY queue
+HAVING SUM(units) >= 8;
+
+CREATE TEMP TABLE bi_saved_totals ON COMMIT DROP AS
+SELECT queue, total FROM bi_ready_totals;
 ```
 
-この場合、実行時には概念的に次のようなSQLとして扱われます。
+`bi_ready_totals`が保存するのは集計の定義です。通常のViewは結果の行を保存しません。一方、`bi_saved_totals`には、この時点のalpha=10とbeta=8が別の表の行として入ります。[CREATE VIEW](https://www.postgresql.org/docs/17/sql-createview.html)、[CREATE TABLE AS](https://www.postgresql.org/docs/17/sql-createtableas.html)
 
-```sql
-SELECT *
-FROM users
-WHERE deleted_at IS NULL;
+どちらも同じ値を返す今の状態だけでは、違いが見えません。元の作業量を一つ変えて、両方を読みます。
+
+```sql file=database_internal/04_change.sql
+SAVEPOINT bi_before_change;
+UPDATE bi_tasks SET units = 9 WHERE id = 2;
+
+SELECT 'current' AS kind, queue, total FROM bi_ready_totals
+UNION ALL
+SELECT 'saved' AS kind, queue, total FROM bi_saved_totals
+ORDER BY kind, queue;
 ```
 
-Viewはテーブルそのものではなく、保存されたSQLです。
+期待値は次のように分かれます。
 
-この理解がないと、「Viewにすると速くなる」と誤解しやすくなります。
+| kind | queue | total |
+|---|---|---:|
+| current | alpha | 13 |
+| current | beta | 8 |
+| saved | alpha | 10 |
+| saved | beta | 8 |
 
-## 2. Optimizerは実行方法を選ぶ
+Viewはその問い合わせから見える元表を集計するので、alphaが4+9になります。コピーした一時表は自動では変わりません。この例は同じ接続の自分自身の更新を読んでいます。別接続の更新がいつ見えるかは、分離レベルも含めた別の条件です。[トランザクションの可視性](https://www.postgresql.org/docs/17/transaction-iso.html)
 
-SQLの形が決まると、Optimizerが実行方法を考えます。
+ここで変更を戻し、残りの章では再びalpha=10、beta=8を使います。
 
-同じ結果を返すSQLでも、実行方法は複数あります。
-
-```sql
-SELECT *
-FROM users
-WHERE email = 'alice@example.com';
+```sql file=database_internal/05_restore.sql
+ROLLBACK TO SAVEPOINT bi_before_change;
+RELEASE SAVEPOINT bi_before_change;
+SELECT queue, total FROM bi_ready_totals ORDER BY queue;
 ```
 
-このSQLに対して、DBは少なくとも次のような選択肢を持ちます。
+**判断してみる:** 「後続処理でも作成時の集計値を使いたい」という要件なら、どちらが候補ですか。この例ならコピーした一時表です。定義の共有と行の保存を区別できたら、[View・派生テーブル・CTE・一時テーブルの記事](/tech-note/articles/sql/internal/view-derived-table-cte-temporary-table/)で寿命や更新可能性を確認し、この章の選択に戻ってください。
 
-- usersテーブルを全件読む
-- emailのIndexを使って1件だけ探す
-- 統計情報を見て、どちらが安いか判断する
+<span id="2-optimizerは実行方法を選ぶ"></span>
+<span id="4-explainはoptimizerの判断を見る道具"></span>
+<span id="5-explain-analyzeは実行結果まで見る"></span>
 
-Optimizerは正解を知っているわけではありません。
+## 見積りと実行後の行数を比べる
 
-統計情報をもとに、より安いと思われる実行計画を選びます。
+まず、集計Viewを読む問い合わせに通常の`EXPLAIN`を付けます。
 
-そのため、統計情報が古い、条件に合う行数の見積もりが外れている、Indexが適切でない、といった理由で計画が外れることがあります。
-
-## 3. テーブルのように見えるものを整理する
-
-SQLには、テーブルのように扱えるものがいくつもあります。
-
-```sql
-SELECT *
-FROM (
-  SELECT *
-  FROM users
-) u;
+```sql file=database_internal/06_plan.sql
+EXPLAIN (FORMAT JSON)
+SELECT queue, total FROM bi_ready_totals ORDER BY queue;
 ```
 
-これは派生テーブルです。
+JSONの`Plan`から、`Node Type`、`Plan Rows`、子の`Plans`をたどります。`Plan Rows`は各ノードが出力すると見積もった行数です。コストは時間のミリ秒ではなく、ここには実行後の`Actual Rows`はありません。5行の表で順次走査を選んでも、それだけで失敗とは判断しません。[実行計画の読み方](https://www.postgresql.org/docs/17/using-explain.html)
 
-```sql
-WITH active_users AS (
-  SELECT *
-  FROM users
-  WHERE deleted_at IS NULL
+次は、同じ問い合わせを実行してから計画情報を返します。
+
+```sql file=database_internal/07_analyze.sql
+EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, FORMAT JSON)
+SELECT queue, total FROM bi_ready_totals ORDER BY queue;
+```
+
+`ANALYZE`を付けるとSELECTが実行されます。`TIMING OFF`はノードごとの時刻測定を省く指定で、実際の行数や実行回数、問い合わせ全体の時間は引き続き取得します。[EXPLAINのオプション](https://www.postgresql.org/docs/17/sql-explain.html)
+
+確認の順番を次の3点に絞ります。
+
+1. 最上位が今回の契約どおり2行を出しているか。
+2. 同じノードの`Plan Rows`と`Actual Rows`がどの程度違うか。
+3. 子ノードで何を絞り、どこで集約し、何回処理しているか。
+
+繰り返されるノードの実測行数は1回あたりの平均なので、`Actual Loops`も見ます。bufferのlocal/temp区分や親子で重なる時間の扱いは、[EXPLAIN ANALYZEの記事](/tech-note/articles/sql/internal/explain-analyze/)で項目を確認してから、この問い合わせの計画へ戻ってください。
+
+**判断してみる:** 出力を2行から1行へ減らすSQLに書き換えて時間が短くなったら、改善でしょうか。元の契約を満たさないため、この課題の改善とは扱えません。計画の比較にも、最初に決めた結果が必要です。
+
+
+## 書き換えで変えない条件を確かめる
+
+次はreadyの選択へ名前を付けます。元表は変更せず、集計条件と結果の順序もそのままにします。
+
+```sql file=database_internal/08_rewrite.sql
+WITH ready AS NOT MATERIALIZED (
+  SELECT queue, units FROM bi_tasks WHERE status = 'ready'
 )
-SELECT *
-FROM active_users;
+SELECT queue, SUM(units) AS total
+FROM ready
+GROUP BY queue
+HAVING SUM(units) >= 8
+ORDER BY queue;
 ```
 
-これはCTEです。
+期待値は引き続きalpha=10、beta=8です。今回のCTEは非再帰でvolatile関数を含まないSELECTなので、`NOT MATERIALIZED`で外側への取り込みを指定できます。ただし、このように1回参照するCTEは既定でも取り込まれる場合があります。指定を追加しただけで速くなるとは判断しません。[CTEの最適化](https://www.postgresql.org/docs/17/queries-with.html#QUERIES-WITH-CTE-MATERIALIZATION)
 
-どちらも見た目はテーブルのようですが、常に物理的なテーブルが作られるわけではありません。
+CTEの中間結果を実行中に保持することと、前の章で後続SQL用に一時表を作ったことは区別します。この書き換えの目的は、同じ結果を保って問い合わせを分けることです。計画や処理時間の差は、実際に取得してから判断します。
 
-Optimizerがインライン展開できる場合、実行計画上では元テーブルへのアクセスに変換されます。
+**判断してみる:** 共通の計算を複数回使うときも、必ず`NOT MATERIALIZED`を選べばよいでしょうか。取り込みで重複計算が増える場合もあるため、共通計算を再利用する利点と、個別の絞り込みを適用する利点を比べます。指定の条件は[CTEの記事](/tech-note/articles/sql/internal/view-derived-table-cte-temporary-table/)へ戻れます。
 
-一方で、一時テーブルは本当に作られます。
+<span id="6-読む順番"></span>
+<span id="まとめ"></span>
 
-```sql
-CREATE TEMPORARY TABLE temp_users AS
-SELECT *
-FROM users;
+## アプリへ戻って次の調査を選ぶ
+
+SQL一つの結果と計画を説明できたら、アプリ側で何が起きているかへ戻ります。同じ問い合わせを多数回発行しているなら、1回の実行計画だけを調べても全体の待ち時間は説明できません。
+
+| 観測したこと | 次に確かめる対象 |
+|---|---|
+| SQLの結果自体が違う | WHERE・JOIN・集約単位などの意味 |
+| 同じ種類のSELECTが何度も出る | 関連読み込みと発行回数 |
+| 一つのSQL内で推定と実測の行数がずれる | ずれ始めるノード、データの偏り、統計 |
+| DB側の計測よりアプリの待ちが長い | 接続待ち、通信、結果の変換、その後の処理 |
+
+`EXPLAIN ANALYZE`は結果を通常どおりクライアントへ送りません。計画・実行の数字を足しても、画面の待ち時間全体にはなりません。[計測の範囲](https://www.postgresql.org/docs/17/using-explain.html#USING-EXPLAIN-CAVEATS)
+
+Railsからの観測へ進むなら、[Active Recordの結果をSQLで確かめる記事](/tech-note/articles/rails/sql/rails-engineer-needs-sql/)で発行回数と行集合を分けて見ます。書き込みの契約を考えるなら、[Rails Raw SQL](/tech-note/books/rails-raw-sql/)で入力の選択と再適用を追えます。
+
+**最後の判断:** ViewをCTEに変えただけで改善したと言うには、何が必要ですか。同じ入力で結果を比較し、実行したSQL・DB版・データ条件・計画をそろえた記録が必要です。この5行の例だけで実環境の性能を代弁することはできません。
+
+検証用の表とViewを作ったトランザクションを戻して終えます。今回の例には外部送信、trigger、sequenceはありません。
+
+```sql file=database_internal/09_finish.sql
+ROLLBACK;
 ```
-
-この場合、以降のSQLは元の`users`ではなく、作成済みの`temp_users`へアクセスします。
-
-つまり、重要なのは「テーブルのように書けるか」ではありません。
-
-DB内部で、SQLとして展開されるのか、中間結果として実体化されるのか、Storage Engine上の一時テーブルとして作られるのかです。
-
-## 4. EXPLAINはOptimizerの判断を見る道具
-
-`EXPLAIN` は、Optimizerが選んだ実行計画を確認するための道具です。
-
-```sql
-EXPLAIN
-SELECT *
-FROM users
-WHERE email = 'alice@example.com';
-```
-
-PostgreSQLでは、Indexが使われる場合に次のような出力になります。
-
-```text
-Index Scan using idx_users_email on users  (cost=0.42..8.44 rows=1 width=128)
-  Index Cond: (email = 'alice@example.com'::text)
-```
-
-ここで見るべきポイントは、まずスキャン方法です。
-
-`Seq Scan` なら全件走査、`Index Scan` ならIndexを使った探索です。
-
-次に `rows` を見ます。
-
-これは実際に読んだ行数ではなく、Optimizerが見積もった行数です。
-
-この見積もりが大きく外れると、Join順序やIndex利用の判断も外れやすくなります。
-
-## 5. EXPLAIN ANALYZEは実行結果まで見る
-
-`EXPLAIN` は実行計画を表示しますが、通常はSQLそのものを実行しません。
-
-一方、`EXPLAIN ANALYZE` は実際にSQLを実行し、実測値を表示します。
-
-```sql
-EXPLAIN ANALYZE
-SELECT *
-FROM users
-WHERE email = 'alice@example.com';
-```
-
-例えば次のような出力になります。
-
-```text
-Index Scan using idx_users_email on users
-  (cost=0.42..8.44 rows=1 width=128)
-  (actual time=0.020..0.021 rows=1 loops=1)
-  Index Cond: (email = 'alice@example.com'::text)
-Planning Time: 0.120 ms
-Execution Time: 0.045 ms
-```
-
-ここでは `actual time`、実際の `rows`、`loops` を確認できます。
-
-推定値と実測値を並べて見られるため、Optimizerの見積もりがどれくらい当たっていたかを判断できます。
-
-ただし、実際にSQLを実行するため、更新系SQLで使うとデータに影響します。
-
-本番環境で使う場合は、対象SQLとDBの仕様を必ず確認する必要があります。
-
-## 6. 読む順番
-
-このBookでは、次の順番で理解すると迷いにくくなります。
-
-1. SQLは文字列のまま実行されない
-2. ViewやCTEはOptimizerの前後で形が変わる
-3. 一時テーブルだけは実体を持つ
-4. EXPLAINでOptimizerの判断を見る
-5. EXPLAIN ANALYZEで実測値と見積もりを比較する
-
-個別記事は、それぞれのテーマを調べたメモとして参照できます。
-
-しかし、このBookでは「SQLがDB内部で流れていく順番」を軸に並べ直しています。
-
-## まとめ
-
-SQLを内部動作から理解するには、構文単位ではなく処理段階で考える必要があります。
-
-- ParserはSQLを解析する
-- ResolverやRewriteは参照先やView定義を解決する
-- Optimizerは実行計画を選ぶ
-- Executorは実行計画に沿って処理する
-- Storage Engineは実際のデータへアクセスする
-- EXPLAINは選ばれた計画を見る
-- EXPLAIN ANALYZEは実行後の実測値まで見る
-
-この流れが見えると、View、CTE、派生テーブル、一時テーブル、EXPLAINが別々の知識ではなく、1本の線でつながります。

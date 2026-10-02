@@ -1,6 +1,6 @@
 ---
-title: "外部CSVのIDとDBの主キーを混同しない――外部識別子の設計"
-description: "DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_id`を明示的に持ち、変換境界を設計する。"
+title: "外部CSVのIDとDBの主キーを分ける設計"
+description: "sourceとexternal_idの組で外部の識別子を解決し、内部idを安定させる。先頭ゼロ、複合一意制約、欠損、番号変更・再利用、APIの識別子を分けて考える。"
 date: 2026-07-20
 tags:
   - "Rails"
@@ -13,134 +13,133 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/external-id-vs-primary-key.png"
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+二つのシステムから、どちらも顧客番号 `0012` のCSVが届くとします。同じ文字列でも、同じ顧客とは限りません。番号をそのままDBの `id` に入れる前に、「誰が採番した、どの範囲の番号か」を決めます。
 
-CSVのID列をそのままDBの`id`へ設定すれば簡単に見えるが、別システムの番号体系、再採番、複数データソース、内部参照との衝突を招く。
+この例では、内部参照用の `id` と、外部システムが付けた番号を分けます。外部の行を探すキーは `source` と `external_id` の組です。番号が既存の顧客を指すのかを、表示名や数値の一致から推測しません。
 
-DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_id`を明示的に持ち、変換境界を設計する。
+Ruby 3.4.4、Active Record 8.1.3、PostgreSQL 17.10で確認した説明用モデルを使います。`feed_a` と `feed_b`、番号、行は合成データです。外部APIや実CSV配信元には接続しません。
 
-## この記事で学べること
+## 内部の参照と、外部の照合キーを別に持つ
 
-- 内部主キーと業務識別子の役割
-- 外部システムが複数ある場合の衝突
-- 番号の再利用・変更・欠損
-- `external_id`単独ではなく`source`との複合一意制約
-- 外部ID変更履歴や別名テーブルが必要なケース
-- APIレスポンスで内部IDを露出するか
+| 列 | 役割 |
+| --- | --- |
+| `id` | このDBが採番する内部の主キー |
+| `source` | 外部番号の発行元・名前空間 |
+| `external_id` | 発行元から受け取った番号を文字列で保持 |
 
-## 前提知識
+例えば配信元ごとに番号が一意なら、`source + external_id` が照合キーになります。配信元の中でもテナントごとに採番している場合は、そのテナントもキーへ含める必要があります。一つの列名を決めただけで、一意性の範囲が決まるわけではありません。
 
-- Rails、Active Record、RSpec、SQLログの基本を読めること
-- フレームワークのAPIを使った経験があり、状態・トランザクション・非同期処理の境界で詰まり始めていること
-- この記事のコード例は匿名化した最小例であり、利用中のバージョンでは公式ドキュメントと実装を確認すること
-
-## 図解
-
-![外部CSVのIDとDBの主キーを混同しない――外部識別子の設計](/images/articles/external-id-vs-primary-key.png)
-
-```mermaid
-flowchart LR
-  A["症状を観測する"] --> B["誤解を切り分ける"]
-  B --> C["状態の所在を確認する"]
-  C --> D["境界を決め直す"]
-  D --> E["再発防止テストを残す"]
-```
-
-## 実装コード例
+以下は新しい空の検証用DBに作るmigrationです。既存テーブルへそのまま適用する移行手順ではありません。
 
 ```ruby
-class CreateCustomers < ActiveRecord::Migration[7.1]
+class ExternalIdsSchema < ActiveRecord::Migration[8.1]
   def change
-    create_table :customers do |t|
-      t.string :external_customer_id, null: false
-      t.string :name, null: false
-      t.timestamps
+    create_table :external_customers do |t|
+      t.string :source, null: false
+      t.string :external_id, null: false
+    end
+    add_index :external_customers, [:source, :external_id], unique: true
+  end
+end
+```
+
+Railsの `create_table` に内部主キーの作成を任せ、外部IDには別の複合unique indexを付けます。[SchemaStatementsのAPI](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/ConnectionAdapters/SchemaStatements.html#method-i-add_index)に、複数列の索引の指定方法があります。
+
+NOT NULLも明示します。PostgreSQLでは、通常のunique制約だけではNULL同士を同じ値として扱わないためです。[PostgreSQLの制約](https://www.postgresql.org/docs/17/ddl-constraints.html#DDL-CONSTRAINTS-UNIQUE-CONSTRAINTS)の対象を確認し、「一意だから欠損も拒否される」と考えないようにします。
+
+## 外部のキーから内部の行を解決する
+
+この入力契約では、両方のキーは空でない文字列です。外側の空白は除きますが、先頭ゼロや英字の大文字・小文字は変えません。
+
+```ruby
+class ExternalCustomer < ActiveRecord::Base
+  validates :source, :external_id, presence: true
+end
+
+class ResolveExternalCustomer
+  def self.call(source:, external_id:)
+    values = [source, external_id]
+    unless values.all? { |value| value.is_a?(String) && !value.strip.empty? }
+      raise ArgumentError, 'source and external_id must be non-empty strings'
     end
 
-    add_index :customers, :external_customer_id, unique: true
+    ExternalCustomer.create_or_find_by!(
+      source: source.strip,
+      external_id: external_id.strip
+    )
   end
 end
 ```
 
-## 本編
-
-### 発生した状況
-
-CSVのID列をそのままDBの`id`へ設定すれば簡単に見えるが、別システムの番号体系、再採番、複数データソース、内部参照との衝突を招く。
-
-### 当初の理解・誤解
-
-当初は、API名やメソッド名から直感的に挙動を推測していました。しかし実際には、DB内部のsurrogate keyと、業務・外部システムが提供するnatural/external keyは責務が違う。`source + external_... という観点で見る必要がありました。
-
-### 観測したこと
-
-- migration: `source`, `external_id`, unique index
-- Importerで外部IDから内部レコードを解決する例
-- 同じexternal_idでもsourceが違えば別レコードになるテスト
-
-### 修正案の比較
-
-| 方針 | 見るべき点 |
-| --- | --- |
-| 外部IDを直接PK | マッピングが不要／外部都合が内部設計へ侵入 |
-| 別カラムで保持 | 柔軟／解決処理と索引が必要 |
-
-## 内部動作
-
-Railsの抽象化は、Rubyオブジェクト、Active Record、SQL、DBトランザクションの上に成り立っています。重要なのは、Railsのメソッド呼び出しがそのままDBの履歴や外部サービスの状態になるわけではない、という点です。
-
-- surrogate keyとnatural keyは排他的な思想ではなく併用できる
-- 一意性はDB制約で保証する
-
-```text
-Ruby object
-  -> Active Record
-  -> SQL / transaction
-  -> database row
-  -> callback or job boundary
-```
-
-## 調査手順
-
-1. まず、入力値・保存前状態・保存後状態・コールバックや非同期処理の発火地点をログに残します。
-2. 次に、DBやHTTP通信など外部境界をまたぐ処理を分けて、どこまでが同じトランザクションや同じライフサイクルに属するかを確認します。
-3. 最後に、修正後の設計を最小テストへ落とし込み、同じ誤解が再発しないようにします。
-
-- surrogate keyとnatural keyは排他的な思想ではなく併用できる
-- 一意性はDB制約で保証する
-
-## 再発防止テスト
+このresolverはキーを解決するだけです。名前や連絡先などの属性を更新する処理は持たせていません。CSV全体の更新・再投入は[冪等なCSV取込](/tech-note/articles/rails/data/idempotent-csv-importer-rails/)で扱います。
 
 ```ruby
-RSpec.describe "external-id-vs-primary-key" do
-  it "境界条件を固定する" do
-    result = described_class.new.call
+a = ResolveExternalCustomer.call(source: 'feed_a', external_id: '0012')
+b = ResolveExternalCustomer.call(source: 'feed_b', external_id: '0012')
+a.id == b.id # => false
 
-    expect(result).to be_present
+again = ResolveExternalCustomer.call(source: 'feed_a', external_id: '0012')
+again.id == a.id # => true
+ExternalCustomer.count # => 2
+
+unpadded = ResolveExternalCustomer.call(source: 'feed_a', external_id: '12')
+unpadded.id == a.id # => false
+a.external_id # => '0012'
+```
+
+`0012` を数値へ変換すると、`12` との区別が消えます。表計算ソフトで先頭ゼロが落ちた後の値を、resolverが推測で補うことはしません。正規化は発行元の契約に従います。先頭ゼロや空白が意味を持つ仕様なら、この例のルールも変える必要があります。
+
+外部IDが業務上の自然キーである場合も、別システムが内部採番した番号である場合もあります。「外部IDだから自然キー」とは限りません。内部の代理キーと外部の照合キーは、別の目的で併用できます。
+
+## 一意性は、検索してから作るだけでは守れない
+
+二つの処理が両方「まだない」と確認してから作成すると、事前検索だけでは重複します。DBのunique indexが、書き込み時の組の重複を拒否します。
+
+`create_or_find_by!` は先に作成を試み、一意制約の衝突を受けるとその属性で検索します。今回のようにキーだけを引数へ渡す場合を検証しました。unique対象以外の名前なども引数へ混ぜると、衝突した行を同じ条件で見つけられない場合があります。[Relation APIの制約と競合条件](https://api.rubyonrails.org/v8.1.3/classes/ActiveRecord/Relation.html#method-i-create_or_find_by-21)を確認してください。
+
+このメソッドにも、衝突から再検索までの間に別処理が対象を削除する競合は残ります。「どんな同時実行でも必ず成功する」ものではありません。検証は同時削除のない2接続で行い、同じキーが一つの内部IDへ解決されることを確認しました。
+
+DB制約そのものも、model validationを通さない経路で確かめます。
+
+```ruby
+RSpec.describe 'external identity constraint' do
+  it 'rejects a duplicate pair even without model validation' do
+    ExternalCustomer.create!(source: 'test_feed', external_id: 'duplicate')
+    expect do
+      ExternalCustomer.insert_all!([
+        { source: 'test_feed', external_id: 'duplicate' }
+      ])
+    end.to raise_error(ActiveRecord::RecordNotUnique)
   end
 end
 ```
 
-## 一般化できる設計原則
+既存データへunique indexを追加するときは、先に重複とNULLを確認し、どの行を残すかを決める必要があります。この新規DBの例から、既存顧客の統合判断までは自動化していません。
 
-- API名が短いほど、裏側の実行モデルを確認する
-- 状態を「値」「オブジェクト」「DB row」「外部サービス」のどこに置いているかを分けて考える
-- トランザクションや非同期処理の境界をまたぐ副作用は、明示的な設計として扱う
-- テストは成功確認だけでなく、誤解しやすい境界条件を固定する
+## 番号が変わる場合と、再利用される場合を分ける
 
-## まとめ
+配信元から「同じ顧客の番号変更」と確認できた場合、外部IDを変えても内部IDを維持できます。
 
-識別子は値そのものより「どの境界で、誰が、その一意性を保証するか」が重要だと一般化する。
+```ruby
+internal_id = a.id
+a.update!(external_id: 'renamed-0012')
+resolved = ResolveExternalCustomer.call(source: 'feed_a', external_id: 'renamed-0012')
+resolved.id == internal_id # => true
+ExternalCustomer.find_by(source: 'feed_a', external_id: '0012') # => nil
+```
 
+この単純な更新では、古い番号の対応は残りません。古い番号を含む再送を受けるなら、別名や有効期間を持つ対応表を検討します。誰のどの証拠で番号を変更したかも別途残します。
 
-この記事では、次のような短絡的な一般化は避けます。
+同じ番号が別の顧客へ再利用される場合は、単なる名前変更とは扱えません。配信元の世代や有効期間など、同一性を区別できる情報が必要です。欠損した番号を一律に空文字やゼロへ置き換えると、無関係な行を同じ対象にまとめてしまうため、この例では拒否しています。
 
-- 外部IDは絶対に変わらないと断定しない
-- UUIDならすべて解決すると書かない
+## APIに出すIDは、さらに別の契約
 
-## 参考文献
+内部IDをAPIに出すか、公開用の識別子を別に用意するかは、URLの継続性や外部クライアントとの契約から決めます。内部主キーをUUIDにしても、外部番号の名前空間や再利用問題がなくなるわけではありません。
 
-- この記事は、提供された執筆仕様とサムネイルをもとに、公開用の匿名化された技術ノートとして再構成しています。
-- Rails、Flutter、Dart、Swiftのバージョン差が関係する箇所は、利用中リポジトリの設定と公式ドキュメントで確認してください。
+また、連番を隠すことは認可の代わりにはなりません。識別子を受け取った操作では、その利用者が対象を扱えるかを別に確認します。[Railsの不正な直接参照への対策](https://guides.rubyonrails.org/security.html#insecure-direct-object-reference-or-forced-browsing)もこの点を扱っています。
+
+検証では発行元の違い、再取得、先頭ゼロと大文字小文字、不正入力、DB一意制約とNOT NULL、番号変更、2接続の作成を8例で確認しました。既存データの統合、別名テーブル、同時削除、実APIの認可は実装・実行していません。

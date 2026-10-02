@@ -1,6 +1,6 @@
 ---
-title: "RSpecでジョブと時刻依存のテストを書く方法：ActiveJob::TestHelperとTimeHelpersの基本"
-description: RSpecでActiveJobと時刻依存の処理を安定してテストするために、ActiveJob::TestHelperとTimeHelpersの基本を整理する。
+title: "RSpecでジョブの投入・実行と時刻を分けてテストする"
+description: "Active Jobのtest adapterとTimeHelpersを使い、予約時刻、実行対象のcutoff、期限判定、秒未満の精度を分けて確認します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -14,343 +14,184 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-active-job-time-helpers.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+予約ジョブのテストでは、「投入された」「実行された」「その時点で期限を迎えていた」を分けて確認します。`travel_to`で時計を進めても、test adapterのジョブは自動実行されません。反対に、`perform_enqueued_jobs`を呼ぶだけでは時計は予約時刻へ進みません。
 
-Railsアプリケーションでは、非同期ジョブや現在時刻に依存する処理をテストすることがあります。
+ここでは期限を迎えたらローカルの配列へ記録するジョブを使い、待ち時間も実workerも使わずに、この違いを確かめます。メールや外部サービスへの送信は行いません。
 
-例えば、次のような処理です。
+## perform_laterを呼ぶと、どこまで進みますか
 
-```text
-- ユーザー登録後にメール送信ジョブをenqueueする
-- 決済完了後に通知ジョブを実行する
-- 期限切れかどうかを現在時刻で判定する
-- 特定時刻になったらステータスを変更する
-```
+`perform_later`はqueue adapterへジョブを渡す入口です。その後の実行方法はadapterに依存します。「必ずその場では実行されない」という決まりではなく、たとえばinline adapterは投入時に実行します。[Active Jobのenqueue API](https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/Enqueuing.html#method-i-enqueue)、[inline adapter](https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/QueueAdapters/InlineAdapter.html)
 
-このようなテストでは、Railsが用意しているテストヘルパーが便利です。
+以下は`:test` adapterを使う例です。通常は投入を`enqueued_jobs`へ記録し、helperで実行を指定したときにジョブを動かします。`performed_jobs`はtest adapter経由の実行記録であり、アプリで起きたすべての実行を記録する監査ログではありません。[test adapter](https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/QueueAdapters/TestAdapter.html)
+
+説明用のジョブは、呼ばれた時刻を`attempts`へ残し、期限以上の時刻なら`deliveries`にも残します。ここでの`deliveries`は送信したことを表す実データではなく、テスト用のメモリ上の記録です。
 
 ```ruby
-include ActiveJob::TestHelper
-include ActiveSupport::Testing::TimeHelpers
-```
+class JobTimeReminderJob < ActiveJob::Base
+  queue_as :reminders
 
-この記事では、この2つが何をするものなのかを整理します。
+  class_attribute :attempts, default: []
+  class_attribute :deliveries, default: []
 
-## この記事で学べること
+  def perform(reference, deadline)
+    now = Time.current
+    self.class.attempts << { reference: reference, at: now }
+    return if now < deadline
 
-- ActiveJob::TestHelperの役割
-- perform_laterとperform_enqueued_jobsの違い
-- TimeHelpersで現在時刻を固定する方法
-- ジョブと時刻依存を組み合わせてテストする方法
-
-## 前提知識
-
-- RailsのActiveJobを使ったことがある
-- RSpecでjob specを書いたことがある
-- 時刻依存のテストが不安定になった経験がある
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class ExpirationNotificationJob < ApplicationJob
-  def perform(user_id)
-    user = User.find(user_id)
-    ExpirationMailer.notify(user).deliver_now
+    self.class.deliveries << { reference: reference, at: now }
   end
 end
+```
 
-RSpec.describe ExpirationNotificationJob, type: :job do
+`now < deadline`の間だけ処理を止めるため、期限ちょうどは記録対象です。この例では早く呼ばれたジョブを再予約しません。実システムで早期実行や重複実行をどう扱うかは、別途方針が必要です。
+
+## 時刻とキューを、exampleごとにどう戻しますか
+
+対象はRuby 3.4.4、Rails・Active Job 8.1.3、RSpec 3.13.0、RSpec Rails 8.0.4です。Railsのtest環境で`config.active_job.queue_adapter = :test`を設定し、この例ではqueue nameのprefixを付けません。Active Jobを読み込んだRSpec Railsのhelperが前提です。DB、ルート、HTTPサーバーは不要です。
+
+helperを使えるようにしたうえで、キュー、実行記録、固定した時刻をexampleの前後に掃除します。`Time.use_zone("UTC")`はアプリケーション側のzoneを限定する指定です。OSのタイムゾーン設定を変更するものではありません。
+
+```ruby
+RSpec.shared_context "job time example setup" do
   include ActiveJob::TestHelper
   include ActiveSupport::Testing::TimeHelpers
 
-  it "期限切れユーザーに通知する" do
-    user = create(:user, trial_ends_at: Time.zone.local(2026, 7, 1))
+  before do
+    clear_enqueued_jobs
+    clear_performed_jobs
+    JobTimeReminderJob.attempts.clear
+    JobTimeReminderJob.deliveries.clear
+  end
 
-    travel_to Time.zone.local(2026, 7, 2) do
-      perform_enqueued_jobs do
-        described_class.perform_later(user.id)
-      end
+  around do |example|
+    Time.use_zone("UTC") { example.run }
+  ensure
+    travel_back
+    clear_enqueued_jobs
+    clear_performed_jobs
+    JobTimeReminderJob.attempts.clear
+    JobTimeReminderJob.deliveries.clear
+  end
+
+  let(:deadline) { Time.zone.local(2026, 10, 2, 12, 0, 0) }
+end
+```
+
+この`shared_context`は、下の2つのRSpec groupで同じ準備を使うためのものです。通常は時刻操作をブロックで閉じ、さらに`ensure`で`travel_back`を呼びます。ブロック外の`travel_to`を追加した場合も、固定状態を次のexampleへ残さないためです。共通の準備とテストケース自体の共有の違いは、[shared_examplesの使い方](/tech-note/articles/rails/rspec/shared-examples)でも扱います。
+
+本文のRubyブロックは、Rails/RSpecのhelperと`active_job/test_helper`、`active_support/testing/time_helpers`を読み込んだ後、掲載順に連結できます。本文には中心となる4例を掲載し、補足を含めて9例のfixtureを用意しています。この固定構成で9例を実行し、すべて成功しました。本文の4例も抽出して実行しています。プロセスのsystem zoneがUTC・東京の両方で同じ期待を確認しました。
+
+## 予約情報と期限の到達を、どう別々に確かめますか
+
+最初の例では、投入時の引数、`reminders`キュー、予約時刻を確認します。まだジョブが呼ばれていないことも別に確認します。
+
+2つ目の例では、投入後に時計を進め、現在時刻までのジョブだけを実行します。3つ目は、その`at:`だけを未来へ変えてもジョブが読む時計は変わらないことを示す対照例です。
+
+```ruby
+RSpec.describe JobTimeReminderJob, type: :job do
+  include_context "job time example setup"
+
+  it "引数・queue・scheduled_atを指定して投入し、本体は実行しない" do
+    job = nil
+    travel_to(deadline - 60) do
+      expect do
+        job = described_class.set(wait_until: deadline).perform_later("demo-7", deadline)
+      end.to have_enqueued_job(described_class).with("demo-7", deadline).on_queue("reminders").at(deadline)
     end
 
-    expect(ActionMailer::Base.deliveries.count).to eq(1)
-  end
-end
-```
-
-## 本編
-
-### includeとは
-
-Rubyの `include` は、モジュールに定義されたメソッドを使えるようにする仕組みです。
-
-RSpec内で次のように書くと、
-
-```ruby
-include ActiveJob::TestHelper
-include ActiveSupport::Testing::TimeHelpers
-```
-
-そのspec内でジョブ用のヘルパーや時刻操作用のヘルパーを使えるようになります。
-
-### ActiveJob::TestHelperとは
-
-`ActiveJob::TestHelper` は、ActiveJobのテストを支援するためのヘルパーです。
-
-代表的には、次のようなメソッドを使えます。
-
-```text
-perform_enqueued_jobs
-enqueued_jobs
-performed_jobs
-clear_enqueued_jobs
-clear_performed_jobs
-```
-
-### perform_laterはその場で実行されない
-
-ActiveJobでは、通常 `perform_later` を呼ぶとジョブはキューに積まれます。
-
-```ruby
-WelcomeMailJob.perform_later(user.id)
-```
-
-ただし、これはその場で即座に実行されるわけではありません。
-
-そのため、ジョブの中身までテストしたい場合は、`perform_enqueued_jobs` を使います。
-
-```ruby
-include ActiveJob::TestHelper
-
-it "メール送信ジョブを実行する" do
-  perform_enqueued_jobs do
-    WelcomeMailJob.perform_later(user.id)
+    expect(job.scheduled_at).to eq(deadline)
+    expect(enqueued_jobs.fetch(0).fetch(:at)).to eq(deadline.to_f)
+    expect(performed_jobs).to be_empty
+    expect(described_class.attempts).to be_empty
+    expect(described_class.deliveries).to be_empty
   end
 
-  expect(ActionMailer::Base.deliveries.count).to eq(1)
-end
-```
+  it "期限前はキューに残し、期限ちょうどに時計とcutoffを揃えて実行する" do
+    travel_to(deadline - 60) do
+      described_class.set(wait_until: deadline).perform_later("demo-7", deadline)
+    end
 
-`perform_enqueued_jobs` のブロック内でenqueueされたジョブが、テスト中に実行されます。
+    travel_to(deadline - 1) do
+      perform_enqueued_jobs(only: described_class, queue: "reminders", at: Time.current)
+      expect(described_class.attempts).to be_empty
+      expect(enqueued_jobs.size).to eq(1)
+    end
 
-### enqueueされたことだけ確認する場合
-
-ジョブの中身まで実行せず、ジョブが積まれたことだけ確認したい場合もあります。
-
-```ruby
-it "WelcomeMailJobをenqueueする" do
-  expect {
-    described_class.new(user).call
-  }.to have_enqueued_job(WelcomeMailJob).with(user.id)
-end
-```
-
-このテストでは、ジョブが実行されたかではなく、enqueueされたかを確認しています。
-
-### 実行まで見るか、enqueueだけ見るか
-
-ジョブのテストでは、次の2つを分けて考えるとよいです。
-
-```text
-1. その処理がジョブをenqueueするか
-2. ジョブ自体が正しく実行されるか
-```
-
-例えば、サービスクラス側ではenqueueだけ確認します。
-
-```ruby
-expect {
-  described_class.new(user).call
-}.to have_enqueued_job(WelcomeMailJob).with(user.id)
-```
-
-ジョブの中身は、job specで確認します。
-
-```ruby
-RSpec.describe WelcomeMailJob, type: :job do
-  it "メールを送信する" do
-    expect {
-      described_class.perform_now(user.id)
-    }.to change { ActionMailer::Base.deliveries.count }.by(1)
-  end
-end
-```
-
-このように分けると、責務が明確になります。
-
-### ActiveSupport::Testing::TimeHelpersとは
-
-`ActiveSupport::Testing::TimeHelpers` は、テスト中に現在時刻を固定したり、未来・過去へ移動したりするためのヘルパーです。
-
-代表的なメソッドは次の通りです。
-
-```text
-travel_to
-travel
-freeze_time
-travel_back
-```
-
-### travel_toの例
-
-例えば、トライアル期限切れを判定するメソッドがあるとします。
-
-```ruby
-class User < ApplicationRecord
-  def trial_expired?
-    trial_ends_at < Time.current
-  end
-end
-```
-
-このテストでは、現在時刻を固定した方が安定します。
-
-```ruby
-include ActiveSupport::Testing::TimeHelpers
-
-it "トライアル期限を過ぎている場合trueを返す" do
-  user = build(:user, trial_ends_at: Time.zone.local(2026, 7, 1, 0, 0, 0))
-
-  travel_to Time.zone.local(2026, 7, 2, 0, 0, 0) do
-    expect(user.trial_expired?).to eq(true)
-  end
-end
-```
-
-実行日がいつであっても、テスト中は現在時刻が `2026-07-02 00:00:00` として扱われます。
-
-### freeze_timeの例
-
-`freeze_time` は、現在時刻を固定するために使います。
-
-```ruby
-include ActiveSupport::Testing::TimeHelpers
-
-it "created_atが現在時刻になる" do
-  freeze_time do
-    user = create(:user)
-
-    expect(user.created_at).to eq(Time.current)
-  end
-end
-```
-
-ブロック内では `Time.current` が固定されます。
-
-### ブロック形式で書く
-
-時刻操作は、基本的にブロック形式で書くのが安全です。
-
-```ruby
-travel_to Time.zone.local(2026, 7, 1, 10, 0, 0) do
-  # この中だけ時刻が固定される
-end
-```
-
-ブロックを抜けると、時刻は元に戻ります。
-
-避けたいのは、次のような書き方です。
-
-```ruby
-travel_to Time.zone.local(2026, 7, 1, 10, 0, 0)
-
-# test
-```
-
-この場合、時刻を戻し忘れると他のテストに影響する可能性があります。
-
-### travel_backとは
-
-`travel_back` は、固定した時刻を元に戻すためのメソッドです。
-
-```ruby
-travel_to Time.zone.local(2026, 7, 1, 10, 0, 0)
-
-# test
-
-travel_back
-```
-
-ただし、戻し忘れを避けるためにも、基本的にはブロック形式の方が安全です。
-
-### JobとTimeHelpersを組み合わせる例
-
-指定時刻を基準にジョブを実行したい場合は、両方を組み合わせます。
-
-```ruby
-include ActiveJob::TestHelper
-include ActiveSupport::Testing::TimeHelpers
-
-it "期限切れユーザーに通知する" do
-  user = create(:user, trial_ends_at: Time.zone.local(2026, 7, 1, 0, 0, 0))
-
-  travel_to Time.zone.local(2026, 7, 2, 0, 0, 0) do
-    perform_enqueued_jobs do
-      ExpirationNotificationJob.perform_later(user.id)
+    travel_to(deadline) do
+      perform_enqueued_jobs(only: described_class, queue: "reminders", at: Time.current)
+      expect(described_class.deliveries).to eq([{ reference: "demo-7", at: deadline }])
+      expect(enqueued_jobs).to be_empty
+      expect(performed_jobs.size).to eq(1)
     end
   end
 
-  expect(ActionMailer::Base.deliveries.count).to eq(1)
+  it "atで未来のジョブを選んでも、ジョブが読む現在時刻は進まない" do
+    before_deadline = deadline - 60
+
+    travel_to(before_deadline) do
+      described_class.set(wait_until: deadline).perform_later("demo-7", deadline)
+      perform_enqueued_jobs(only: described_class, at: deadline)
+
+      expect(Time.current).to eq(before_deadline)
+      expect(described_class.attempts).to eq([{ reference: "demo-7", at: before_deadline }])
+      expect(described_class.deliveries).to be_empty
+      expect(performed_jobs.size).to eq(1)
+    end
+  end
 end
 ```
 
-時刻依存のジョブは、このように現在時刻を固定したうえで実行すると安定します。
+`have_enqueued_job`は投入されたジョブについて、引数・キュー・時刻を確認するmatcherです。これに通っただけでは`perform`の結果まで分かりません。`job.scheduled_at`はジョブの予約時刻で、test adapterの`:at`にはその時刻を数値化した値が入ります。[RSpec Railsのhave_enqueued_job](https://rspec.info/features/8-0/rspec-rails/matchers/have-enqueued-job-matcher/)、[Rails 8.1.3のtest adapter実装](https://github.com/rails/rails/blob/v8.1.3/activejob/lib/active_job/queue_adapters/test_adapter.rb)
 
-## 図解
+`perform_enqueued_jobs(at: cutoff)`が選ぶのは、cutoff以前の予約と、時刻を指定していないジョブです。cutoffと同時刻も含みます。`only:`と`queue:`は対象クラスとキューをさらに限定します。helperは選んだジョブをその場で実行し、時計を進める処理はしません。そのため3つ目では、実行記録は1件でも期限前なので`deliveries`は空です。[ActiveJob::TestHelper](https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/TestHelper.html#method-i-perform_enqueued_jobs)
 
-![RSpecでジョブと時刻依存のテストを書く方法：ActiveJob::TestHelperとTimeHelpersの基本](/images/articles/rails-rspec-active-job-time-helpers.png)
+ブロックを付けない形式は、それまでに投入されたジョブを実行します。ブロック形式は、そのブロック中に投入したジョブを実行するためのものです。どちらも`at:`を省くと予約時刻による絞り込みがないため、未来の予約まで実行対象になります。実workerが時刻を待って動くことを再現する仕組みではありません。[Rails 8.1.3のhelper実装](https://github.com/rails/rails/blob/v8.1.3/activejob/lib/active_job/test_helper.rb)
 
-```mermaid
-flowchart LR
-  A[perform_later] --> B[ジョブキュー]
-  B --> C[perform_enqueued_jobs]
-  D[travel_to / freeze_time] --> C
-  C --> E[固定時刻でジョブ実行]
-  E --> F[安定した期待値]
+## 期限ぴったりなのに、秒未満で判定が変わるのはなぜですか
+
+`travel_to`は標準では秒未満を0にします。期限が`12:00:00.123456`なら、同じ値を渡しても固定される時刻は`12:00:00`です。下の前半では期限より早いので記録されず、`with_usec: true`を付けた後半では期限ちょうどになります。[TimeHelpersのtravel_to](https://api.rubyonrails.org/v8.1.3/classes/ActiveSupport/Testing/TimeHelpers.html#method-i-travel_to)
+
+ここではジョブの期限判定だけを見るため、`perform_now`を使います。これはキュー投入を経由せず、その場でジョブを実行するメソッドです。[Active Jobのperform_now](https://api.rubyonrails.org/v8.1.3/classes/ActiveJob/Execution.html#method-i-perform_now)
+
+```ruby
+RSpec.describe JobTimeReminderJob, "秒未満の期限", type: :job do
+  include_context "job time example setup"
+
+  it "perform_nowで期限判定を直接確かめ、秒未満を残す指定を区別する" do
+    precise_deadline = deadline.change(usec: 123_456)
+
+    travel_to(precise_deadline) do
+      described_class.perform_now("demo-7", precise_deadline)
+      expect(Time.current.usec).to eq(0)
+      expect(described_class.deliveries).to be_empty
+    end
+
+    travel_to(precise_deadline, with_usec: true) do
+      described_class.perform_now("demo-7", precise_deadline)
+      expect(Time.current.usec).to eq(123_456)
+      expect(described_class.deliveries).to eq([{ reference: "demo-7", at: precise_deadline }])
+    end
+
+    expect(enqueued_jobs).to be_empty
+    expect(performed_jobs).to be_empty
+  end
+end
 ```
 
-## 内部動作
+`deliveries`には結果があっても、`enqueued_jobs`と`performed_jobs`は空です。test adapterを経由していないためです。投入のテストと本体の判定テストを分けると、この違いを期待値で表せます。
 
-ActiveJobのperform_laterは、その場でジョブ本体を実行するのではなくキューへ積みます。テストで実行まで見たい場合はperform_enqueued_jobsを使います。TimeHelpersはTime.currentなどの現在時刻をテスト中だけ固定します。ジョブと時刻依存を組み合わせるときは、時刻を固定したうえでジョブを実行するとテストが安定します。
+アプリが秒単位で扱う仕様なら、テストの期限も秒単位に揃える選択があります。秒未満を扱う仕様なら明示して残し、DBや外部のqueue backendへ保存するときの精度も別に確認します。この例はDBの丸めやbackendの精度を検証していません。
 
-## まとめ
+## 固定されるのは、どの時計ですか
 
-`ActiveJob::TestHelper` は、ジョブのenqueueや実行をテストするためのヘルパーです。
+Rails 8.1.3の`travel_to`は、`Time.now`、引数なしの`Time.new`、`Date.today`、`DateTime.now`を差し替えます。`Time.current`や`Date.current`も、そこからアプリのzoneに沿った値を返します。`freeze_time`は同じ仕組みで時刻を固定し、`travel`は指定した長さだけ移した時刻を固定します。[TimeHelpersの実装](https://github.com/rails/rails/blob/v8.1.3/activesupport/lib/active_support/testing/time_helpers.rb)
 
-```text
-perform_enqueued_jobs
-enqueued_jobs
-performed_jobs
-```
+ブロックを抜ける際には、途中で例外が起きても元の固定状態または通常の時計へ戻します。一方、`travel_to`のブロック内でさらにブロック形式の`travel_to`を呼ぶとエラーになります。複数の時点を確認するときは、上の例のように別々のブロックへ分けます。
 
-などを使えます。
+zoneにも注意が必要です。たとえば`2026-10-02 15:30 UTC`は東京では翌日の`00:30`です。アプリのzoneが東京なら`Date.current`は10月3日になりますが、`Date.today`はsystem zoneに従います。system zoneがUTCなら10月2日で、東京なら10月3日です。「今日」の条件を確認する際は、どちらの日付を仕様に使うかを決めます。[TimeHelpersのzoneに関する説明](https://api.rubyonrails.org/v8.1.3/classes/ActiveSupport/Testing/TimeHelpers.html#method-i-travel_to)
 
-`ActiveSupport::Testing::TimeHelpers` は、現在時刻を固定・移動するためのヘルパーです。
-
-```text
-travel_to
-travel
-freeze_time
-travel_back
-```
-
-などを使えます。
-
-ジョブと時刻依存のテストでは、次を意識するとよいです。
-
-```text
-- enqueueされたことを見るのか
-- ジョブの中身まで実行するのか
-- 現在時刻に依存するなら時刻を固定する
-- travel_toやfreeze_timeはブロック形式で使う
-```
-
-これにより、不安定なテストを避けやすくなります。
-
-## 参考文献
-
-- [Rails API](ActiveJob::TestHelper: https://api.rubyonrails.org/classes/ActiveJob/TestHelper.html)
-- [Rails API](ActiveSupport::Testing::TimeHelpers: https://api.rubyonrails.org/classes/ActiveSupport/Testing/TimeHelpers.html)
+これらのhelperが操作するのは、テストを実行するRubyプロセスの時刻APIです。OSの時計、別プロセスのworker、DBサーバーの現在時刻、経過時間用の単調増加時計まで進めるものではありません。このfixtureは直列実行を前提とし、実workerの遅延、再試行、配送完了は検証していません。まず投入契約と期限判定をここで分け、backendを含む確認が必要な部分を追加します。

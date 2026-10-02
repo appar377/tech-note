@@ -1,6 +1,6 @@
 ---
-title: "RSpecのdescribe・context・itをどう使い分けるか？specを仕様書のように読むための基本"
-description: RSpecのdescribe、context、itを仕様書のように読める形で使い分ける基本を整理する。
+title: "RSpecのdescribe・context・itには何を書くか"
+description: "対象・条件・期待結果を分け、グループ名だけではデータが変わらないことを、純Rubyの判定とRSpecの例から確認します。"
 date: 2026-07-01
 tags:
   - Rails
@@ -13,413 +13,131 @@ articleType: practical
 draft: false
 thumbnail: /images/articles/rails-rspec-describe-context-it.png
 popular: false
+updated: 2026-10-02
+editorialProfile: question-led-v1
 ---
 
-## 概要
+`context "正常系"`の中に`it "成功する"`とだけ書かれていると、何を準備し、何が成功すればよいのかをコードまで読まないと分かりません。`describe`には対象、`context`には条件、`it`には期待する結果を書くと、失敗したexampleを探しやすくなります。
 
-RSpecでは、テストを構造化するために `describe`、`context`、`it` を使います。
+ただし、この分け方は読み手へ意図を伝えるための慣習です。`describe`と`context`は、どちらもexample groupを作ります。`context`に条件を書くだけで、その状態のデータが用意されるわけではありません。[RSpecの基本構造](https://rspec.info/features/3-13/rspec-core/example-groups/basic-structure/)
+
+## 一つの判定を、条件と結果に分ける
+
+説明用に「確認済みで、退会していないアカウントだけ有効」と判定するクラスを使います。入力は`true`か`false`に限定します。RailsやDB、FactoryBotを使わない純Rubyの例です。
+
+以下のRubyブロックを順に一つの`naming_spec.rb`へ置けます。対象環境はRuby 3.4.4、RSpec 3.13.0（rspec-core 3.13.6）で、掲載した6例はローカルで実行し、すべて成功しました。`rspec/autorun`はRubyからexampleを実行するための読み込みです。[RubyコマンドでRSpecを実行する](https://rspec.info/features/3-13/rspec-core/command-line/ruby/)
 
 ```ruby
-RSpec.describe User do
-  describe "#active?" do
-    context "退会していない場合" do
-      it "trueを返す" do
-        # test
-      end
-    end
+require "rspec/autorun"
+
+class NamingAccount
+  def initialize(confirmed:, deleted:)
+    @confirmed = confirmed
+    @deleted = deleted
   end
-end
-```
 
-これらはRSpecを書く上で最も基本的な構文ですが、実務でspecが大きくなると、使い分けが曖昧になりやすいです。
-
-この記事では、`describe`、`context`、`it` の役割を整理し、読みやすいRSpecの構造についてまとめます。
-
-## この記事で学べること
-
-- describe/context/itの役割
-- context名を具体的にする理由
-- letとcontextの組み合わせ方
-- ネストしすぎたspecを避ける考え方
-
-## 前提知識
-
-- RSpecの基本構文を見たことがある
-- model specやservice specを書き始めている
-- specの読みやすさを改善したい
-
-## 実装コード例
-
-この記事の中心になる実装例です。細部のクラス名は公開用に抽象化しています。
-
-```ruby
-class User
   def active?
-    !deleted? && confirmed?
-  end
-end
-
-RSpec.describe User, type: :model do
-  describe "#active?" do
-    context "退会しておらず確認済みの場合" do
-      it "trueを返す" do
-        user = build(:user, deleted: false, confirmed: true)
-
-        expect(user).to be_active
-      end
-    end
+    @confirmed && !@deleted
   end
 end
 ```
 
-## 本編
-
-### 基本の考え方
-
-使い分けは次のように考えると分かりやすいです。
-
-```text
-describe: 何をテストするか
-context: どんな条件・状態か
-it: どうなるべきか
-```
-
-例えば、ユーザーが有効かどうかを判定する `#active?` メソッドをテストする場合です。
+このクラスに対して、判定が変わる条件を並べます。
 
 ```ruby
-RSpec.describe User do
-  describe "#active?" do
-    context "退会していない場合" do
-      it "trueを返す" do
-        user = build(:user, deleted_at: nil)
+RSpec.describe NamingAccount do
+  subject(:account) { described_class.new(confirmed: confirmed, deleted: deleted) }
 
-        expect(user.active?).to eq(true)
+  let(:confirmed) { true }
+  let(:deleted) { false }
+
+  describe "#active?" do
+    context "確認済みで退会していない場合" do
+      it "有効と判定する" do
+        expect(account.active?).to be(true)
+      end
+    end
+
+    context "未確認の場合" do
+      let(:confirmed) { false }
+
+      it "無効と判定する" do
+        expect(account.active?).to be(false)
       end
     end
 
     context "退会済みの場合" do
-      it "falseを返す" do
-        user = build(:user, deleted_at: Time.current)
+      let(:deleted) { true }
 
-        expect(user.active?).to eq(false)
+      it "確認済みでも無効と判定する" do
+        expect(account.active?).to be(false)
+      end
+    end
+
+    context "未確認かつ退会済みの場合" do
+      let(:confirmed) { false }
+      let(:deleted) { true }
+
+      it "無効と判定する" do
+        expect(account.active?).to be(false)
       end
     end
   end
 end
 ```
 
-自然文として読むと、次のようになります。
+外側の`RSpec.describe NamingAccount`がクラス、`describe "#active?"`がメソッドを表します。`#`をインスタンスメソッド、`.`をクラスメソッドの名前に使うのは記述上の慣習です。この文字列で対象メソッドが自動実行されることはありません。実行しているのは`it`内の`account.active?`です。
 
-```text
-User#active?
-  退会していない場合
-    trueを返す
+`context`と`it`をつなげると、「退会済みの場合、確認済みでも無効と判定する」と読めます。条件は`let(:deleted) { true }`で作り、期待する結果は`expect(account.active?).to be(false)`で検査しています。名前だけでなく、準備と検査がその説明に対応していることが必要です。
 
-User#active?
-  退会済みの場合
-    falseを返す
-```
+## contextを書けば、状態も変わるのか
 
-このように、RSpecはうまく構造化すると仕様書のように読めます。
-
-### describeの役割
-
-`describe` には、テスト対象を書きます。
-
-主に次のようなものを指定します。
-
-```text
-- クラス
-- メソッド
-- APIエンドポイント
-- 機能単位
-```
-
-例です。
+次は、名前と入力が一致しない場合を意図的に作る比較です。通常のspecでこの名前付けを勧める例ではありません。どちらのグループでも、入力は`confirmed: false`のままです。
 
 ```ruby
-RSpec.describe User do
-  describe "#active?" do
-  end
+RSpec.describe NamingAccount, "グループ名と実際の入力を分ける例" do
+  let(:account) { described_class.new(confirmed: false, deleted: false) }
 
-  describe ".search" do
-  end
-end
-```
-
-慣習として、インスタンスメソッドは `#`、クラスメソッドは `.` で表します。
-
-```ruby
-describe "#active?"
-describe ".search"
-```
-
-request specでは、エンドポイントを書くことも多いです。
-
-```ruby
-describe "GET /users" do
-end
-
-describe "POST /orders" do
-end
-```
-
-### contextの役割
-
-`context` は、条件や状態を表すために使います。
-
-例えば、ログイン状態で分ける場合です。
-
-```ruby
-describe "GET /mypage" do
-  context "ログインしている場合" do
-    it "200を返す" do
-      # test
+  describe "確認済みという名前だけを付けた場合" do
+    it "未確認の入力は変わらず無効と判定する" do
+      expect(account.active?).to be(false)
     end
   end
 
-  context "ログインしていない場合" do
-    it "401を返す" do
-      # test
+  context "確認済みという名前だけを付けた場合" do
+    it "未確認の入力は変わらず無効と判定する" do
+      expect(account.active?).to be(false)
     end
   end
 end
 ```
 
-`context` には、「どんな場合か」を書きます。
+`describe`を`context`へ変えても、メソッドへ渡す値は変わりません。RSpec 3.13.6の実装でも、両方が同じ`define_example_group_method`から定義されています。[example groupを作る実装](https://github.com/rspec/rspec/blob/rspec-core-v3.13.6/rspec-core/lib/rspec/core/example_group.rb#L246-L291)
 
-```text
-- ログインしている場合
-- 管理者の場合
-- 一般ユーザーの場合
-- パラメータが正しい場合
-- 必須項目が不足している場合
-- 外部APIが成功した場合
-- 外部APIが失敗した場合
+なお、ここで扱っているのはグループ名とDSLの使い分けです。`:focus`や独自のmetadataに応じたfilter・hookを設定していれば、選ばれるテストや準備処理が変わる場合があります。タグや設定の効果まで「名前は影響しない」とまとめないようにします。[RSpecのmetadata](https://rspec.info/features/3-13/rspec-core/metadata/user-defined/)
+
+## 共通の準備と、条件ごとの差分をどこへ置くか
+
+最初の例では、`confirmed: true`と`deleted: false`を外側の初期条件にしています。各`context`は、結果を変える値だけを上書きします。`subject(:account)`はその条件で`NamingAccount`を作る、名前付きのヘルパーです。
+
+`let`は最初に参照されたときに評価され、値は同じexampleの中で再利用されます。別のexampleまでその評価結果を持ち越す仕組みではありません。そのため、この例では条件ごとに新しいアカウントを作れます。[letの評価とキャッシュ範囲](https://rspec.info/features/3-13/rspec-core/helper-methods/let/)
+
+ただし、準備を何段も外側へ追わないと値が分からないなら、共通化を減らした方が読みやすい場合があります。短いexampleで一度しか使わない値なら、`it`の中に直接書いても構いません。`let`や`subject`の数を増やすことが目的ではありません。
+
+生成タイミングを詳しく比べるときは、[let・let!・let_it_beの使い分け](/tech-note/articles/rails/rspec/let-let-bang-let-it-be)で扱う範囲です。ここでは、条件の差がその場で読める配置に絞っています。
+
+## 失敗したとき、どの条件か分かる名前にする
+
+`it "falseを返す"`でも検査内容は書けます。この例では、その値が何を意味するかを残すため「無効と判定する」としています。どちらの書き方でも、名前とexpectationがずれていれば修正が必要です。
+
+`--format documentation`を付けるとグループとexampleの名前を階層で確認できます。上のRubyブロックを一つのファイルへまとめた場合の実行コマンドです。[RSpecの出力形式](https://rspec.info/features/3-13/rspec-core/command-line/format-option/)
+
+```bash
+ruby naming_spec.rb --format documentation
 ```
 
-### itの役割
+確認したいのは、たとえば「NamingAccount → #active? → 未確認の場合 → 無効と判定する」というつながりです。「正常系」「異常系」だけで区切るより、入力の違いと結果の対応が見えます。
 
-`it` には、期待する結果を書きます。
+ネストの深さは、決まった段数よりも前提を追えるかで判断します。条件を増やすたびに一段ずつ深くする必要はありません。今回の「未確認かつ退会済み」のように、同時に扱う条件を一つのcontextへまとめる方法もあります。
 
-```ruby
-it "trueを返す" do
-end
-
-it "レコードを作成する" do
-end
-
-it "エラーレスポンスを返す" do
-end
-```
-
-`it` は「どうなるべきか」を表します。
-
-そのため、`it` の中に条件を書きすぎると読みにくくなります。
-
-```ruby
-it "ユーザーが管理者で、対象レコードが存在し、パラメータが正しい場合に更新できる" do
-end
-```
-
-このような場合は、`context` で条件を分けた方がよいです。
-
-```ruby
-context "ユーザーが管理者の場合" do
-  context "対象レコードが存在する場合" do
-    context "パラメータが正しい場合" do
-      it "更新できる" do
-      end
-    end
-  end
-end
-```
-
-ただし、ネストしすぎると逆に読みにくくなるので注意が必要です。
-
-### context名は具体的に書く
-
-次のような `context` は便利ですが、やや抽象的です。
-
-```ruby
-context "正常系" do
-end
-
-context "異常系" do
-end
-```
-
-完全に悪いわけではありませんが、条件が分かりにくくなります。
-
-より具体的に書くなら、次のようにします。
-
-```ruby
-context "有効なパラメータの場合" do
-end
-
-context "nameが空の場合" do
-end
-
-context "対象レコードが存在しない場合" do
-end
-```
-
-これにより、テストが失敗したときに、どの条件のテストが落ちたのか分かりやすくなります。
-
-### letとcontextを組み合わせる
-
-`context` の中では、`let` を上書きできます。
-
-```ruby
-RSpec.describe Product do
-  describe "#available?" do
-    subject { product.available? }
-
-    let(:product) { build(:product, stock: stock) }
-
-    context "在庫がある場合" do
-      let(:stock) { 10 }
-
-      it { is_expected.to eq(true) }
-    end
-
-    context "在庫がない場合" do
-      let(:stock) { 0 }
-
-      it { is_expected.to eq(false) }
-    end
-  end
-end
-```
-
-この構造では、共通部分を外側に置き、差分だけを `context` 内で定義しています。
-
-```text
-共通:
-product.available?
-
-差分:
-stock = 10
-stock = 0
-```
-
-RSpecでは、このように「外側に共通条件、内側に差分」を置くと読みやすくなります。
-
-### subjectを使う場合
-
-テスト対象の実行処理は `subject` にまとめることがあります。
-
-```ruby
-RSpec.describe UserSearchService do
-  describe "#call" do
-    subject(:call_service) { described_class.new(params: params).call }
-
-    let(:params) { { name: "Taro" } }
-
-    context "nameが指定されている場合" do
-      it "該当ユーザーを返す" do
-        expect(call_service).to include(user)
-      end
-    end
-
-    context "nameが空の場合" do
-      let(:params) { { name: "" } }
-
-      it "全ユーザーを返す" do
-        expect(call_service).to include(user)
-      end
-    end
-  end
-end
-```
-
-`subject` を使うと、各contextで同じ処理を繰り返し書かずに済みます。
-
-ただし、`subject` が複雑になりすぎると読みにくくなるため、シンプルな実行処理に限定した方がよいです。
-
-### ネストしすぎに注意する
-
-`context` は便利ですが、ネストしすぎると読みづらくなります。
-
-```ruby
-context "ログインしている場合" do
-  context "管理者の場合" do
-    context "対象レコードが存在する場合" do
-      context "パラメータが正しい場合" do
-        it "更新できる" do
-        end
-      end
-    end
-  end
-end
-```
-
-このように深くなりすぎる場合は、条件を整理した方がよいです。
-
-例えば、次のように分けられます。
-
-```ruby
-context "管理者が有効なパラメータを送信した場合" do
-  it "更新できる" do
-  end
-end
-
-context "一般ユーザーが送信した場合" do
-  it "403を返す" do
-  end
-end
-
-context "対象レコードが存在しない場合" do
-  it "404を返す" do
-  end
-end
-```
-
-ネストが深すぎると、テストの前提を追いづらくなります。
-目安として、`context` のネストは2〜3階層程度に抑えると扱いやすいです。
-
-## 図解
-
-![RSpecのdescribe・context・itをどう使い分けるか？specを仕様書のように読むための基本](/images/articles/rails-rspec-describe-context-it.png)
-
-```mermaid
-flowchart TB
-  A[describe 対象やメソッド] --> B[context 条件や状態]
-  B --> C[it 期待する振る舞い]
-  C --> D[仕様として読めるspec]
-```
-
-## 内部動作
-
-RSpecは、describe、context、itの階層がそのまま仕様の読みやすさに影響します。describeは対象、contextは条件、itは期待する振る舞いに寄せると、失敗メッセージも仕様書のように読めます。逆に、contextが曖昧だったりネストが深すぎたりすると、テストが通っていても仕様の理解に時間がかかります。
-
-## まとめ
-
-`describe`、`context`、`it` は次のように使い分けると読みやすくなります。
-
-```text
-describe: 何をテストするか
-context: どんな条件か
-it: どうなるべきか
-```
-
-RSpecは、構造化すれば仕様書のように読めます。
-
-良いspecを書くポイントは次の通りです。
-
-```text
-- describeにはテスト対象を書く
-- contextには条件を書く
-- itには期待結果を書く
-- context名は具体的にする
-- 共通部分は外側に置く
-- 差分はcontext内で定義する
-- ネストしすぎない
-```
-
-RSpecはテストコードであると同時に、仕様を表現するドキュメントでもあります。
-読みやすい構造にすることで、変更時の影響範囲も把握しやすくなります。
-
-## 参考文献
-
-- [RSpec Core](https://rspec.info/features/3-13/rspec-core/)
+同じ振る舞いを複数の対象で検査するなら[shared_examples](/tech-note/articles/rails/rspec/shared-examples)、一つのspec全体が大きくなったなら[ファイルを分ける基準](/tech-note/articles/rails/rspec/split-large-model-spec)を考えます。名前付けだけで、共有状態や責務の混在まで解消しようとしないことが大切です。

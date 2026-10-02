@@ -49,61 +49,51 @@ function defineSeriesBook(book: SeriesBookInput): SeriesBookDefinition {
 
 export const SERIES_BOOKS = [
   defineSeriesBook({
-    name: "世界の拡張子",
-    slug: "world-file-extensions",
-    category: "File Formats",
-    subtitle: "拡張子ごとに、用途・中身・関連ツール・注意点を一つずつ整理する図鑑シリーズ",
-    description:
-      "`.mdx`、`.json`、`.yaml`、`.env`、`.lock` など、開発で出会う拡張子を1本ずつ取り上げ、何のためのファイルなのか、何で開くのか、実務でどこに注意するのかを整理するシリーズです。",
-    goal:
-      "ファイル名の末尾だけで判断せず、拡張子が示す形式、実際の中身、利用するツール、壊しやすいポイントを説明できる状態を目指します。",
-    audience: [
-      "見慣れない拡張子を見るたびに調べ直している人",
-      "プロジェクト内の設定ファイルや生成ファイルの役割を整理したい人",
-      "記事、設定、ビルド、ロックファイルなどの違いを拡張子から理解したい人",
+    "name": "世界の拡張子",
+    "slug": "world-file-extensions",
+    "category": "File Formats",
+    "subtitle": "MDXから、ファイルの中身と読み込み処理をたどる",
+    "description": "ファイルの用途と、読み込むツールを確かめるシリーズです。現在読めるのはMDXの記事です。Markdownの文章、コンポーネント、frontmatter、描画や公開の処理を分けて読みます。",
+    "goal": "拡張子から得た手がかりを、MDXの中身と利用ツールで確かめ、表示や公開の条件をどこで確認するか判断できるようにします。",
+    "audience": [
+      "プロジェクトのMDX文書が、どの処理で表示されるか知りたい人",
+      "Markdownにコンポーネントを組み込むとき、本文と描画側の役割を分けたい人"
     ],
-    prerequisites: [
-      "ファイル名と拡張子の基本的な見方",
-      "テキストファイルとバイナリファイルがあること",
-      "エディタやターミナルでファイルを開いた経験",
+    "prerequisites": [
+      "テキストエディタでファイルを開けること",
+      "Markdownの見出しとコードブロックを読めること"
     ],
-    outcomes: [
-      "拡張子が示す用途と、実際のファイル形式を分けて説明できる",
-      "編集してよいファイルと、生成物として扱うべきファイルを見分けやすくなる",
-      "未知の拡張子でも、関連ツール・中身・注意点の順に調べられる",
+    "outcomes": [
+      "Markdownの文章と、MDXのコンポーネントを区別して読める",
+      "本文をコンパイルする処理と、登録された部品を使って描画する処理を分けられる",
+      "frontmatterの項目と、サイトが決める公開条件を分けて確認できる"
     ],
-    concept:
-      "Extension -> File format -> Content model -> Toolchain -> Runtime / Build impact -> Operational caveats の順で、拡張子ごとに同じ型で整理します。",
-    sections: [
+    "concept": "一つの形式について、本文の最小例と、それを処理するツールを対応付けます。MDXでは文章、コンポーネント、メタデータ、描画・公開の条件を読みます。形式ごとに必要な問いと例を選びます。",
+    "sections": [
       {
-        title: "ドキュメントとコードが混ざる拡張子",
-        description:
-          "Markdown系の拡張子から始め、文章、コード、コンポーネントがどこで混ざるのかを整理します。",
-        articleSlugs: ["file-formats/extensions/mdx"],
-      },
+        "title": "MDXの文章と描画処理を分けて読む",
+        "description": "MDXの記事1本を収録しています。小さな描画例を通して、コンポーネントの登録、frontmatter、利用するツールによる記法の違いを確認します。",
+        "articleSlugs": [
+          "file-formats/extensions/mdx"
+        ]
+      }
     ],
-    notes: [
+    "notes": [
       {
-        title: "シリーズの使い方",
-        body:
-          "このシリーズはカテゴリ横断の関連記事まとめではなく、拡張子ごとの図鑑として育てます。各記事は同じ観点で、用途、中身、関連ツール、実務上の注意点を扱います。",
-      },
-      {
-        title: "今後追加する候補",
-        body:
-          ".json、.yaml、.env、.lock、.ts、.tsx、.sql、.md、.csv、.svg、.png、.webp などを、必要になった順に1拡張子1記事で追加していきます。",
-      },
+        "title": "現在読める範囲",
+        "body": "収録しているのはMDXの記事です。本文には、確認に使うライブラリの版と、実行・表示の確認範囲を記載します。ほかの形式を追加するときは、入口の説明と到達点も収録内容に合わせて更新します。"
+      }
     ],
-    references: [
+    "references": [
       {
-        title: "IANA Media Types",
-        href: "https://www.iana.org/assignments/media-types/media-types.xhtml",
+        "title": "IANA Media Types",
+        "href": "https://www.iana.org/assignments/media-types/media-types.xhtml"
       },
       {
-        title: "MDN Web Docs: Common MIME types",
-        href: "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types",
-      },
-    ],
+        "title": "MDN Web Docs: Common MIME types",
+        "href": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types"
+      }
+    ]
   }),
 ] as const satisfies readonly SeriesBookDefinition[];
 
