@@ -2734,6 +2734,115 @@
     ]
   },
   {
+    "kind": "articles",
+    "source": "articles/aws/lambda/typescript-handler-and-api-entry.mdx",
+    "sha256": "e727db2f223a5376de5dfd5444f86ac8c252817a8fa7e4f5bb956c4530c179a1",
+    "source_urls": [
+      "https://docs.aws.amazon.com/lambda/latest/dg/lambda-typescript.html",
+      "https://docs.aws.amazon.com/lambda/latest/dg/typescript-handler.html#typescript-handler-naming",
+      "https://docs.aws.amazon.com/cdk/v2/guide/permissions.html",
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html",
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html#http-api-develop-integrations-lambda.proxy-format",
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html#http-api-develop-integrations-lambda.response",
+      "https://docs.aws.amazon.com/lambda/latest/dg/furls-http-invoke-decision.html",
+      "https://docs.aws.amazon.com/lambda/latest/api/API_Invoke.html"
+    ],
+    "identity": {
+      "date": "2026-10-09",
+      "tags": [
+        "AWS",
+        "Lambda",
+        "TypeScript",
+        "API Gateway"
+      ],
+      "category": "AWS",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/typescript-handler-and-api-entry.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/typescript-handler-and-api-entry.svg",
+    "image_sha256": "08deb6e604160e7baa9a589eb23323cfb9250cf5da2ef6c8ccfca6697170bd64",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/aws/iam/execution-role-and-user-authorization.mdx",
+    "sha256": "6b6e6c763e3b03ae437c301643dadb1317aa90129c29ef0c826da6c42d25af11",
+    "source_urls": [
+      "https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html",
+      "https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html",
+      "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-service.html",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html",
+      "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#ensure-lookup-ids-are-not-accessible-even-when-guessed-or-cannot-be-tampered-with",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request"
+    ],
+    "identity": {
+      "date": "2026-10-09",
+      "tags": [
+        "AWS",
+        "IAM",
+        "Lambda",
+        "Authorization"
+      ],
+      "category": "AWS",
+      "level": 2,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/execution-role-and-user-authorization.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/execution-role-and-user-authorization.svg",
+    "image_sha256": "d9d49f0b3a64415d44388f55755971cb763ce761ee0a4f0a8a42f175936fe355",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/rails/action_view/local-assigns-and-strict-locals.mdx",
+    "sha256": "47cd1113b3e1ac8f4e46957430bd56c3a1117216af7ed5c637f91fad8739cceb",
+    "source_urls": [
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionView/Base.html",
+      "https://docs.ruby-lang.org/en/3.4/Hash.html#method-i-fetch",
+      "https://guides.rubyonrails.org/v8.1/action_view_overview.html#strict-locals",
+      "https://api.rubyonrails.org/v8.1.3/classes/ActionView/Base.html#method-i-_run",
+      "https://docs.ruby-lang.org/en/3.4/syntax/control_expressions_rdoc.html"
+    ],
+    "identity": {
+      "date": "2026-10-09",
+      "tags": [
+        "Rails",
+        "Action View",
+        "Ruby"
+      ],
+      "category": "Rails",
+      "level": 1,
+      "articleType": "practical",
+      "draft": false,
+      "thumbnail": "/images/articles/local-assigns-and-strict-locals.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/local-assigns-and-strict-locals.svg",
+    "image_sha256": "379eb362a976621b7a959f976e8d211d3bf194e96d4b8dcff12ad6ec0931d257",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
     "kind": "books",
     "source": "books/database-internal.mdx",
     "sha256": "a65f41143e709472b6c60ebf404cc63ae3352f6c68e8f1aa61d2f63259b11486",

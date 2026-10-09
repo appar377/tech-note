@@ -1,0 +1,133 @@
+---
+title: "Railsのlocal_assignsで未指定・false・nilを区別する"
+description: "部分テンプレートの省略可能な引数を、local_assigns.fetchとstrict localsで扱います。既定値が使われる条件と、false・nilを渡した場合の描画を実際のAction Viewで確かめます。"
+date: 2026-10-09
+updated: 2026-10-09
+tags:
+  - Rails
+  - Action View
+  - Ruby
+category: Rails
+level: 1
+articleType: practical
+editorialProfile: question-led-v1
+draft: false
+thumbnail: /images/articles/local-assigns-and-strict-locals.svg
+popular: false
+---
+
+部分テンプレートへ渡す引数を省略できるようにすると、「渡していない」と「falseを渡した」を区別する必要が出てきます。`nil`も受け付けるなら、その値を保つか、既定値へ置き換えるかを決めます。
+
+省略した場合だけ既定値を使いたいときは、`local_assigns.fetch`でキーの有無を見ます。Rails 8.1.3ではstrict localsの宣言でも既定値を指定できます。ここでは、Ruby 3.4.4、Action View 8.1.3を使った説明用の例で確認します。
+
+## local_assignsは、渡した引数を持つHash
+
+`local_assigns`からは、部分テンプレートへ渡したローカル変数をHashとして参照できます。通常は引数名を直接参照できますが、省略する可能性がある引数を確認したいときに使えます。[Railsのローカル変数とlocal_assigns](https://api.rubyonrails.org/v8.1.3/classes/ActionView/Base.html)
+
+たとえば、説明用の`_status.html.erb`を次のようにします。
+
+```erb
+<% show_details = local_assigns.fetch(:show_details, true) %>
+<span><%= show_details.inspect %></span>
+```
+
+呼出し側は、引数を省略するか、値を明示して渡します。
+
+```erb
+<%= render "status" %>
+<%= render "status", show_details: false %>
+<%= render "status", show_details: nil %>
+```
+
+それぞれ`true`、`false`、`nil`と表示されます。`inspect`を出しているのは、値の違いを観察するためです。実際の画面に内部の値を表示する設計ではありません。
+
+## fetchと || では、いつ既定値を使うかが違う
+
+Rubyの`Hash#fetch(key, default)`は、キーがない場合に既定値を返します。キーがあり、その値が`false`や`nil`なら、その値を返します。[Ruby 3.4のHash#fetch](https://docs.ruby-lang.org/en/3.4/Hash.html#method-i-fetch)
+
+一方、`local_assigns[:show_details] || true`は、取り出した値が`false`または`nil`の場合も`true`へ置き換えます。詳細を非表示にしたくて`false`を渡しても、表示する値へ戻ってしまいます。
+
+| 渡した引数 | `fetch(:show_details, true)` | `[:show_details] \|\| true` |
+| --- | --- | --- |
+| 省略 | `true` | `true` |
+| `show_details: false` | `false` | `true` |
+| `show_details: nil` | `nil` | `true` |
+| `show_details: true` | `true` | `true` |
+
+この違いは、Hashだけでも確かめられます。
+
+```ruby
+[{}, { show_details: false }, { show_details: nil }].each do |locals|
+  p [locals.fetch(:show_details, true), locals[:show_details] || true]
+end
+```
+
+出力は`[true, true]`、`[false, true]`、`[nil, true]`です。名前を持つ変数を、引数が必ずある前提で直接参照すると、省略時に未定義のエラーになり得ます。省略を許すなら、既定値を決める場所もpartial側へ置きます。
+
+## 引数を宣言したい場合はstrict localsを使う
+
+Rails 8.1.3では、partialの先頭へ`locals:`のmagic commentを書き、受け付ける引数を宣言できます。既定値のある引数は省略可能です。[Action Viewのstrict locals](https://guides.rubyonrails.org/v8.1/action_view_overview.html#strict-locals)
+
+同じ例を`_strict_status.html.erb`で書くなら、次の形です。
+
+```erb
+<%# locals: (show_details: true) %>
+<span><%= show_details.inspect %></span>
+```
+
+この場合も、省略・`false`・`nil`は、それぞれ`true`・`false`・`nil`になります。既定値は引数を省略したときに使われ、明示された値は残ります。
+
+ただし、strict localsで指定した既定値は`local_assigns`のHashへは追加されません。この形では、宣言した`show_details`を直接参照します。`local_assigns[:show_details]`へ切り替えると、省略時の値は`nil`になります。[strict localsとlocal_assignsの関係](https://guides.rubyonrails.org/v8.1/action_view_overview.html#strict-locals)
+
+この宣言で、宣言していない引数を渡すと、Railsはエラーにします。呼出し側の誤字に気付ける利点があります。必須にするなら`show_details:`と書き、既定値を付けません。省略時にもエラーになる契約へ変わります。[Rails 8.1.3のstrict localsの処理](https://api.rubyonrails.org/v8.1.3/classes/ActionView/Base.html#method-i-_run)
+
+strict localsは、値がBooleanかどうかを検査する仕組みではありません。`nil`も受け付けます。`nil`を禁止したい場合や、空の文字列を省略と扱いたい場合は、そのルールを別に実装します。
+
+## Railsの描画を通して、3つの値と誤字を確認する
+
+Hashの確認だけでは、partialへどう渡るかまでは分かりません。以下はRailsアプリ、DB、HTTPサーバーを起動せず、Action Viewだけで描画する確認コードです。専用の作業用ディレクトリに、前述の`_status.html.erb`と`_strict_status.html.erb`を置きます。
+
+```ruby
+require "rubygems"
+gem "actionview", "8.1.3"
+require "action_view"
+require "minitest/autorun"
+
+class PartialLocalsTest < Minitest::Test
+  def setup
+    @view = ActionView::Base.with_empty_template_cache.with_view_paths(__dir__)
+  end
+
+  def test_omitted_false_and_nil
+    ["status", "strict_status"].each do |partial|
+      assert_equal "<span>true</span>", render_partial(partial, {})
+      assert_equal "<span>false</span>", render_partial(partial, show_details: false)
+      assert_equal "<span>nil</span>", render_partial(partial, show_details: nil)
+    end
+  end
+
+  def test_strict_locals_rejects_an_unknown_argument
+    assert_raises(ActionView::Template::Error) do
+      render_partial("strict_status", show_detail: false)
+    end
+  end
+
+  private
+
+  def render_partial(partial, locals)
+    @view.render(partial: partial, locals: locals).strip
+  end
+end
+```
+
+これを`check.rb`として保存し、Action View 8.1.3とMinitestを使えるRubyで`ruby check.rb`を実行します。このコードでは、省略・false・nilの描画6件と、宣言にない引数のエラー1件を確認します。Ruby 3.4.4、Action View 8.1.3、Minitest 6.0.6で、2 tests・7 assertions・0 failures・0 errorsを確認しました。
+
+## 既定値と、画面の意味を別に決める
+
+既定値を`true`にしたのは、falseを残せるか観察するためです。すべての引数の既定値をtrueにすべきという意味ではありません。表示の仕様に合わせて決めます。
+
+また、Rubyの条件分岐ではfalseとnilはどちらも偽として扱われます。`if show_details`という表示条件では同じ結果でも、ログや後続処理へ値を渡す場合には区別が残ります。[Rubyの条件分岐](https://docs.ruby-lang.org/en/3.4/syntax/control_expressions_rdoc.html)
+
+「省略時だけ補う」「nilも補う」「Boolean以外を拒否する」のどれを必要とするか、呼出し側とpartial側の契約をそろえます。
+
+`local_assigns.fetch`は省略時の扱いを明示する方法、strict localsは受け付ける引数も宣言する方法です。利用中のRailsで対応を確認し、partialの引数が増えてきたら、名前と既定値を宣言で読める形にすることも検討できます。

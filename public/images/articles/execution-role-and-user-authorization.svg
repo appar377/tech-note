@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Lambda execution role and user authorization</title>
+  <desc id="desc">Two separate decisions: a function's AWS resource access and a user's permission to read a document.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#07111A"/><stop offset="1" stop-color="#102C3A"/></linearGradient>
+    <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse"><path d="M56 0H0V56" fill="none" stroke="#fff" stroke-opacity=".06"/></pattern>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#grid)"/>
+  <path d="M760 0L1200 230V675H930L580 80Z" fill="#60A5FA" opacity=".1"/>
+  <rect x="28" y="28" width="1144" height="619" rx="34" fill="none" stroke="#fff" stroke-opacity=".1"/>
+  <g font-family="Inter, system-ui, -apple-system, Arial, sans-serif">
+    <rect x="72" y="72" width="164" height="42" rx="21" fill="#fff" fill-opacity=".1"/>
+    <text x="96" y="100" fill="#DDE6F3" font-size="22" font-weight="700">AWS / IAM</text>
+    <text x="72" y="214" fill="#fff" font-size="64" font-weight="800">Role &amp; user</text>
+    <text x="72" y="288" fill="#fff" font-size="64" font-weight="800">permissions</text>
+    <path d="M74 350H334" stroke="#60A5FA" stroke-width="9" stroke-linecap="round"/>
+    <text x="72" y="414" fill="#CBD5E1" font-size="28">Two decisions</text>
+    <text x="72" y="456" fill="#CBD5E1" font-size="28">One document request</text>
+    <rect x="630" y="138" width="470" height="172" rx="24" fill="#0C1C25" stroke="#60A5FA" stroke-opacity=".65" stroke-width="2"/>
+    <rect x="630" y="364" width="470" height="172" rx="24" fill="#0C1C25" stroke="#71D7BA" stroke-opacity=".65" stroke-width="2"/>
+    <text x="668" y="191" fill="#8BBEFF" font-size="24" font-weight="700">Execution role</text>
+    <text x="668" y="246" fill="#E2E8F0" font-size="32" font-weight="700">Lambda → S3</text>
+    <text x="668" y="278" fill="#B3C2D1" font-size="22">AWS resource access</text>
+    <text x="668" y="417" fill="#71D7BA" font-size="24" font-weight="700">Application authorization</text>
+    <text x="668" y="472" fill="#E2E8F0" font-size="32" font-weight="700">User → Document</text>
+    <text x="668" y="504" fill="#B3C2D1" font-size="22">Object-level permission</text>
+    <path d="M670 337H1060" stroke="#8498A8" stroke-width="2" stroke-dasharray="8 10"/>
+  </g>
+</svg>

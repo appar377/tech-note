@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Rails local_assigns and strict locals</title>
+  <desc id="desc">An omitted argument uses the default true, while explicitly passed false and nil remain unchanged.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#191219"/><stop offset="1" stop-color="#342230"/></linearGradient>
+    <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse"><path d="M56 0H0V56" fill="none" stroke="#fff" stroke-opacity=".06"/></pattern>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#DFA3BD"/></marker>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bg)"/>
+  <rect width="1200" height="675" fill="url(#grid)"/>
+  <path d="M760 0L1200 230V675H930L580 80Z" fill="#F472B6" opacity=".08"/>
+  <rect x="28" y="28" width="1144" height="619" rx="34" fill="none" stroke="#fff" stroke-opacity=".1"/>
+  <g font-family="Inter, system-ui, -apple-system, Arial, sans-serif">
+    <rect x="72" y="72" width="154" height="42" rx="21" fill="#fff" fill-opacity=".1"/>
+    <text x="96" y="100" fill="#EEE1E8" font-size="22" font-weight="700">Rails / ERB</text>
+    <text x="72" y="214" fill="#fff" font-size="60" font-weight="800">local_assigns</text>
+    <text x="72" y="288" fill="#fff" font-size="54" font-weight="800">&amp; strict locals</text>
+    <path d="M74 350H334" stroke="#DFA3BD" stroke-width="9" stroke-linecap="round"/>
+    <text x="72" y="414" fill="#DBC5D0" font-size="28">Default only when omitted</text>
+    <text x="72" y="456" fill="#DBC5D0" font-size="28">Keep false and nil</text>
+    <g fill="#211822" stroke="#805E73" stroke-width="2">
+      <rect x="640" y="152" width="460" height="92" rx="22"/>
+      <rect x="640" y="288" width="460" height="92" rx="22"/>
+      <rect x="640" y="424" width="460" height="92" rx="22"/>
+    </g>
+    <g fill="#F3E9EF" font-size="31" font-weight="700">
+      <text x="670" y="209">omitted</text><text x="962" y="209">true</text>
+      <text x="670" y="345">false</text><text x="962" y="345">false</text>
+      <text x="670" y="481">nil</text><text x="962" y="481">nil</text>
+    </g>
+    <path d="M854 198H926M854 334H926M854 470H926" stroke="#DFA3BD" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="870" y="570" fill="#D0AEBE" font-size="23" text-anchor="middle">fetch(:show_details, true)</text>
+  </g>
+</svg>
