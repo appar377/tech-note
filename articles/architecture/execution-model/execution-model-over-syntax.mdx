@@ -14,7 +14,7 @@ articleType: internal
 draft: false
 thumbnail: "/images/articles/execution-model-over-syntax.png"
 popular: false
-updated: 2026-10-02
+updated: 2026-10-10
 editorialProfile: question-led-v1
 ---
 
@@ -116,18 +116,24 @@ Dartの `async` 関数は最初の `await` までは同期的に進みます。�
 
 ```mermaid
 sequenceDiagram
+  accTitle: renderLatestが待機前と再開後に同じdraftを読む
+  accDescr: 呼び出し側がdraftとFutureを渡す。renderLatestはtitleを読みstartへ記録して待機する。呼び出し側がdraft.titleをreviewへ変更しCompleterを完了させると、renderLatestが同じdraftを読み直しreviewで完了する。
+  autonumber
   participant C as 呼び出し側
   participant R as renderLatest
   participant G as Completer
   C->>R: draftとgate.futureを渡す
-  R->>R: titleを読みstartへ記録
+  R->>R: titleを読む<br/>start:draftを記録
   R-->>C: 未完了のFuture
-  C->>C: draft.titleをreviewへ変更
+  Note over R: await readyで待機
+  C->>C: 同じdraftのtitleを<br/>reviewへ変更
   C->>G: complete()
   G-->>R: awaitの待機が終わる
-  R->>R: 同じdraftからtitleを再読込
+  R->>R: 同じdraftからtitleを読む<br/>resume:reviewを記録
   R-->>C: reviewでFutureが完了
 ```
+
+上から順に読みます。実線は呼出しや状態を読む処理、破線はFutureを返す処理や完了の通知です。待機の前後で、titleを読む位置が2か所あります。
 
 この例は同じisolate内の処理です。非同期で待機することから、別スレッドで同時にCPU処理を実行すると推測する必要はありません。Dartのisolate、イベントループ、並列実行は区別して読みます。[Dart: Concurrency](https://dart.dev/language/concurrency)
 

@@ -1,0 +1,78 @@
+---
+title: ".jsと.tsとは何か：型を確かめる処理と実行する処理を分ける"
+description: "TypeScriptの小さな関数をJavaScriptへ変換する例から、型検査と実行、外部データの検証、ブラウザとNode.jsの違い、モジュール設定を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - JavaScript
+  - TypeScript
+  - Web
+category: File Formats
+level: 1
+articleType: practical
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 9
+draft: false
+thumbnail: /images/articles/file-extension-javascript-typescript.svg
+popular: false
+---
+
+`.ts`を`.js`へ名前だけ変えても、型注釈を含むコードがそのままJavaScriptになるわけではありません。TypeScriptでは型を検査し、TypeScript固有の記法を除去・変換して実行用のJavaScriptを作れます。型検査とプログラムの実行は別の処理です。[TypeScript: The Basics](https://www.typescriptlang.org/docs/handbook/2/basic-types.html)
+
+ファイルを読むときは、ソースの形式、変換するツール、実行する環境を確認します。ここではTypeScriptコンパイラの`tsc`を使う小さな例で分けます。
+
+## 型を書いた情報は、実行時にも残りますか？
+
+次は説明用の`count.ts`です。
+
+```ts file=count.ts
+function nextCount(count: number): number {
+  return count + 1;
+}
+
+console.log(nextCount(2));
+```
+
+TypeScript 5.9.3の`tsc`で、次のように変換します。TypeScriptが導入された作業用ディレクトリで、`count.ts`を保存して実行する例です。
+
+```bash
+./node_modules/.bin/tsc count.ts \
+  --target ES2022 --module commonjs \
+  --strict --skipLibCheck --noEmitOnError \
+  --outDir generated
+node generated/count.js
+```
+
+生成されるJavaScriptでは、引数と戻り値の`: number`がなくなります。実行すると`3`を表示します。[TypeScript: Erased Types](https://www.typescriptlang.org/docs/handbook/2/basic-types.html#erased-types)
+
+```js file=generated/count.js
+"use strict";
+function nextCount(count) {
+    return count + 1;
+}
+console.log(nextCount(2));
+```
+
+`nextCount("2")`と書けば、型検査で文字列を渡していることを検出できます。上のコマンドは`--noEmitOnError`を付けているため、検査エラー時に新しいJavaScriptを出力しません。TypeScriptは設定によってエラーがあっても出力できるので、「ファイルが生成された」ことだけで検査に通ったとは判断しません。[TypeScript: Emitting with Errors](https://www.typescriptlang.org/docs/handbook/2/basic-types.html#emitting-with-errors)
+
+## 型があるなら、外部から来たデータも正しくなりますか？
+
+型注釈は実行時の値を変換したり、入力を検査したりしません。生成されたJavaScriptに文字列`"2"`を渡すと、`+`は文字列の連結として働き、結果は`"21"`になります。[ECMAScript: Addition Operator](https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-addition-operator-plus)
+
+APIから来るJSONなどには、読み込み後の値の型と範囲を確かめる処理が必要です。`as`による型アサーションも、実行時の検証を追加する記法ではありません。[TypeScript: Type Assertions](https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#type-assertions)
+
+型検査はソースの整合性を確かめる助けになりますが、データの正しさや操作の権限を保証するものではありません。[.jsonの記事](/tech-note/articles/file-formats/extensions/json/)のように、パースした後の値を検査する場所を用意します。
+
+## .jsなら、どの環境でも同じように実行できますか？
+
+JavaScriptの言語と、実行環境が提供するAPIは分けて考えます。ブラウザのDOMを操作するコードと、Node.jsでローカルファイルを読むコードでは、利用できる機能が違います。またNode.jsの`.js`は、`package.json`の`type`などによりモジュール形式の扱いが変わります。[Node.js: Determining module system](https://nodejs.org/api/packages.html#determining-module-system)
+
+この例はCommonJSとして変換しています。`type: "module"`のパッケージなど、別の設定へそのまま移す場合は出力形式を合わせます。`.ts`を直接起動できるツールもありますが、変換と型検査の両方を行うかはツール次第です。たとえばNode.jsの型除去機能は、型検査を行いません。[Node.js: Type stripping](https://nodejs.org/api/typescript.html#type-stripping)
+
+`.js`も`.ts`もコードを含むため、出所を確認せずに実行する対象にはしません。拡張子から実行権限や安全性は分かりません。
+
+掲載例はNode.js 22.13.0、TypeScript 5.9.3で変換と実行を確認しています。正常入力の`3`、文字列を渡したソースの型エラー、型注釈を除いたJavaScriptへ文字列を渡した場合の`21`を確認しました。ブラウザ、バンドラー、TypeScriptの直接実行機能は検証対象に含めていません。

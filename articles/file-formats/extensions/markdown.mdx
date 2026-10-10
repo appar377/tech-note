@@ -1,0 +1,58 @@
+---
+title: ".mdとは何か：文章の記法と表示するツールを分ける"
+description: "Markdownの小さな文書から、テキストとHTML表示の関係、CommonMarkと拡張記法の違い、リンクやHTMLを扱うときの確認点を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - Markdown
+  - Documentation
+category: File Formats
+level: 1
+articleType: reference
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 2
+draft: false
+thumbnail: /images/articles/file-extension-markdown.svg
+popular: false
+---
+
+`.md`を開いたとき、見出しや箇条書きとして表示される場合と、`#`や`-`がそのまま見える場合があります。Markdownは文章に構造を付けるテキストの記法で、表示を作るのは読み込むツールです。拡張子を付けるだけでは、どの記法に対応するかまで決まりません。[CommonMark: What is Markdown?](https://spec.commonmark.org/0.31.2/#what-is-markdown-)
+
+READMEやメモを別の場所へ移すときは、「文章として読めるか」と「同じ見た目に変換できるか」を分けて確認します。
+
+## 記号はどこで見出しや箇条書きになりますか？
+
+次は説明用の`note.md`です。内容は通常のテキストエディタでも読めます。
+
+```markdown file=note.md
+# 説明用ノート
+
+保存前に **名前** を確認します。
+
+- ファイル名は `note.md`
+- 保存先は作業用フォルダ
+```
+
+Markdownパーサーが先頭の`#`を見出し、`**名前**`を強調、`-`から始まる行をリストとして解析します。HTMLへ変換する場合、対応する要素は`h1`、`strong`、`ul`と`li`です。ブラウザは変換後のHTMLを描画します。[CommonMarkの見出し](https://spec.commonmark.org/0.31.2/#atx-headings)、[強調](https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis)、[リスト](https://spec.commonmark.org/0.31.2/#lists)
+
+コードとして見せたい文字はインラインコードやコードブロックへ入れます。この例の`note.md`はコード表記なので、ファイルを読み込んだり実行したりする指示にはなりません。
+
+## 同じ.mdなのに、表や改行の表示が違うのはなぜですか？
+
+Markdownには複数の実装と拡張があります。CommonMarkは基本の記法を明確に定めた仕様で、GitHub Flavored Markdown（GFM）は表やタスクリストなどを追加しています。パイプ記号で書く表は、CommonMarkの基本機能ではありません。[GFMの拡張と表](https://github.github.com/gfm/#tables-extension-)
+
+プレビューで表になったからといって、別のビューアでも表になるとは限りません。数式、脚注、図のコードブロックも、対応する拡張やプラグインの有無を確認します。行末の改行を段落内の改行として扱うかも、表示設定に影響されます。見た目の調整で空白を増やす前に、掲載先の記法を確かめます。[CommonMark: Soft line breaks](https://spec.commonmark.org/0.31.2/#soft-line-breaks)
+
+文書先頭の`---`で囲むfrontmatterも、すべてのMarkdownツールが同じ意味で扱うメタデータではありません。`title`や`draft`を読む処理がなければ、それらの項目でページ名や公開状態を制御できません。
+
+## 文章なら、外部から受け取ってもそのまま表示できますか？
+
+Markdownにはリンクや画像があり、CommonMarkには生のHTMLを扱う記法もあります。外部入力をWebページに表示する場合は、許可するリンク先、画像の読み込み、HTMLの除去や無害化を表示側で決めます。GitHubも、GFMからHTMLへ変換した後に追加の処理を行っています。[CommonMark: Raw HTML](https://spec.commonmark.org/0.31.2/#raw-html)、[GFMの後処理](https://github.github.com/gfm/#what-is-github-flavored-markdown-)
+
+`.md`という名前は、中身が期待どおりの文章であることも、表示後の安全性も保証しません。自分で管理するREADMEと、不特定の人が投稿する本文では、必要な読み込み処理が違います。
+
+掲載した最小例は、Node.js 22.13.0のローカル環境でMarkdownからHTMLの要素へ変換し、見出し、強調、リスト、インラインコードを確認しています。各サービスの表示差や、外部入力の無害化は検証対象に含めていません。文章の途中に独自UIを置く用途は、[.mdxの記事](/tech-note/articles/file-formats/extensions/mdx/)で扱います。

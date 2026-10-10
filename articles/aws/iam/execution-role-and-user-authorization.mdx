@@ -2,7 +2,7 @@
 title: "Lambdaの実行ロールと利用者の閲覧権限を分ける"
 description: "LambdaがS3を読めることと、ログイン利用者がその文書を読めることは別の判断です。実行ロールの信頼・許可と、文書ごとの認可を架空の最小例で整理します。"
 date: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-10
 tags:
   - AWS
   - IAM
@@ -12,8 +12,12 @@ category: AWS
 level: 2
 articleType: practical
 editorialProfile: question-led-v1
+series:
+  name: Lambda APIを入口と権限から読む
+  slug: lambda-api-boundaries
+  order: 2
 draft: false
-thumbnail: /images/articles/execution-role-and-user-authorization.svg
+thumbnail: /images/articles/execution-role-and-user-authorization.png
 popular: false
 ---
 
@@ -79,12 +83,18 @@ CDKなどでこれらを定義しても、アプリの閲覧ルールが自動�
 
 ```mermaid
 flowchart TD
-  A[認証済みの利用者と文書ID] --> B[サーバー側の文書情報を取得]
-  B --> C{利用者が所有者か}
-  C -->|いいえ| D[内容を返さず終了]
-  C -->|はい| E[サーバー側のキーでS3を取得]
-  E --> F[内容を返す]
+  accTitle: 文書の認可を終えてからS3を読む
+  accDescr: 認証済み利用者と文書IDからサーバー側の文書情報を取得する。文書が存在し、利用者が所有者ならサーバー側のキーでS3を読み内容を返す。それ以外はS3を読まず404で終了する。
+  A["認証済み利用者<br/>文書ID"] --> B
+  subgraph authorization["アプリ側の認可"]
+    B["サーバー側の<br/>文書情報を取得"] --> C{"文書が存在し<br/>利用者が所有者か"}
+  end
+  C -->|いいえ| D(["404<br/>本文を返さず終了"])
+  C -->|はい| E["サーバー側のキーで<br/>S3を取得"]
+  E --> F(["200<br/>内容を返す"])
 ```
+
+ひし形がアプリ側の判定です。「いいえ」の経路ではS3を読みません。「はい」の後に行うS3取得には、実行ロールなどのAWS側のアクセス評価も関係します。
 
 以下はこの順序を確かめるTypeScriptの例です。`loadDocument`と`readObject`は外から渡す処理で、後の確認ではどちらも合成データを使います。認証・AWS SDK・DBは実装していません。
 

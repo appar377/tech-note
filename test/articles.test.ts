@@ -66,7 +66,7 @@ describe("articles", () => {
     const series = getSeries();
     const extensionSeries = series.find((item) => item.name === "世界の拡張子");
 
-    assert.equal(series.length, 1);
+    assert.equal(series.length, 3);
     assert.ok(extensionSeries);
     assert.equal(extensionSeries!.slug, "world-file-extensions");
     assert.match(extensionSeries!.goal, /拡張子/);

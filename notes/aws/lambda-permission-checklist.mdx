@@ -1,0 +1,66 @@
+---
+title: Lambdaの権限を3つの問いで確認する
+description: ロールの信頼、AWS資源への操作許可、利用者の対象認可を分け、文書APIの確認順を短いカードにまとめます。
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - AWS
+  - Lambda
+  - IAM
+  - Authorization
+area: AWS
+status: refined
+source: learning
+draft: false
+---
+
+LambdaからS3を読めるようにした後も、「この利用者へ、その文書を返してよいか」という判断は残ります。権限を見直すときは、誰と何の関係を確認しているかを書き分けます。
+
+ここでは、認証済みの利用者が文書IDを指定し、LambdaがS3から本文を読む説明用の構成を使います。実環境の設定確認を記録したノートではありません。
+
+<StickyNote tone="blue" title="判断の軸">
+
+<BlueUnderline>関数の実行主体ができる操作</BlueUnderline>と、<RedUnderline>利用者へ返してよい対象</RedUnderline>を別々に確認します。
+
+</StickyNote>
+
+## 信頼・操作許可・対象認可の確認カード
+
+![ロールの信頼はLambdaとロール、操作許可はロールとS3、対象認可は利用者と文書の関係を確認する](/images/notes/lambda-permission-boundaries.svg)
+
+<Notebook title="設定やコードを開く前に書くこと">
+
+| 問い | 確認する場所 | 文書APIで書き出す対象 |
+| --- | --- | --- |
+| 誰がこのロールを引き受けるか | 実行ロールの信頼ポリシー | Lambdaサービスを信頼しているか |
+| 実行主体が何を操作できるか | 権限ポリシーと、資源側を含む評価条件 | 必要なS3操作とオブジェクトの範囲 |
+| この利用者がこの文書を読めるか | アプリ側の対象認可 | 認証済み利用者と文書の所有者・共有関係 |
+
+</Notebook>
+
+Lambdaは実行ロールを引き受けてAWS資源へアクセスします。信頼ポリシーにLambdaを指定することと、そのロールへS3操作を許可することは、確認する関係が違います。[AWSのLambda実行ロール](https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html)
+
+操作のAllowだけを見て成功と判断しません。資源側のポリシーや組織の制限も関係し、明示的なDenyはAllowに優先します。[IAMのポリシー評価](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html)
+
+利用者の認可では、認証処理が確認した主体を使い、要求ごとに対象との関係を確かめます。文書IDを知っていることだけを閲覧許可にしません。[OWASPの要求ごとの認可](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request)
+
+## API入口の呼出し許可も別に確認する
+
+API Gatewayを入口にする場合、「API GatewayがLambdaを呼べるか」は上の3つに加えて確認する項目です。Lambdaのリソースベースポリシーで呼出し元の範囲を確認します。実行ロールのS3権限へ`lambda:InvokeFunction`を足すだけで、この関係を確認したことにはなりません。[API GatewayからLambdaを呼ぶ権限](https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway.html#services-apigateway-permissions)
+
+<StickyNote tone="yellow" title="読み違えやすい点">
+
+「APIを呼べた」「ログインできた」「S3を読めた」は、対象の文書を返してよいことの証拠にはなりません。成功した処理の主体と対象を確認カードへ戻して見ます。
+
+</StickyNote>
+
+## 文書の本文を返す前のチェック
+
+- 利用者IDは、認証処理が確認した結果から受け取る。
+- 文書IDからサーバー側の文書情報を取得し、閲覧ルールを判定する。
+- 許可した場合だけ、サーバー側で決めたS3キーを読む。
+- 他人の文書を指定した要求で、本文の読取り処理が呼ばれないことを確認する。
+
+これは、所有者だけが読める説明用のAPIの確認順です。共同閲覧や利用停止を扱う場合は、その条件も対象認可へ含めます。IAMの実効権限や認証方式の試験は、それぞれ別に必要です。
+
+具体的な合成コードの確認は[実行ロールと利用者認可の記事](/tech-note/articles/aws/iam/execution-role-and-user-authorization/)、入口から順に整理する場合は[Lambda APIのBook](/tech-note/books/lambda-api-boundaries/)へ進めます。

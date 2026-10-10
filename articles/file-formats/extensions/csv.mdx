@@ -1,0 +1,78 @@
+---
+title: ".csvと.tsvとは何か：区切り文字と列の意味を分けて読む"
+description: "CSVをPythonで読む小さな例から、引用符の役割、TSVとの違い、文字コードやヘッダー、数値への変換を読み込み側で決める理由を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - CSV
+  - TSV
+  - Data
+category: File Formats
+level: 1
+articleType: practical
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 5
+draft: false
+thumbnail: /images/articles/file-extension-csv.svg
+popular: false
+---
+
+`.csv`をカンマで分割したら列がずれた、表計算ソフトで開いたらIDのゼロが消えた、という問題は別々に考えます。CSVの読み込みでは、文字をどの列に分けるかと、列の値をどう解釈するかの両方が必要です。拡張子だけで文字コード、ヘッダー、列の型は決まりません。[RFC 4180](https://www.rfc-editor.org/rfc/rfc4180)、[Python: csv](https://docs.python.org/3.11/library/csv.html)
+
+CSVは主にカンマ、TSVはタブで列を区切るテキスト形式です。行と列のデータを交換するときは、区切り方と列の意味を渡し元と受け取り先で合わせます。
+
+## 値にカンマが入ると、列が増えますか？
+
+次は架空のメモ1件を表す`notes.csv`です。
+
+```csv file=notes.csv
+id,title,count
+00123,"説明用, メモ",2
+```
+
+2行目のタイトルにはカンマが含まれますが、二重引用符で囲むため1つの値です。単純な`split(",")`では引用符の意味を処理できず、4列へ分けてしまいます。
+
+RFC 4180で説明されるCSVでは、カンマ、改行、二重引用符を含む値を引用符で囲みます。値の中の二重引用符は`""`と重ねて表します。値に改行を含められるため、「1行ずつ読むだけ」で1件ずつ取得できるとも限りません。[RFC 4180: CSVの引用規則](https://www.rfc-editor.org/rfc/rfc4180#section-2)
+
+## CSVパーサーは、数字を数値へ変換しますか？
+
+この例はPython標準の`csv.DictReader`で読みます。`notes.csv`をUTF-8で保存し、同じディレクトリで`python3 read-notes.py`を実行できます。
+
+```python file=read-notes.py
+import csv
+
+with open("notes.csv", encoding="utf-8", newline="") as source:
+    rows = list(csv.DictReader(source))
+
+row = rows[0]
+count = int(row["count"])
+print(row["id"])
+print(row["title"])
+print(count + 1)
+```
+
+出力は次のとおりです。
+
+```text
+00123
+説明用, メモ
+3
+```
+
+既定の読み込みでは各値は文字列です。`id`はそのまま残し、計算する`count`だけを明示的に整数へ変えています。表計算ソフトなどが値を自動変換する場合とは分けて考えます。[Python: csv.readerの型変換](https://docs.python.org/3.11/library/csv.html#csv.reader)
+
+このコードは入力1件の読み取り例です。業務のインポートでは、必須ヘッダー、行数、列数、整数の範囲、重複を別に検査します。CSVとして読めることは、データがその処理に適していることの証明にはなりません。
+
+## TSVなら、カンマと引用符を気にせず使えますか？
+
+TSVはタブで列を区切るので、通常のカンマを値の中に残せます。Pythonの`csv`モジュールでタブ区切りを読む場合は、`delimiter="\t"`を指定します。ただし、引用符や値の中のタブ・改行の扱いは、渡し元と受け取り先の規則を合わせます。
+
+IANAに登録されたTSVの説明では、先頭行を列名とし、値の中のタブを認めていません。Pythonのタブ区切り設定はCSVの引用処理も使えるため、同じものとして無条件に交換できるわけではありません。[IANA: tab-separated-values](https://www.iana.org/assignments/media-types/text/tab-separated-values)、[Python: Dialects](https://docs.python.org/3.11/library/csv.html#dialects-and-formatting-parameters)
+
+受け取ったファイルは、区切り文字、文字コード、改行、ヘッダー、列の意味を確認して読みます。`.csv`から`.tsv`へ名前を変えるだけでは、カンマがタブへ変換されません。
+
+掲載コードはPython 3.11.5で実行し、3つの出力を確認しています。別のタブ区切り入力でも列の取得を確認しました。表計算ソフトの自動変換や、製品間のインポート互換性は未検証です。

@@ -2,7 +2,7 @@
 title: "LambdaのAPI入口とTypeScriptの実行を分けて考える"
 description: "HTTPリクエストがLambdaのhandlerへ届く流れを、API Gatewayのイベント形式とTypeScriptのビルドから整理します。AWSへ接続しない最小例で、入力と戻り値も確かめます。"
 date: 2026-10-09
-updated: 2026-10-09
+updated: 2026-10-10
 tags:
   - AWS
   - Lambda
@@ -12,8 +12,12 @@ category: AWS
 level: 1
 articleType: practical
 editorialProfile: question-led-v1
+series:
+  name: Lambda APIを入口と権限から読む
+  slug: lambda-api-boundaries
+  order: 1
 draft: false
-thumbnail: /images/articles/typescript-handler-and-api-entry.svg
+thumbnail: /images/articles/typescript-handler-and-api-entry.png
 popular: false
 ---
 
@@ -41,13 +45,22 @@ CDKなどのインフラコードは、関数・権限・APIルートなどの�
 HTTP APIのLambda proxy integrationでは、API Gatewayがリクエストをイベントへ変換し、Lambdaへ渡します。関数の戻り値はAPI Gatewayが解釈してHTTPレスポンスになります。[HTTP APIとLambdaの統合](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html)
 
 ```mermaid
-flowchart TD
-  A[ブラウザから GET /hello] --> B[API Gateway のルート]
-  B --> C[HTTPイベントへ変換]
-  C --> D[配置済みJavaScriptの handler]
-  D --> E[statusCode と body を返す]
-  E --> F[API Gateway がHTTP応答を返す]
+sequenceDiagram
+  accTitle: HTTPリクエストがLambdaへ届き、応答が戻る順序
+  accDescr: ブラウザがAPI GatewayへGET /helloを送り、API GatewayがHTTPイベントへ変換して配置済みJavaScriptのhandlerへ渡す。handlerのstatusCodeとbodyをAPI GatewayがHTTPレスポンスとして返す。
+  autonumber
+  participant B as ブラウザ
+  participant G as API Gateway
+  participant L as Lambdaのhandler
+  B->>G: GET /hello
+  G->>G: ルートを選び<br/>HTTPイベントへ変換
+  G->>L: HTTPイベントを渡す
+  Note over L: 配置済みの<br/>JavaScriptを実行
+  L-->>G: statusCode と body
+  G-->>B: HTTPレスポンス
 ```
+
+上から順に読みます。実線は要求を渡す処理、破線は戻り値や応答です。HTTPリクエストとhandlerの入力は、API Gatewayで形式が変わります。
 
 受け取るのは、パス、クエリ、本文などのデータです。クライアントから送ったソースコードを自由に実行する仕組みではありません。
 

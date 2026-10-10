@@ -8,19 +8,34 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { CodeBlock } from "@/components/code-block";
 import { Mermaid } from "@/components/mermaid";
-import { Accordion, Video, YouTube } from "@/components/mdx-widgets";
+import {
+  Accordion,
+  BlueUnderline,
+  Notebook,
+  RedUnderline,
+  StickyNote,
+  Video,
+  YouTube,
+} from "@/components/mdx-widgets";
 import { rehypeCallouts } from "@/lib/rehype-callouts";
+import { rehypeBookPages } from "@/lib/book-pages";
 import { withBasePath } from "@/lib/site";
 
 type MdxContentProps = {
   source: string;
+  variant?: "default" | "notebook";
+  paginateBook?: boolean;
 };
 
-export async function MdxContent({ source }: MdxContentProps) {
+export async function MdxContent({
+  source,
+  variant = "default",
+  paginateBook = false,
+}: MdxContentProps) {
   const transformedSource = transformMermaidFences(source);
   const { content } = await compileMDX({
     source: transformedSource,
-    components,
+    components: variant === "notebook" ? notebookComponents : components,
     options: {
       parseFrontmatter: false,
       mdxOptions: {
@@ -53,6 +68,7 @@ export async function MdxContent({ source }: MdxContentProps) {
             },
           ],
           rehypeCallouts,
+          ...(paginateBook ? [rehypeBookPages] : []),
         ],
       },
     },
@@ -88,6 +104,20 @@ const components = {
   YouTube,
   Video,
   Accordion,
+  Notebook,
+  StickyNote,
+  RedUnderline,
+  BlueUnderline,
+};
+
+const notebookComponents = {
+  ...components,
+  pre: (props: ComponentPropsWithoutRef<"pre">) => (
+    <CodeBlock tabIndex={0} {...props} />
+  ),
+  table: (props: ComponentPropsWithoutRef<"table">) => (
+    <table tabIndex={0} {...props} />
+  ),
 };
 
 function transformMermaidFences(source: string) {

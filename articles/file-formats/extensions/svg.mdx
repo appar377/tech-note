@@ -1,0 +1,65 @@
+---
+title: ".svgとは何か：図形の座標と表示する大きさを分ける"
+description: "円を描く最小のSVGから、viewBoxと表示サイズ、図形と埋め込み画像の違い、読み込み方による機能と安全性の違いを整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - SVG
+  - Image
+  - Web
+category: File Formats
+level: 1
+articleType: reference
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 6
+draft: false
+thumbnail: /images/articles/file-extension-svg.svg
+popular: false
+---
+
+`.svg`は画像として表示できる一方、テキストエディタで中身も読めます。SVGは図形や文字などを要素として記述する形式です。拡張子が同じでも、中身が円や線だけとは限らず、画像の参照やスクリプトを含むこともあります。[W3C: SVG 2](https://www.w3.org/TR/SVG2/)
+
+アイコンや図を扱うときは、形を定義する座標、画面に表示する大きさ、どの方法で読み込むかを分けて見ます。
+
+## viewBoxとwidthは、同じ大きさを表しますか？
+
+次は説明用の`dot.svg`です。青い円を1つ描きます。
+
+```xml file=dot.svg
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 160 80" width="320" height="160"
+     role="img" aria-labelledby="dot-title">
+  <title id="dot-title">青い円</title>
+  <circle cx="80" cy="40" r="24" fill="#2563eb" />
+</svg>
+```
+
+`viewBox`の4つの数値は、座標領域の左上の位置と幅・高さです。この例は`(0, 0)`から幅160、高さ80の領域を使います。円の中心は`(80, 40)`、半径は24です。
+
+一方、`width`と`height`はSVGの表示領域を指定します。この例では同じ比率の320×160へ写すので、座標上の長さは2倍の表示になります。画面での大きさは、埋め込み先のCSSなどでも変わります。`viewBox`の幅が、そのまま画像の画素数を表すわけではありません。[SVG: viewBoxと座標変換](https://www.w3.org/TR/SVG2/coords.html#ViewBoxAttribute)
+
+## SVGなら、どんな画像も拡大で鮮明になりますか？
+
+円や線などのベクター図形は、座標をもとに表示時の大きさで描画されます。しかしSVGには、`image`要素でPNGなどのラスター画像を組み込むこともできます。その画像に元からない細部は、SVGの中へ入れても増えません。[SVG: Rendering Model](https://www.w3.org/TR/SVG2/render.html#TypesOfGraphicsElements)
+
+文字もフォントの有無や描画環境の影響を受けます。拡張子だけで「拡大してもすべて鮮明」「別の環境でも同じ文字」と判断せず、図形、画像、文字のどれが入っているかを確認します。
+
+## 画像として読み込む場合と、HTMLへ埋め込む場合は同じですか？
+
+外部ファイルをHTMLの画像として使うなら、たとえば次のように参照します。
+
+```html
+<img src="dot.svg" width="320" height="160" alt="青い円" />
+```
+
+`img`の`alt`は、この画像をページの中で何として伝えるかを書く場所です。SVGをHTMLへ直接埋め込む場合は、先ほどの`title`やARIA属性のように、SVG側でも名前を付けられます。装飾だけの画像か、意味を伝える図かに合わせて扱います。[HTML: imgの代替テキスト](https://html.spec.whatwg.org/multipage/images.html#alt)、[SVG: titleとdesc](https://www.w3.org/TR/SVG2/struct.html#TitleAndDescriptionElements)
+
+読み込み方は利用できる機能も変えます。画像として読む処理では、スクリプトや外部参照に制限が付きます。単独のSVG文書として開く場合や、HTMLへ直接埋め込む場合とは条件が違います。ある表示方法でスクリプトが動かなかったことから、元のファイル全体が安全だとは判断できません。[SVG: Processing Modes](https://www.w3.org/TR/SVG2/conform.html#processing-modes)
+
+外部から受け取ったSVGは、中身と利用先の制限を確認してから組み込みます。拡張子の変更や、画像プレビューができたことだけでは、要素や参照先の検査を代わりにできません。
+
+掲載SVGはPython 3.11.5でXMLとして解析し、座標と要素を確認しています。ローカルHTTPで配信してブラウザの`img`として読み込み、青い円と320×160の表示領域も確認しました。外部入力の無害化や、支援技術での読み上げは検証していません。

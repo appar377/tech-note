@@ -16,7 +16,7 @@ articleType: internal
 draft: false
 thumbnail: /images/articles/mt5-ubuntu-headless-design.png
 popular: false
-updated: 2026-10-02
+updated: 2026-10-10
 editorialProfile: question-led-v1
 ---
 
@@ -30,11 +30,19 @@ Xvfbは物理的な画面や入力装置がなくても動作できるX server�
 
 ```mermaid
 flowchart LR
-  A["MT5 / WineのX11側の経路"] --> B["X11接続"]
-  B --> C["Xvfbの仮想画面"]
-  D["接続先 DISPLAY"] -.-> B
-  E["X11の接続資格情報"] -.-> B
+  accTitle: WineのX11接続に必要な表示先と接続条件
+  accDescr: MT5がWineのX11側の経路でXvfbの仮想画面へ接続する。DISPLAYは接続先を示し、X11の接続資格情報は接続条件になる。これらの設定だけではX serverや認証情報を生成しない。
+  subgraph client["アプリ側"]
+    A["MT5 / Wine<br/>X11側の経路"]
+    D["DISPLAY<br/>接続先を指定"]
+    E["X11の接続資格情報<br/>接続条件を満たす"]
+  end
+  A -->|X11接続| C["Xvfb<br/>仮想画面を持つX server"]
+  D -.->|接続先| A
+  E -.->|接続条件| A
 ```
+
+実線はX11の接続経路、破線はアプリが接続時に使う設定や資格情報です。`DISPLAY`や接続資格情報を用意することと、Xvfbを起動することは別です。
 
 この図は表示に関する依存関係です。プロセスがこの順に必ず起動する、あるいはこの構成だけでMT5が利用可能になる、という保証ではありません。フォント、ウィンドウ管理、入力、描画に必要な機能などは対象アプリで別に確認します。X11のwindow managerもX serverとは別のプログラムです。[X.Org: Window Managers](https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man7/X.7.html)
 

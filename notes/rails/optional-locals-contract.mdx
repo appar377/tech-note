@@ -1,0 +1,72 @@
+---
+title: partialへ省略・false・nilをどう渡すか
+description: 省略可能なlocalの既定値を、キーの有無と値の意味に分けて決めます。fetchとstrict localsの使い分けを短い受渡し契約にまとめます。
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - Rails
+  - Action View
+  - Ruby
+area: Rails
+status: refined
+source: learning
+draft: false
+---
+
+partialの引数を省略可能にするときは、既定値を置く前に「省略」「false」「nil」の意味を決めます。値を補う条件が違うと、呼出し側が渡したfalseを表示側でtrueへ変えてしまうためです。
+
+<StickyNote tone="blue" title="今回の受渡し契約">
+
+`show_details`は<BlueUnderline>省略したときだけtrueを補う</BlueUnderline>ものとします。明示されたfalseとnilは、その値のままpartialへ渡します。説明用の契約で、すべての画面の既定値を決めるものではありません。
+
+</StickyNote>
+
+## 値を補う条件を先に選ぶ
+
+| 入力 | 今回partialが受け取る値 | `\|\| true`を使った場合 |
+| --- | --- | --- |
+| 引数を省略 | `true` | `true` |
+| `show_details: false` | `false` | `true` |
+| `show_details: nil` | `nil` | `true` |
+
+`Hash#fetch(key, default)`はキーがない場合だけ既定値を返します。キーが存在すれば、falseとnilもそのまま返します。[Ruby 3.4のHash#fetch](https://docs.ruby-lang.org/en/3.4/Hash.html#method-i-fetch)
+
+Rubyではfalseとnilが偽として扱われるため、`|| true`は両方をtrueへ置き換えます。省略だけを補う契約では、この置換を使いません。[Rubyの条件分岐](https://docs.ruby-lang.org/en/3.4/syntax/control_expressions_rdoc.html)
+
+## 受け付ける引数も宣言するか
+
+従来のpartialで省略だけを補うなら、読む場所に既定値を書けます。
+
+```erb
+<% show_details = local_assigns.fetch(:show_details, true) %>
+<span><%= show_details.inspect %></span>
+```
+
+Rails 8.1では、strict localsで引数名と既定値を宣言できます。同じ契約を宣言する説明用のpartialは次の形です。
+
+```erb
+<%# locals: (show_details: true) %>
+<span><%= show_details.inspect %></span>
+```
+
+この宣言では、引数を省略するとtrueになり、falseとnilを明示するとその値が残ります。`show_detail`のような宣言にない引数はエラーになります。ただし、引数に`**attributes`などを加えて任意のキーを受ける宣言では、未知のキーも受け取ります。[Railsのstrict locals](https://guides.rubyonrails.org/v8.1/action_view_overview.html#strict-locals)
+
+<StickyNote tone="yellow" title="宣言の後も残る判断">
+
+<RedUnderline>strict localsは値の型を検査しません。</RedUnderline>nilを許すか、表示上はfalseと同じにするかを別に決めます。また、宣言の既定値は`local_assigns`へ追加されないため、この例では宣言した`show_details`を直接読みます。
+
+</StickyNote>
+
+## 呼出し側とpartial側で合意する3点
+
+<Notebook title="変更時の確認メモ">
+
+- **省略:** partial側の既定値を使ってよい場面はどこか。
+- **false:** 呼出し側が表示を止める指定として、値を維持するか。
+- **nil:** 値を維持する、既定値で補う、エラーにする、のどれを選ぶか。
+
+</Notebook>
+
+今回の2つのpartialはRuby 3.4.4・Action View 8.1.3で描画し、省略・false・nilがそれぞれtrue・false・nilになることを確認しました。strict localsの誤字もエラーになりました。`inspect`は値の観察用で、実際の画面の文言ではありません。
+
+`if show_details`だけで分岐するとfalseとnilは同じ側へ進みます。両者で表示を変える仕様なら、その区別も実装と確認に含めます。再現コードと既定値の比較は[local_assignsとstrict localsの記事](/tech-note/articles/rails/action_view/local-assigns-and-strict-locals/)にあります。

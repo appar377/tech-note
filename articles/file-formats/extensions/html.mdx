@@ -1,0 +1,65 @@
+---
+title: ".htmlとは何か：文書の構造と見た目・動作を分ける"
+description: "HTMLの最小ページから、要素が表す意味、CSSやJavaScriptの読み込み、相対URL、ファイル名と配信される内容の違いを整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - HTML
+  - Web
+category: File Formats
+level: 1
+articleType: reference
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 7
+draft: false
+thumbnail: /images/articles/file-extension-html.svg
+popular: false
+---
+
+`.html`をブラウザで開いて文字が表示されても、リンク先、見た目、ボタンの動作まで揃っているとは限りません。HTMLは見出し、段落、リンクなどで文書の構造を表します。見た目を指定するCSSや、操作に応じた処理を書くJavaScriptは、必要に応じて別に読み込みます。[HTML Standard: A quick introduction to HTML](https://html.spec.whatwg.org/multipage/introduction.html#a-quick-introduction-to-html)
+
+ページを移動するときは、HTML本文だけでなく、そこから参照しているファイルも確認します。
+
+## タグを書けば、どこまでページになりますか？
+
+次は説明用の`note.html`です。
+
+```html file=note.html
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>説明用ノート</title>
+    <link rel="stylesheet" href="note.css" />
+  </head>
+  <body>
+    <main>
+      <h1>説明用ノート</h1>
+      <p class="note">保存済みです。</p>
+      <button type="button">件数を表示</button>
+    </main>
+  </body>
+</html>
+```
+
+`head`には文字コードやページのタイトル、CSSへの参照を置き、`body`には表示する本文を置いています。`h1`は見出し、`p`は段落です。タグは文字の大きさを指定するだけの記号ではなく、要素の役割を表します。[HTML: Sections](https://html.spec.whatwg.org/multipage/sections.html)、[Text-level semantics](https://html.spec.whatwg.org/multipage/text-level-semantics.html)
+
+`button`はボタンですが、この例にはクリック時に件数を表示する処理がありません。ラベルに「件数を表示」と書くだけでは、その機能は実装されません。必要な動作をJavaScriptなどで用意します。フォーム送信などHTML自身が持つ動作もあるため、`type="button"`と役割を明示しています。[HTML: button](https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element)
+
+## HTMLだけをコピーすると、見た目が変わるのはなぜですか？
+
+`href="note.css"`は、この文書から相対的にCSSのURLを解決する指定です。通常は同じディレクトリのファイルを参照します。HTMLを別の場所へ移し、CSSを移さなければ、参照先が見つからなくなります。`base`要素などがある文書では、相対URLの基準も確認します。[HTML: link](https://html.spec.whatwg.org/multipage/semantics.html#the-link-element)、[文書のbase URL](https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-urls)
+
+CSSがなくても本文はブラウザの既定のスタイルで表示できますが、指定した色や余白は反映されません。画像、フォント、JavaScriptにも別の参照があれば、同じように確認します。[.cssの記事](/tech-note/articles/file-formats/extensions/css/)では、この例の段落へスタイルを当てます。
+
+## URLの末尾が.htmlなら、中身もHTMLですか？
+
+Webでは、サーバーがURLに対して本文と`Content-Type`などの情報を返します。`.html`というファイル名やURLだけで、実際に返る内容を判断できません。末尾が`.html`でなくてもHTMLを返すページがあります。[HTML: HTMLとXMLの構文](https://html.spec.whatwg.org/multipage/introduction.html#html-vs-xhtml)
+
+また、HTMLにはスクリプトや外部ファイルを読み込む要素があります。外部から受け取った文字列をページへ挿入する場合は、文字として表示するのか、HTMLとして解釈するのかを実装側で決めます。`.html`は文書の用途を推測する手掛かりで、安全性の保証ではありません。[HTML: script](https://html.spec.whatwg.org/multipage/scripting.html#the-script-element)
+
+掲載コードをローカルHTTPで配信し、ブラウザでタイトル、見出し、本文、CSSの読み込みを確認しています。ボタンを押しても件数を表示する処理がないことも確認しました。本番の配信設定、外部入力の処理、支援技術での読み上げは検証していません。

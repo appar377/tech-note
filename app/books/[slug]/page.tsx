@@ -94,9 +94,9 @@ export default async function BookPage({ params }: PageProps) {
       </header>
       <div className="reading-layout book-page-layout">
         <div className="min-w-0">
-          <BookReader chapters={book.headings}>
+          <BookReader chapters={book.headings} title={book.title}>
             <div className="book-prose prose">
-              <MdxContent source={book.content} />
+              <MdxContent source={book.content} paginateBook />
             </div>
           </BookReader>
         </div>

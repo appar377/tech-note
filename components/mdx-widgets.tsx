@@ -2,6 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import styles from "./note-reader.module.css";
 
 export function YouTube({ id, title = "YouTube video" }: { id: string; title?: string }) {
   return (
@@ -49,4 +50,38 @@ export function Accordion({ title, children }: { title: string; children: ReactN
       {open ? <div className="border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">{children}</div> : null}
     </div>
   );
+}
+
+export function Notebook({ title, children }: { title?: string; children: ReactNode }) {
+  return (
+    <div className={styles.notebook}>
+      {title ? <p className={styles.stickyTitle}>{title}</p> : null}
+      {children}
+    </div>
+  );
+}
+
+export function StickyNote({
+  tone = "yellow",
+  title = "メモ",
+  children,
+}: {
+  tone?: "blue" | "yellow";
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <aside className={styles.sticky} data-tone={tone} aria-label={title}>
+      <p className={styles.stickyTitle}>{title}</p>
+      {children}
+    </aside>
+  );
+}
+
+export function RedUnderline({ children }: { children: ReactNode }) {
+  return <strong className={styles.redUnderline}>{children}</strong>;
+}
+
+export function BlueUnderline({ children }: { children: ReactNode }) {
+  return <strong className={styles.blueUnderline}>{children}</strong>;
 }

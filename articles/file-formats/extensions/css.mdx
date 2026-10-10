@@ -1,0 +1,69 @@
+---
+title: ".cssとは何か：どの要素に、どの指定が効くかを読む"
+description: "HTMLの段落にCSSを当てる小さな例から、セレクターと宣言、カスケード、読み込みURL、ブラウザの対応を確かめる手順を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - CSS
+  - HTML
+  - Web
+category: File Formats
+level: 1
+articleType: reference
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 8
+draft: false
+thumbnail: /images/articles/file-extension-css.svg
+popular: false
+---
+
+`.css`に色を書いたのに画面が変わらないときは、ファイルが読まれたか、対象の要素に合うか、ほかの指定が優先されたかを順に見ます。CSSは文書の見た目を指定する形式で、ファイルが存在するだけではページへ適用されません。[HTML: linkによるスタイルシートの読み込み](https://html.spec.whatwg.org/multipage/semantics.html#the-link-element)
+
+拡張子を見てCSSだと分かった後も、読み込み元のHTMLと、実際に適用される指定を確認します。
+
+## セレクターと宣言は、それぞれ何を決めますか？
+
+次は説明用のHTMLの一部です。
+
+```html
+<link rel="stylesheet" href="note.css" />
+<p class="note">保存済みです。</p>
+```
+
+`note.css`には次のスタイルを書きます。
+
+```css file=note.css
+.note {
+  color: #1d4ed8;
+  padding: 12px;
+  border: 1px solid currentColor;
+}
+
+.note {
+  color: #166534;
+}
+```
+
+`.note`は、`class`に`note`を持つ要素を選ぶセレクターです。波括弧の中の宣言が、文字色、内側の余白、枠線を指定します。`currentColor`はその要素の`color`を参照します。[Selectors: Class selectors](https://www.w3.org/TR/selectors-4/#class-html)、[CSS Color: currentColor](https://www.w3.org/TR/css-color-4/#currentcolor-color)
+
+この例だけを適用すると、段落の文字と枠線は緑色になります。後半では`color`だけを指定しているので、前半の余白と枠線の指定は残ります。CSSは同じセレクターのブロック全体を置き換えるのではなく、プロパティごとに使う値を決めます。
+
+## 後に書いたCSSが、いつでも優先されますか？
+
+先ほどは、同じ文書のスタイルシートで、同じセレクター、同じ重要度の宣言を比べています。ほかの条件が同じなので、後の`color`が優先されます。
+
+実際のページには、ブラウザの既定スタイル、利用者のスタイル、複数のCSS、インライン指定などがあります。CSSのカスケードは、指定元と重要度、レイヤー、セレクターの詳細度、記述順などで優先順位を決めます。「後に置けば必ず勝つ」とは考えません。[CSS Cascade: Cascade Sorting Order](https://www.w3.org/TR/css-cascade-5/#cascade-sort)
+
+色が変わらないときは、開発者ツールで対象の要素を選び、どの宣言が有効かを確認します。CSSファイルの読み込み失敗、クラス名の違い、優先順位の問題を分けると、関係のない場所へ指定を足さずに原因を探せます。
+
+## CSSを移動すると、画像やフォントの参照も変わりますか？
+
+CSSには`url(...)`で画像などを参照する指定があります。外部CSS内の相対URLは、通常そのCSSのURLを基準に解決されます。HTMLと同じ場所を基準にするとは限りません。CSSを別のディレクトリへ移すなら、その中の参照先も確認します。[CSS Values: Relative URLs](https://www.w3.org/TR/css-values-4/#relative-urls)
+
+`.css`という名前だけでは、読み込む外部ファイルや対応ブラウザまでは分かりません。新しいプロパティは利用先の対応状況を確かめ、不要な外部参照も見ます。ファイルの拡張子を変えるだけで、Sassなどの別の記法がブラウザ用CSSへ変換されるわけでもありません。
+
+掲載コードをローカルHTTPで配信し、ブラウザで文字と枠線が`#166534`、余白が12px、枠線が1pxになることを確認しています。複数のブラウザでの互換性や、外部画像・フォントの読み込みは検証していません。

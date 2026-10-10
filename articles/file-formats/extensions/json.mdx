@@ -1,0 +1,79 @@
+---
+title: ".jsonとは何か：構文が正しいデータと使えるデータを分ける"
+description: "JSONの架空のノートを読み込む例から、値の型、パースと項目検証の違い、コメントや重複キー、数値を扱うときの注意点を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - JSON
+  - JavaScript
+  - Data
+category: File Formats
+level: 1
+articleType: practical
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 3
+draft: false
+thumbnail: /images/articles/file-extension-json.svg
+popular: false
+---
+
+`.json`を読み込めたのに、必要な項目がない、文字列のつもりが数値になっていた、ということがあります。JSONは値と構造を表すテキスト形式です。構文を解析するパーサーは、アプリケーションが必要とする項目や業務上の条件まで保証しません。[RFC 8259: JSONの値と構文](https://www.rfc-editor.org/rfc/rfc8259#section-3)
+
+設定ファイルやAPIのデータを読むときは、JSONとして読めるかを確かめた後、どんな形のデータを受け付けるかを確認します。
+
+## 引用符を付けると、値は何に変わりますか？
+
+次は架空のノートを表す`sample.json`です。
+
+```json file=sample.json
+{
+  "id": "00123",
+  "title": "説明用ノート",
+  "published": false,
+  "tags": ["memo"]
+}
+```
+
+`id`は文字列、`published`は真偽値、`tags`は配列です。`false`と`"false"`は別の型です。識別子の先頭のゼロを残したいので、`00123`は引用符で囲んでいます。JSONの数値には先頭のゼロを付けられません。[RFC 8259: Numbers](https://www.rfc-editor.org/rfc/rfc8259#section-6)
+
+JSONで使える値はオブジェクト、配列、文字列、数値、真偽値、`null`です。日付専用の型はないので、日付を文字列で渡すなら、その書式と解釈を送信側と受信側で決めます。
+
+## JSON.parseが成功すれば、項目をそのまま使えますか？
+
+説明用の次のコードは、先ほどのファイルをUTF-8で読み、`id`と`published`を確認します。Node.jsで`sample.json`と同じディレクトリに置き、`node inspect-json.mjs`で実行できます。
+
+```js file=inspect-json.mjs
+import { readFileSync } from "node:fs";
+
+const note = JSON.parse(readFileSync("sample.json", "utf8"));
+
+if (
+  note === null ||
+  typeof note !== "object" ||
+  Array.isArray(note) ||
+  typeof note.id !== "string" ||
+  typeof note.published !== "boolean"
+) {
+  throw new Error("idとpublishedの型が合いません");
+}
+
+console.log(note.id, note.published);
+```
+
+出力は`00123 false`です。`JSON.parse`が担当するのはJSONのテキストから値への変換で、その後の条件がこの例で使う項目の型を確かめています。[ECMAScript: JSON.parse](https://tc39.es/ecma262/multipage/structured-data.html#sec-json.parse)
+
+この検査は`title`や`tags`の形、IDの存在、公開する権限を確認するものではありません。受け付ける項目が増えたら、必要な型や制約を検証処理へ追加します。型が合っていることと、その操作を許可してよいことも別です。
+
+## JavaScriptに似ているのに、なぜ読み込みエラーになりますか？
+
+標準のJSONでは、キーと文字列を二重引用符で囲みます。コメント、末尾のカンマ、`undefined`、関数は書けません。JavaScriptのオブジェクトをそのままコピーしても、JSONとして有効とは限りません。[RFC 8259: JSON Grammar](https://www.rfc-editor.org/rfc/rfc8259#section-2)
+
+同じキーの重複も避けます。仕様はオブジェクト内の名前を一意にすることを推奨しており、重複を受け取った処理系の動作は揃いません。また、大きな整数は受信側の数値表現で精度を失う場合があります。計算しない長い識別子は、文字列で渡す設計を検討します。[RFC 8259: Objects](https://www.rfc-editor.org/rfc/rfc8259#section-4)、[数値の相互運用性](https://www.rfc-editor.org/rfc/rfc8259#section-6)
+
+データを読むために`eval`へ渡す必要はありません。`.json`という拡張子も、任意の内容をコードとして実行してよい根拠にはなりません。[RFC 8259: Security Considerations](https://www.rfc-editor.org/rfc/rfc8259#section-12)
+
+掲載例はNode.js 22.13.0で実行し、正常な入力の出力、末尾カンマによる構文エラー、`published`を文字列へ変えた入力の型エラーを確認しています。

@@ -1,0 +1,127 @@
+.diagram {
+  min-width: 0;
+  max-width: 100%;
+  margin: 2rem 0;
+  border: 1px solid var(--tech-border);
+  border-radius: 0.75rem;
+  background: var(--tech-surface-strong);
+  color: var(--foreground);
+}
+
+.viewport {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 1.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tech-border-strong) transparent;
+  border-radius: 0.75rem 0.75rem 0 0;
+}
+
+.viewport:focus-visible {
+  outline: 2px solid var(--reading-accent);
+  outline-offset: 3px;
+}
+
+.viewport svg {
+  display: block;
+  margin-inline: auto;
+}
+
+/* Match Mermaid's label measurement instead of inheriting prose paragraph spacing. */
+.viewport :global(foreignObject p) {
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+}
+
+.viewport :global(.node rect),
+.viewport :global(.node polygon),
+.viewport :global(.node circle),
+.viewport :global(.actor),
+.viewport :global(.note) {
+  stroke-width: 1.4px;
+}
+
+.viewport :global(.flowchart-link),
+.viewport :global(.messageLine0),
+.viewport :global(.messageLine1) {
+  stroke-width: 1.5px;
+}
+
+.hint {
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--tech-border);
+  color: var(--reading-muted);
+  font-size: 0.75rem;
+  line-height: 1.7;
+}
+
+.status {
+  margin: 2rem 0;
+  padding: 1.25rem;
+  border: 1px solid var(--tech-border);
+  border-radius: 0.75rem;
+  background: var(--tech-surface-strong);
+  color: var(--reading-muted);
+  font-size: 0.875rem;
+  line-height: 1.8;
+}
+
+.status p {
+  margin: 0;
+}
+
+.status[data-state="error"] {
+  color: var(--foreground);
+  border-color: var(--tech-border-strong);
+}
+
+.source {
+  margin-top: 0.75rem;
+}
+
+.source summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--reading-accent);
+}
+
+.source pre {
+  max-width: 100%;
+  margin: 0.75rem 0 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: var(--reading-soft);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  line-height: 1.8;
+  white-space: pre;
+}
+
+@media (max-width: 640px) {
+  .viewport {
+    padding: 1.25rem 1rem;
+  }
+
+  .hint {
+    padding-inline: 1rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport,
+  .viewport * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .diagram { break-inside: avoid; border: 0; background: none; }
+  .viewport { overflow: visible; padding: 0; }
+  .viewport svg { width: 100% !important; max-width: 100% !important; max-height: 210mm; }
+  .hint { display: none; }
+}

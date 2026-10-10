@@ -54,7 +54,7 @@ describe("question-led content integrity", () => {
     assert.ok(article);
     assert.ok(validateArticleQuality({ ...article, content: "## Example\n\n```dart\nTestSubject\n" }).errors.length >= 3);
     assert.ok(validateArticleQuality({ ...article, editorialProfile: undefined }).errors.some(issue => issue.message.includes("required heading")));
-    assert.equal(articles.length, 76);
-    assert.equal(articles.filter(a => !a.editorialProfile).length, 76 - articleRecords.length);
+    assert.equal(articles.length, 84);
+    assert.equal(articles.filter(a => !a.editorialProfile).length, 84 - articleRecords.length);
   });
 });

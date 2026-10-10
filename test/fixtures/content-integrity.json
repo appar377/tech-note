@@ -1567,7 +1567,7 @@
   {
     "kind": "articles",
     "source": "articles/rails/sql/insert-select.mdx",
-    "sha256": "efa49f877191de58df5e89efcf099f5f814d5e36b1c9828d5161c238a68dec0f",
+    "sha256": "50dd4d899343423e3027dd2ef88aaf77e7908ca12d804a1b760649beb82b0f56",
     "source_urls": [
       "https://www.postgresql.org/docs/17/sql-insert.html",
       "https://www.postgresql.org/docs/17/tutorial-transactions.html",
@@ -1591,7 +1591,12 @@
       "articleType": "practical",
       "draft": false,
       "thumbnail": "/images/articles/rails-insert-select.png",
-      "popular": true
+      "popular": true,
+      "series": {
+        "name": "Railsで生SQLを書くときに知っておきたいSQL",
+        "slug": "rails-raw-sql",
+        "order": 2
+      }
     },
     "image": "public/images/articles/rails-insert-select.png",
     "image_sha256": "5113b0f851099673240a6586f92c59e5d4c36e5235d884f9bf8520259488650f",
@@ -1605,7 +1610,7 @@
   {
     "kind": "articles",
     "source": "articles/rails/sql/row-number.mdx",
-    "sha256": "ded63e53cae2993399a8a48dc5f2230227885780e199e4be00d0cb99c7ee45e1",
+    "sha256": "1b6c72b084002b7c9c1e4da0e684e3ab1398e95c8d5dd847ebdaec0608884913",
     "source_urls": [
       "https://www.postgresql.org/docs/17/tutorial-window.html",
       "https://www.postgresql.org/docs/17/queries-order.html",
@@ -1625,7 +1630,12 @@
       "articleType": "practical",
       "draft": false,
       "thumbnail": "/images/articles/rails-row-number.png",
-      "popular": true
+      "popular": true,
+      "series": {
+        "name": "Railsで生SQLを書くときに知っておきたいSQL",
+        "slug": "rails-raw-sql",
+        "order": 1
+      }
     },
     "image": "public/images/articles/rails-row-number.png",
     "image_sha256": "a09f5e1e8211b85ff4c693a0af43bb9c790ea7b2b30c639bd7b86f8951628ca3",
@@ -1714,7 +1724,7 @@
   {
     "kind": "articles",
     "source": "articles/rails/sql/raw-sql-summary.mdx",
-    "sha256": "0f5029e288b8dbac6f01fd96a28faa157d64cd96753c0e7212677929311c7bef",
+    "sha256": "5b64eb2c1809e7e15f3e01adff5a3fe73a7d425af865e9b3e4c955664d399ddf",
     "source_urls": [
       "https://www.postgresql.org/docs/17/tutorial-window.html",
       "https://www.postgresql.org/docs/17/sql-insert.html",
@@ -1737,7 +1747,12 @@
       "articleType": "practical",
       "draft": false,
       "thumbnail": "/images/articles/rails-raw-sql-summary.png",
-      "popular": true
+      "popular": true,
+      "series": {
+        "name": "Railsで生SQLを書くときに知っておきたいSQL",
+        "slug": "rails-raw-sql",
+        "order": 4
+      }
     },
     "image": "public/images/articles/rails-raw-sql-summary.png",
     "image_sha256": "106208877b01f6c41f1d27dc355e81990ce0f6c822c3b9a743f28058484a0a70",
@@ -1751,7 +1766,7 @@
   {
     "kind": "articles",
     "source": "articles/rails/sql/on-duplicate-key-update.mdx",
-    "sha256": "1cf48fa4cd1a6d8683fb6c2ba585785c42f73b942e2bb7156799ddae0ca3a10b",
+    "sha256": "9fc39b890bcab948625cb60ef886156b3b6a0515eb07af3afbd51407e83acaf8",
     "source_urls": [
       "https://dev.mysql.com/doc/refman/8.4/en/insert-on-duplicate.html",
       "https://www.postgresql.org/docs/17/sql-insert.html",
@@ -1770,7 +1785,12 @@
       "articleType": "practical",
       "draft": false,
       "thumbnail": "/images/articles/rails-upsert.png",
-      "popular": false
+      "popular": false,
+      "series": {
+        "name": "Railsで生SQLを書くときに知っておきたいSQL",
+        "slug": "rails-raw-sql",
+        "order": 3
+      }
     },
     "image": "public/images/articles/rails-upsert.png",
     "image_sha256": "ebf5060caa34537fbb954b29fef7d0c3642040dcd13dc8789ac6e49a0eabe8a7",
@@ -2169,7 +2189,7 @@
   {
     "kind": "articles",
     "source": "articles/architecture/execution-model/execution-model-over-syntax.mdx",
-    "sha256": "c263ad09cb180a2d694c76d39e8df0241ff00adc6d3df603442d7405bf80794c",
+    "sha256": "406fef2ebe0df45ce47d42e68c5ab0bbdef84737a2dc8f865307a26ad843dd29",
     "source_urls": [
       "https://api.dart.dev/dart-async/Completer-class.html",
       "https://dart.dev/libraries/async/async-await#execution-flow-with-async-and-await",
@@ -2502,7 +2522,7 @@
   {
     "kind": "articles",
     "source": "articles/linux/mt5-ubuntu/03-ubuntu-server-headless-design.mdx",
-    "sha256": "a40c4c147f20a4cb7f795045e599ef024b94719a5e6379b74d00e2167459ce5c",
+    "sha256": "8382256aec2a9315b1cc30614626bf53a71677e3acb4492dfacaf71992292dc1",
     "source_urls": [
       "https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux",
       "https://xorg.freedesktop.org/archive/X11R7.5/doc/man/man1/Xvfb.1.html",
@@ -2736,7 +2756,7 @@
   {
     "kind": "articles",
     "source": "articles/aws/lambda/typescript-handler-and-api-entry.mdx",
-    "sha256": "e727db2f223a5376de5dfd5444f86ac8c252817a8fa7e4f5bb956c4530c179a1",
+    "sha256": "ab585429f45f584584f3ddd65afecdf0640545b4902bde0c8cdf84ab607177f1",
     "source_urls": [
       "https://docs.aws.amazon.com/lambda/latest/dg/lambda-typescript.html",
       "https://docs.aws.amazon.com/lambda/latest/dg/typescript-handler.html#typescript-handler-naming",
@@ -2759,11 +2779,16 @@
       "level": 1,
       "articleType": "practical",
       "draft": false,
-      "thumbnail": "/images/articles/typescript-handler-and-api-entry.svg",
-      "popular": false
+      "thumbnail": "/images/articles/typescript-handler-and-api-entry.png",
+      "popular": false,
+      "series": {
+        "name": "Lambda APIを入口と権限から読む",
+        "slug": "lambda-api-boundaries",
+        "order": 1
+      }
     },
-    "image": "public/images/articles/typescript-handler-and-api-entry.svg",
-    "image_sha256": "08deb6e604160e7baa9a589eb23323cfb9250cf5da2ef6c8ccfca6697170bd64",
+    "image": "public/images/articles/typescript-handler-and-api-entry.png",
+    "image_sha256": "bdae5e7f86945dd8fa3be65b4c33d92097d2e04be6eac5a0cbb47ba749ad9ea6",
     "mutable_metadata": [
       "title",
       "description",
@@ -2774,7 +2799,7 @@
   {
     "kind": "articles",
     "source": "articles/aws/iam/execution-role-and-user-authorization.mdx",
-    "sha256": "6b6e6c763e3b03ae437c301643dadb1317aa90129c29ef0c826da6c42d25af11",
+    "sha256": "a668765921f32d07a13cf803bbc52e8811ac22a5974dfaac523a7e14b7419daa",
     "source_urls": [
       "https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html",
       "https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html",
@@ -2796,11 +2821,16 @@
       "level": 2,
       "articleType": "practical",
       "draft": false,
-      "thumbnail": "/images/articles/execution-role-and-user-authorization.svg",
-      "popular": false
+      "thumbnail": "/images/articles/execution-role-and-user-authorization.png",
+      "popular": false,
+      "series": {
+        "name": "Lambda APIを入口と権限から読む",
+        "slug": "lambda-api-boundaries",
+        "order": 2
+      }
     },
-    "image": "public/images/articles/execution-role-and-user-authorization.svg",
-    "image_sha256": "d9d49f0b3a64415d44388f55755971cb763ce761ee0a4f0a8a42f175936fe355",
+    "image": "public/images/articles/execution-role-and-user-authorization.png",
+    "image_sha256": "7dba127ca8a0f064c423956cf3b6ed1f61355a37332438d9f89452c35da074a9",
     "mutable_metadata": [
       "title",
       "description",
@@ -2811,7 +2841,7 @@
   {
     "kind": "articles",
     "source": "articles/rails/action_view/local-assigns-and-strict-locals.mdx",
-    "sha256": "47cd1113b3e1ac8f4e46957430bd56c3a1117216af7ed5c637f91fad8739cceb",
+    "sha256": "456aaac2e8e7fb2315d53ba938d2a773a9e40040748105104dddbe66cae87b9c",
     "source_urls": [
       "https://api.rubyonrails.org/v8.1.3/classes/ActionView/Base.html",
       "https://docs.ruby-lang.org/en/3.4/Hash.html#method-i-fetch",
@@ -2830,11 +2860,11 @@
       "level": 1,
       "articleType": "practical",
       "draft": false,
-      "thumbnail": "/images/articles/local-assigns-and-strict-locals.svg",
+      "thumbnail": "/images/articles/local-assigns-and-strict-locals.png",
       "popular": false
     },
-    "image": "public/images/articles/local-assigns-and-strict-locals.svg",
-    "image_sha256": "379eb362a976621b7a959f976e8d211d3bf194e96d4b8dcff12ad6ec0931d257",
+    "image": "public/images/articles/local-assigns-and-strict-locals.png",
+    "image_sha256": "506a1f662931a6652d3e8d6b68fce7b05fc014304db636145f41dd81cd555729",
     "mutable_metadata": [
       "title",
       "description",
@@ -2945,7 +2975,7 @@
   {
     "kind": "notes",
     "source": "notes/site-design/content-model.mdx",
-    "sha256": "940c8c599b01bebf788e617e60aa9930812256753ef825e70ae08d9619a82c2e",
+    "sha256": "244c4b110bc4106aecf68c19e6d61e2d857ee2099d62458faca865cab44106fa",
     "source_urls": [],
     "identity": {
       "date": "2026-07-02",
@@ -2969,8 +2999,450 @@
   {
     "kind": "series",
     "source": "lib/series-books.ts",
-    "sha256": "a41b9930870ac9d68831af589f7e49ecc175c04bcd4785fc4245fa7b16f34311",
+    "sha256": "9721e0eabfa03728f07779b9f02c65c6a99f97feb9c75caf6749dc59d73ca2bf",
     "source_urls": [],
     "mutable_metadata": []
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/markdown.mdx",
+    "sha256": "415a5fc6b5bc3b9025be894082bb45b976f49dd53afe5aac2457b4cde19bb632",
+    "source_urls": [
+      "https://spec.commonmark.org/0.31.2/#what-is-markdown-",
+      "https://spec.commonmark.org/0.31.2/#atx-headings",
+      "https://spec.commonmark.org/0.31.2/#emphasis-and-strong-emphasis",
+      "https://spec.commonmark.org/0.31.2/#lists",
+      "https://github.github.com/gfm/#tables-extension-",
+      "https://spec.commonmark.org/0.31.2/#soft-line-breaks",
+      "https://spec.commonmark.org/0.31.2/#raw-html",
+      "https://github.github.com/gfm/#what-is-github-flavored-markdown-"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "Markdown",
+        "Documentation"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 2
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-markdown.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-markdown.svg",
+    "image_sha256": "2251b9a711ff602976ecc7c207c43c98359fb65afa24e6408efd349146bb29ce",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/json.mdx",
+    "sha256": "1d9bea283725695094867c327e89f50b34b55be916998348d448b3de0c0b6a30",
+    "source_urls": [
+      "https://www.rfc-editor.org/rfc/rfc8259#section-3",
+      "https://www.rfc-editor.org/rfc/rfc8259#section-6",
+      "https://tc39.es/ecma262/multipage/structured-data.html#sec-json.parse",
+      "https://www.rfc-editor.org/rfc/rfc8259#section-2",
+      "https://www.rfc-editor.org/rfc/rfc8259#section-4",
+      "https://www.rfc-editor.org/rfc/rfc8259#section-12"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "JSON",
+        "JavaScript",
+        "Data"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "practical",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 3
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-json.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-json.svg",
+    "image_sha256": "25f018222741ae9775286e177d92d6fa04520438903f0ab4ac564655ac0eeecb",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/yaml.mdx",
+    "sha256": "ce46ab8993a03ab1a400a83e1280f1f37e9d788a5beeaaac12bb322d86df525b",
+    "source_urls": [
+      "https://yaml.org/spec/1.2.2/",
+      "https://www.rfc-editor.org/rfc/rfc9512#section-3.3",
+      "https://yaml.org/spec/1.2.2/#61-indentation-spaces",
+      "https://yaml.org/spec/1.2.2/#103-core-schema",
+      "https://www.rfc-editor.org/rfc/rfc9512#section-4",
+      "https://eemeli.org/yaml/#parse-options"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "YAML",
+        "Configuration"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 4
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-yaml.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-yaml.svg",
+    "image_sha256": "74ef4be34f3b675bc3cafcc7c87e0e3dfc1c070fceb90afe96ae7b36ee5629ff",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/csv.mdx",
+    "sha256": "56da4da242de4ec8dcc4c8a20f31e3ac35c04a79cfb51203bf497ae6f1060318",
+    "source_urls": [
+      "https://www.rfc-editor.org/rfc/rfc4180",
+      "https://docs.python.org/3.11/library/csv.html",
+      "https://www.rfc-editor.org/rfc/rfc4180#section-2",
+      "https://docs.python.org/3.11/library/csv.html#csv.reader",
+      "https://www.iana.org/assignments/media-types/text/tab-separated-values",
+      "https://docs.python.org/3.11/library/csv.html#dialects-and-formatting-parameters"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "CSV",
+        "TSV",
+        "Data"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "practical",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 5
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-csv.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-csv.svg",
+    "image_sha256": "3f04cf945985a17779c6a2bdf99ed09bf0dc6ea652807a5cff19c57eeae0ea59",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/svg.mdx",
+    "sha256": "e938434ef142a607b5786ca6c394a9fa541ac662e0f191e0cd7507b1ea42071e",
+    "source_urls": [
+      "https://www.w3.org/TR/SVG2/",
+      "https://www.w3.org/TR/SVG2/coords.html#ViewBoxAttribute",
+      "https://www.w3.org/TR/SVG2/render.html#TypesOfGraphicsElements",
+      "https://html.spec.whatwg.org/multipage/images.html#alt",
+      "https://www.w3.org/TR/SVG2/struct.html#TitleAndDescriptionElements",
+      "https://www.w3.org/TR/SVG2/conform.html#processing-modes"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "SVG",
+        "Image",
+        "Web"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 6
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-svg.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-svg.svg",
+    "image_sha256": "1fd847cee24801f96ef9a42604f4078f12b92117a2a4e83a6f557e3866ed6774",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/html.mdx",
+    "sha256": "c5236e3141963c17ba88c3a1c98f42daa1950572df75f34f57e804fd500278fb",
+    "source_urls": [
+      "https://html.spec.whatwg.org/multipage/introduction.html#a-quick-introduction-to-html",
+      "https://html.spec.whatwg.org/multipage/sections.html",
+      "https://html.spec.whatwg.org/multipage/text-level-semantics.html",
+      "https://html.spec.whatwg.org/multipage/form-elements.html#the-button-element",
+      "https://html.spec.whatwg.org/multipage/semantics.html#the-link-element",
+      "https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-urls",
+      "https://html.spec.whatwg.org/multipage/introduction.html#html-vs-xhtml",
+      "https://html.spec.whatwg.org/multipage/scripting.html#the-script-element"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "HTML",
+        "Web"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 7
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-html.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-html.svg",
+    "image_sha256": "3b58ba3f8c6a9d1042234e3934cecd129d27575ff713af4eef39539a44a5b361",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/css.mdx",
+    "sha256": "4e8c17e58d0cdf7604f05d6c307ddb98495329bd14ad6ef4eb996f04d1d7f9a0",
+    "source_urls": [
+      "https://html.spec.whatwg.org/multipage/semantics.html#the-link-element",
+      "https://www.w3.org/TR/selectors-4/#class-html",
+      "https://www.w3.org/TR/css-color-4/#currentcolor-color",
+      "https://www.w3.org/TR/css-cascade-5/#cascade-sort",
+      "https://www.w3.org/TR/css-values-4/#relative-urls"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "CSS",
+        "HTML",
+        "Web"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "reference",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 8
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-css.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-css.svg",
+    "image_sha256": "f6292745e0c87dcd0e504af987d99921b10e34a34ccece12033b4953f6eee486",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "articles",
+    "source": "articles/file-formats/extensions/javascript-typescript.mdx",
+    "sha256": "7aaf0506859d4291bc4c87b59075d000f2b650a0deee445a06626eca405183ce",
+    "source_urls": [
+      "https://www.typescriptlang.org/docs/handbook/2/basic-types.html",
+      "https://www.typescriptlang.org/docs/handbook/2/basic-types.html#erased-types",
+      "https://www.typescriptlang.org/docs/handbook/2/basic-types.html#emitting-with-errors",
+      "https://tc39.es/ecma262/multipage/ecmascript-language-expressions.html#sec-addition-operator-plus",
+      "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#type-assertions",
+      "https://nodejs.org/api/packages.html#determining-module-system",
+      "https://nodejs.org/api/typescript.html#type-stripping"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "File Extension",
+        "JavaScript",
+        "TypeScript",
+        "Web"
+      ],
+      "category": "File Formats",
+      "level": 1,
+      "articleType": "practical",
+      "series": {
+        "name": "世界の拡張子",
+        "slug": "world-file-extensions",
+        "order": 9
+      },
+      "draft": false,
+      "thumbnail": "/images/articles/file-extension-javascript-typescript.svg",
+      "popular": false
+    },
+    "image": "public/images/articles/file-extension-javascript-typescript.svg",
+    "image_sha256": "970edf61827488d3b87469f08b8e8f04e5fad44ea09d663d5ce3c32ada99a2a4",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated",
+      "editorialProfile"
+    ]
+  },
+  {
+    "kind": "notes",
+    "source": "notes/aws/lambda-permission-checklist.mdx",
+    "sha256": "ed3d666dd2cd0410a793b2932b43c561a7721bee19e47ad540374a6f3ffe08c4",
+    "source_urls": [
+      "https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html",
+      "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request",
+      "https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway.html#services-apigateway-permissions"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "AWS",
+        "Lambda",
+        "IAM",
+        "Authorization"
+      ],
+      "area": "AWS",
+      "status": "refined",
+      "source": "learning",
+      "draft": false
+    },
+    "image": "public/images/notes/lambda-permission-boundaries.svg",
+    "image_sha256": "5f03353b9616f72d3cc1235bca91b2aa230ea26159ee1635ca85012b89284e7a",
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated"
+    ]
+  },
+  {
+    "kind": "notes",
+    "source": "notes/rails/optional-locals-contract.mdx",
+    "sha256": "826cd12def6f50b1d3823ee7b4dab9beaeb8f2822261e868ff0db6698d4e3225",
+    "source_urls": [
+      "https://docs.ruby-lang.org/en/3.4/Hash.html#method-i-fetch",
+      "https://docs.ruby-lang.org/en/3.4/syntax/control_expressions_rdoc.html",
+      "https://guides.rubyonrails.org/v8.1/action_view_overview.html#strict-locals"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "tags": [
+        "Rails",
+        "Action View",
+        "Ruby"
+      ],
+      "area": "Rails",
+      "status": "refined",
+      "source": "learning",
+      "draft": false
+    },
+    "mutable_metadata": [
+      "title",
+      "description",
+      "updated"
+    ]
+  },
+  {
+    "kind": "books",
+    "source": "books/lambda-api-boundaries.mdx",
+    "sha256": "70fd2ed26a59b69242013c2643cf6f29cd0470bf71271a6ea2ec213a1d883d7f",
+    "source_urls": [
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html",
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html",
+      "https://docs.aws.amazon.com/lambda/latest/dg/lambda-typescript.html",
+      "https://docs.aws.amazon.com/lambda/latest/dg/typescript-handler.html#typescript-handler-naming",
+      "https://www.typescriptlang.org/docs/handbook/2/basic-types.html#erased-types",
+      "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html#http-api-develop-integrations-lambda.response",
+      "https://docs.aws.amazon.com/lambda/latest/dg/lambda-intro-execution-role.html",
+      "https://docs.aws.amazon.com/lambda/latest/dg/services-apigateway.html#services-apigateway-permissions",
+      "https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html",
+      "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#validate-the-permissions-on-every-request",
+      "https://docs.aws.amazon.com/lambda/latest/dg/typescript-handler.html#typescript-handler-async",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html#ensure-lookup-ids-are-not-accessible-even-when-guessed-or-cannot-be-tampered-with"
+    ],
+    "identity": {
+      "date": "2026-10-10",
+      "category": "AWS",
+      "level": 1,
+      "cover": "/images/articles/typescript-handler-and-api-entry.png",
+      "access": "free",
+      "status": "published",
+      "featured": false,
+      "aliases": [
+        "Lambda APIの入口と権限を分ける",
+        "Lambda APIを入口と権限から読む"
+      ],
+      "references": [
+        {
+          "articleSlug": "aws/lambda/typescript-handler-and-api-entry",
+          "note": "TypeScriptのビルド、handlerの設定、HTTP APIのイベント形式を個別に確認する。"
+        },
+        {
+          "articleSlug": "aws/iam/execution-role-and-user-authorization",
+          "note": "実行ロールと利用者の対象認可を、小さなコードと設定例で確認する。"
+        },
+        {
+          "articleSlug": "architecture/auth/authentication-types",
+          "note": "利用者の認証結果を得る仕組みを整理する。"
+        }
+      ]
+    },
+    "image": "public/images/articles/typescript-handler-and-api-entry.png",
+    "image_sha256": "bdae5e7f86945dd8fa3be65b4c33d92097d2e04be6eac5a0cbb47ba749ad9ea6",
+    "mutable_metadata": [
+      "title",
+      "subtitle",
+      "description",
+      "updated"
+    ]
   }
 ]

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ArticleReader } from "@/components/article-reader";
+import { NoteReader } from "@/components/note-reader";
 import { getAllNotes, getNoteBySlug } from "@/lib/notes";
 import { absoluteUrl } from "@/lib/site";
 
@@ -72,10 +72,7 @@ export default async function NotePage({ params }: PageProps) {
   if (!note) notFound();
   return (
     <article className="page-shell reader-shell">
-      <ArticleReader
-        collection="notes"
-        article={{ ...note, category: note.area, categorySlug: note.areaSlug }}
-      />
+      <NoteReader note={note} />
     </article>
   );
 }

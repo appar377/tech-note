@@ -1,0 +1,70 @@
+---
+title: ".yamlと.ymlとは何か：字下げと値の型を確かめる"
+description: "YAMLの小さな設定例から、字下げによる構造、文字列と真偽値の違い、YAMLの版とスキーマ、設定を読むアプリケーションの役割を整理します。"
+date: 2026-10-10
+updated: 2026-10-10
+tags:
+  - File Extension
+  - YAML
+  - Configuration
+category: File Formats
+level: 1
+articleType: reference
+editorialProfile: question-led-v1
+series:
+  name: 世界の拡張子
+  slug: world-file-extensions
+  order: 4
+draft: false
+thumbnail: /images/articles/file-extension-yaml.svg
+popular: false
+---
+
+`.yaml`や`.yml`を編集するとき、「字下げを揃えたから設定も正しい」とは判断できません。YAMLは構造を持つデータをテキストで表す形式で、設定項目の意味は読み込むアプリケーションが決めます。両方の拡張子が使われますが、ツールが探すファイル名まで同じとは限りません。[YAML 1.2.2の仕様](https://yaml.org/spec/1.2.2/)、[RFC 9512: Filename Extension](https://www.rfc-editor.org/rfc/rfc9512#section-3.3)
+
+まずデータの構造を読み、次に各項目がそのツールで何を意味するかを確認します。
+
+## 字下げは見た目のためだけですか？
+
+次は説明用の`settings.yaml`です。特定の製品の設定ファイルではありません。
+
+```yaml file=settings.yaml
+note:
+  id: "00123"
+  published: false
+  tags:
+    - memo
+    - example
+```
+
+`note`の下に`id`、`published`、`tags`があり、`tags`は2つの値を持つ配列です。同じ段の項目は字下げを揃えます。YAMLのブロック構造では、字下げにタブを使えません。単に見やすくするための空白ではなく、入れ子を表す記法です。[YAML: Indentation Spaces](https://yaml.org/spec/1.2.2/#61-indentation-spaces)
+
+読み込んだ結果の構造をJSON風に表すと、次の形になります。
+
+```json
+{
+  "note": {
+    "id": "00123",
+    "published": false,
+    "tags": ["memo", "example"]
+  }
+}
+```
+
+字下げを変えた後も構文が通る場合があります。たとえば`published`を左へ戻すと、`note`の子ではなく別の項目になることがあります。エラーが出たかどうかだけでなく、パース後の構造を見ます。
+
+## 引用符なしの値は、すべて文字列になりますか？
+
+YAMLでは、値の表記から型を決める規則があります。YAML 1.2のCoreスキーマでは、`false`は真偽値、`null`は空の値、`00123`は整数として解釈されます。この例では識別子を文字列で残すため、`"00123"`と書いています。[YAML: Core Schema](https://yaml.org/spec/1.2.2/#103-core-schema)
+
+スキーマは、値を文字列・数値などのどの型として読むかを決める規則です。設定項目の必須・任意を決めるアプリケーション側の検査とは役割が違います。YAMLの版やスキーマによって解釈が変わる値もあるため、別のパーサーへ移すときは設定を確認します。
+
+Coreスキーマでは、`value:`のように値を空欄にした場合も、`value: null`も`null`になります。`value: ""`は空文字列です。また、キー自体を省略した場合はその項目がありません。アプリケーションが未指定、`null`、空文字列を区別するなら、この違いを確認します。文字列として扱いたい値には引用符を付け、読んだ値の型も見ます。
+
+## YAMLを読めたら、設定は有効になりますか？
+
+パーサーはYAMLをオブジェクトなどへ変換します。その後、アプリケーションが項目名、型、指定可能な値を検査して設定に反映します。`published: false`を公開停止として扱うかは、YAMLの仕様では決まりません。知らない項目を無視するのか、エラーにするのかも利用先で確かめます。
+
+また、YAMLにはタグやエイリアスなど、単純な設定例以外の機能もあります。外部から受け取る場合は、独自タグによるオブジェクト生成の可否や読み込み量の上限を含め、パーサーの設定を確認します。`.yaml`という名前だけで安全性を保証することはできません。[RFC 9512: Security Considerations](https://www.rfc-editor.org/rfc/rfc9512#section-4)
+
+掲載例はNode.js 22.13.0、`yaml` 2.9.0のYAML 1.2 / Coreスキーマで読み込み、上の構造を確認しています。引用符付きのIDが文字列、引用符を外したIDが数値になること、値空欄と`null`が同じ値になること、タブによる字下げのエラーも確認しました。製品固有の設定の有効性は検証していません。[yamlパッケージの読み込み設定](https://eemeli.org/yaml/#parse-options)
